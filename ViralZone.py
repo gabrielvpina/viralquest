@@ -150964,7 +150964,7 @@ def finalTable(vvFolder):
     csv_output_path = os.path.join(vvFolder, f"{name}_viralzone.csv")
     inputfile.to_csv(csv_output_path, index=False)
 
-
+  # move tables
   mydir = "hit_tables"
   move_table1 = f"mv {os.path.normpath(inputDmnd)} {str(os.path.join(vvFolder, mydir))}"
   subprocess.run(move_table1, shell=True, check=True)
@@ -150973,7 +150973,15 @@ def finalTable(vvFolder):
   move_table3 = f"mv {os.path.normpath(BlastxTable)} {str(os.path.join(vvFolder, mydir))}"
   subprocess.run(move_table3, shell=True, check=True)
 
+  # move fasta files
+  fastaDir = "fasta-files"
+  os.makedirs(os.path.join(vvFolder, fastaDir))
 
+  for fasta_text in os.listdir(vvFolder):
+    if fasta_text.endswith(".fasta"):
+      move_fasta = f"mv {str(os.path.join(vvFolder, fasta_text))} {str(os.path.join(vvFolder, fastaDir))}"
+      subprocess.run(move_fasta, shell=True, check=True)
+      print("Pipeline complete!")
 
 
 ################################
