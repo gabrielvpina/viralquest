@@ -1,4 +1,4 @@
-import os, glob, subprocess, csv, argparse, json, sys, re, shutil, textwrap, pyfiglet
+import os, glob, subprocess, csv, argparse, json, sys, re, shutil, textwrap, pyfiglet, time
 import pandas as pd
 from collections import defaultdict
 from Bio import SeqIO, Seq
@@ -41,9 +41,7 @@ def cap3(inputContig, vvFolder):
                     cat_command = f"cat {os.path.join(vvFolder,contigs)} {os.path.join(vvFolder,singlets)} >> {os.path.join(vvFolder, f'{sample}_CAP3.fasta')}"
                     print(cat_command)
                     subprocess.run(cat_command, shell=True, check=True)
-                    # merge the outputs of cap3
-                else:
-                    print("####### Error executing CAP3 on fasta file")
+
     
     log_files = [os.path.join(vvFolder, file) for file in os.listdir(vvFolder)
                  if file.endswith((".links",".qual",".info",".contigs",".singlets",".ace"))]
@@ -150682,7 +150680,7 @@ def hmmscan(vvFolder, hmmProfile, CPU):
     domtblout_path = orf_file.replace("_ORFs.fasta", "_hmmscan.tsv")
 
     hmmscan_run = [
-        "hmmscan",
+        "hmmsearch",
         "--domtblout", 
         domtblout_path,  
         "--cpu", 
@@ -151079,6 +151077,8 @@ if args.blastx and args.diamond_blastx:
 
 def viralzone():
 
+  time_start = time.time()
+
   ### Processing FASTA
   cap3(args.input, args.outdir)
   renameFasta(args.outdir)
@@ -151108,6 +151108,35 @@ def viralzone():
 
   ### Final table
   finalTable(args.outdir)
+
+  time_end = time.time()
+
+  print(f"The pipeline takes {time_end - time_start:.2f} seconds to run.")
+
+
+  ### log file ###
+  name = os.path.basename(args.input)
+  name = name.replace(".fasta",".log")
+  log_path = os.path.join(args.outdir, name)
+
+  with open(log_path, "a") as log_file:
+    log_file.write(f"""ViralZone v{__version__} --- Start in: {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+#############################################
+Input file: {args.input}
+Output directory: {args.outdir}
+Viral database: {args.viralDB}
+Number of ORFs: {args.numORFs}
+CPU cores: {args.cpu}
+BLASTn database: {args.blastn}
+BLASTx database: {args.blastx}
+Diamond BLASTx database: {args.diamond_blastx}
+HMM profile databas: {args.hmmscan}
+#############################################
+
+The pipeline takes {time_end - time_start:.2f} seconds to run.
+    """)
+
 
 if __name__ == "__main__":
     viralzone()
