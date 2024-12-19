@@ -1,7 +1,7 @@
 import os, glob, subprocess, csv, argparse, json, sys, re, shutil, textwrap, pyfiglet, time
 import pandas as pd
 from collections import defaultdict
-from Bio import SeqIO, Seq
+from Bio import SeqIO, Seq, SearchIO
 from Bio.Seq import Seq
 from re import split
 from itertools import groupby
@@ -9,7 +9,7 @@ from operator import itemgetter
 
 
 __author__ = 'Gabriel Rodrigues (gvpina.rodrigues@gmail.com)'
-__version__ = '1.1'
+__version__ = '1.2'
 __date__ = 'December 13, 2024'
 
 
@@ -150670,16 +150670,16 @@ def ORFs(vvFolder, numORF):
 ################
 
 
-def hmmscan(vvFolder, hmmProfile, CPU):
+def hmmsearch(vvFolder, hmmProfile, CPU):
     orf_files = glob.glob(os.path.join(vvFolder, "*_all_ORFs.fasta"))
     if not orf_files:
         raise FileNotFoundError("No file with '_all_ORFs.fasta' suffix.")
     
     orf_file = orf_files[0]
     name = orf_file.replace("_ORFs.fasta", "")
-    domtblout_path = orf_file.replace("_ORFs.fasta", "_hmmscan.tsv")
+    domtblout_path = orf_file.replace("_ORFs.fasta", "_hmmsearch.tsv")
 
-    hmmscan_run = [
+    hmmsearch_run = [
         "hmmsearch",
         "--domtblout", 
         domtblout_path,  
@@ -150689,101 +150689,52 @@ def hmmscan(vvFolder, hmmProfile, CPU):
         orf_file, 
     ]
 
-    subprocess.run(hmmscan_run, check=True)
+    subprocess.run(hmmsearch_run, check=True)
 
 
 def filter_hmmtable(vvFolder, evalue_threshold=1e-18, bitscore_threshold=50, coverage_threshold=0.35):
-    """
-    Filtra uma tabela HMM (--domtblout) gerada pelo hmmscan com base em e-value, bitscore e coverage.
-
-    Args:
-        vvFolder (str): path to HMM model (--domtblout).
-        evalue_threshold (float): Max e-value of hits.
-        bitscore_threshold (float): Min bitscore accepted.
-        coverage_threshold (float): Max value in cover (fraction).
-
-    Returns:
-        str: Caminho do arquivo CSV gerado.
-    """
-    filtered_records = []
-
-    # Encontra o arquivo de entrada com o padrão *_hmmscan.tsv
-    hmm_files = glob.glob(os.path.join(vvFolder, "*_hmmscan.tsv"))
+ 
+    hmm_files = glob.glob(os.path.join(vvFolder, "*_hmmsearch.tsv"))
     if not hmm_files:
-        raise FileNotFoundError("No file with '_hmmscan.tsv' suffix.")
-
+        raise FileNotFoundError("No file with '_hmmsearch.tsv' suffix.")
     hmm_table_file = hmm_files[0]
-    #hmm_table_file = os.path.join(vvFolder, "*_hmmscan.tsv")
+
+    filtered_data = []
+
+    for query_result in SearchIO.parse(hmm_table_file, "hmmsearch3-domtab"):
+        for hit in query_result:
+            # Filtrar hits com base no E-value
+            if hit.evalue < evalue_threshold:
+                for hsp in hit.hsps:
+                    # Adicionar resultados filtrados a uma lista
+                    filtered_data.append({
+                        "Query_name": hit.id,
+                        "QLenght": hit.seq_len,
+                        "TargetID": query_result.id,
+                        "TLenght": query_result.seq_len,
+                        "evalue": hit.evalue,
+                        "score": hsp.bitscore,
+                        "domain_start": hsp.hit_start,
+                        "domain_end": hsp.hit_end
+                    })
+
+    data_parser = pd.DataFrame(filtered_data)
 
 
-    try:
-        with open(hmm_table_file, 'r') as file:
-            for line in file:
-                # Ignorar comentários e linhas vazias
-                if line.startswith("#") or not line.strip():
-                    continue
+    name = os.path.basename(hmm_table_file).replace("_hmmsearch.tsv","")
+    sampleName = f"{name}"
+    data_parser['Sample_name'] = sampleName 
 
-                # Dividir a linha em colunas com base em espaços
-                cols = split(r"\s+", line.strip(), maxsplit=22)
+    data_parser["QueryID"] = data_parser["Query_name"].str.extract(r"(.*?)_ORF")
 
-                # Garantir que a linha possui o número esperado de colunas
-                if len(cols) < 23:
-                    continue
+    data_parser = data_parser[["QueryID","Query_name","QLenght","TargetID","TLenght","evalue","score","domain_start","domain_end"]]
 
-                # Extrair valores relevantes
-                try:
-                    i_evalue = float(cols[12])  # i-Evalue
-                    bitscore = float(cols[13])  # Bitscore
-                    hmm_len = float(cols[2])  # Comprimento do HMM
-                    hmm_start = float(cols[15])  # Início no HMM
-                    hmm_end = float(cols[16])  # Fim no HMM
-                    coverage = (hmm_end - hmm_start) / hmm_len
-                except (ValueError, IndexError):
-                    continue
+    # save in .csv
+    # name = hmm_table_file.replace("_hmmsearch.tsv","")
+    csv_output_path = os.path.join(vvFolder, f"{name}_hmm.csv")
+    data_parser.to_csv(csv_output_path, index=False)
 
-                # Aplicar os filtros
-                if i_evalue <= evalue_threshold and bitscore >= bitscore_threshold and coverage >= coverage_threshold:
-                    filtered_records.append(cols)
-        
-        # Converter para DataFrame
-        if filtered_records:
-            columns = [
-                "target_name", "target_accession", "tlen", "query_name", "query_accession", "qlen",
-                "evalue_sequence", "score_sequence", "bias_sequence",
-                "domain_num", "domain_total", "c_evalue", "i_evalue", "score_domain", "bias_domain",
-                "hmm_start", "hmm_end", "ali_start", "ali_end", "env_start", "env_end",
-                "accuracy", "description"
-            ]
-
-            df = pd.DataFrame(filtered_records, columns=columns[:len(filtered_records[0])])
-            name = os.path.basename(hmm_table_file).replace("_hmmscan.tsv","")
-            sampleName = f"{name}"
-            df['Sample_name'] = sampleName 
-
-            df = df[["Sample_name","query_name","target_name","qlen","tlen","evalue_sequence","score_sequence"]]
-
-            df["QueryID"] = df["query_name"].str.extract(r"(.*?)_ORF")
-
-            df = df[["Sample_name","QueryID","query_name","target_name","qlen","tlen","evalue_sequence","score_sequence"]]
-
-            # save in .csv
-            # name = hmm_table_file.replace("_hmmscan.tsv","")
-            csv_output_path = os.path.join(vvFolder, f"{name}_hmm.csv")
-            df.to_csv(csv_output_path, index=False)
-
-            os.remove(hmm_table_file)
-
-            # return csv_output_path
-        else:
-            print("Nenhum registro passou pelos filtros.")
-            return None
-    except FileNotFoundError:
-        print(f"Arquivo HMM não encontrado no caminho: {hmm_table_file}")
-        return None
-
-  
-
-
+    os.remove(hmm_table_file)
 
 
 def blastn(vvFolder, database, CPU):
@@ -151021,8 +150972,8 @@ parser.add_argument("-X", "--blastx", type=str,
 parser.add_argument("-dX", "--diamond_blastx", type=str, dest="diamond_blastx",
                     help="Path to the Diamond BLASTx database for protein sequence comparison.")
 
-parser.add_argument("-H", "--hmmscan", type=str, dest="hmmscan",
-                    help="Path to the hmmscan model for conserved domain analysis.")
+parser.add_argument("-H", "--hmmsearch", type=str, dest="hmmsearch",
+                    help="Path to the hmmsearch model for conserved domain analysis.")
 
 parser.add_argument("-norf", "--numORFs", type=int, dest="numORFs",
                     help="Number of largest ORFs to select from the input sequences.", default=2)
@@ -151092,9 +151043,9 @@ def viralzone():
   findorf(args.outdir)
   ORFs(args.outdir, args.numORFs)
 
-  if args.hmmscan:
-    hmmscan(args.outdir, args.hmmscan, args.cpu)
-    filter_hmmtable(args.outdir, evalue_threshold=0.1, bitscore_threshold=10, coverage_threshold=0.30)
+  if args.hmmsearch:
+    hmmsearch(args.outdir, args.hmmsearch, args.cpu)
+    filter_hmmtable(args.outdir, evalue_threshold=0.01, bitscore_threshold=30, coverage_threshold=0.40)
 
   ### BLAST
   if args.blastn:
@@ -151131,7 +151082,7 @@ CPU cores: {args.cpu}
 BLASTn database: {args.blastn}
 BLASTx database: {args.blastx}
 Diamond BLASTx database: {args.diamond_blastx}
-HMM profile databas: {args.hmmscan}
+HMM profile databas: {args.hmmsearch}
 #############################################
 
 The pipeline takes {time_end - time_start:.2f} seconds to run.
