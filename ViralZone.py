@@ -150764,6 +150764,10 @@ def filter_hmmtable(vvFolder, evalue_threshold=1e-18, bitscore_threshold=50, cov
 
             df = df[["Sample_name","query_name","target_name","qlen","tlen","evalue_sequence","score_sequence"]]
 
+            df["QueryID"] = df["query_name"].str.extract(r"(.*?)_ORF")
+
+            df = df[["Sample_name","QueryID","query_name","target_name","qlen","tlen","evalue_sequence","score_sequence"]]
+
             # save in .csv
             # name = hmm_table_file.replace("_hmmscan.tsv","")
             csv_output_path = os.path.join(vvFolder, f"{name}_hmm.csv")
@@ -150813,7 +150817,7 @@ def blastx(vvFolder, database, CPU):
         outfile = os.path.join(vvFolder,sample)
 
         blastx_input = ["blastx","-query",infile,"-db",database,"-out",f"{outfile}_blastx.tsv","-outfmt",
-        "6 qseqid qcovs pident evalue stitle","-num_threads",str(CPU),"-max_target_seqs","1"]
+        "6 qseqid qlen slen qcovs pident evalue stitle","-num_threads",str(CPU),"-max_target_seqs","1"]
 
         print("##### BLASTx started!")
         subprocess.run(blastx_input, check=True)
@@ -150837,7 +150841,7 @@ def diamond_blastx(vvFolder, database, CPU, diamond_path):
           "--db", database,
           "--query", infile,
           "--threads", str(CPU),
-          "--outfmt", "6", "qseqid", "qcovhsp", "pident", "evalue", "stitle",
+          "--outfmt", "6", "qseqid", "qlen", "slen", "qcovhsp", "pident", "evalue", "stitle",
           "--max-target-seqs", "1",
           "--out", f"{outfile}_blastx.tsv"
           ]
@@ -150925,10 +150929,10 @@ def finalTable(vvFolder):
     #inputfile["BLASTx-stitle"] = inputfile["BLASTx-stitle"].fillna("no_hits")
 
   if os.path.exists(BlastxTable) and os.path.getsize(BlastxTable) != 0:
-    inputblastx.columns = ['QueryID','BLASTx_Cover','BLASTx_Ident','BLASTx_evalue','BLASTx_stitle']
+    inputblastx.columns = ['QueryID','BLASTx_Qlenght','BLASTx_Slenght','BLASTx_Cover','BLASTx_Ident','BLASTx_evalue','BLASTx_stitle']
     inputblastx['Organism_Name'] = inputblastx['BLASTx_stitle'].apply(extract_organism_name)
     inputblastx = pd.merge(inputblastx, viral_metadata, on="Organism_Name", how="left")
-    inputblastx.columns = ['QueryID','BLASTx_Cover','BLASTx_Ident','BLASTx_evalue','BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family','BLASTx_GenomeComposition']
+    inputblastx.columns = ['QueryID','BLASTx_Qlenght','BLASTx_Slenght','BLASTx_Cover','BLASTx_Ident','BLASTx_evalue','BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family','BLASTx_GenomeComposition']
     inputfile = inputfile.merge(inputblastx, on='QueryID', how='left')
     inputfile["BLASTx_stitle"] = inputfile["BLASTx_stitle"].fillna("no_hits")\
 
@@ -150941,17 +150945,17 @@ def finalTable(vvFolder):
 
   # Order cols by 
   if os.path.getsize(BlastxTable) != 0 and os.path.getsize(BlastnTable) != 0:
-    inputfile = inputfile[['Sample_name', 'QueryID', 'SubjectID', 'QseqLength', 'SseqLength', 'Pident', 'Evalue', 'QCover', 'SubjTitle', 'Organism_Name', 'Family', 'Genome.composition', 'BLASTn_Cover', 'BLASTn_Ident', 'BLASTn_evalue', 'BLASTn_stitle', 'BLASTx_Cover', 'BLASTx_Ident', 'BLASTx_evalue', 'BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family', 'BLASTx_GenomeComposition', 'FullQueryLength']]
+    inputfile = inputfile[['Sample_name', 'QueryID', 'SubjectID', 'QseqLength', 'SseqLength', 'Pident', 'Evalue', 'QCover', 'SubjTitle', 'Organism_Name', 'Family', 'Genome.composition', 'BLASTn_Cover', 'BLASTn_Ident', 'BLASTn_evalue', 'BLASTn_stitle', 'BLASTx_Qlenght','BLASTx_Slenght','BLASTx_Cover', 'BLASTx_Ident', 'BLASTx_evalue', 'BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family', 'BLASTx_GenomeComposition', 'FullQueryLength']]
 
-    inputfile.columns = ['Sample_name', 'Diamond_QueryID', 'Diamond_SubjectID', 'Diamond_QseqLength', 'Diamond_SseqLength', 'Diamond_Pident', 'Diamond_Evalue', 'Diamond_QCover', 'Diamond_SubjTitle', 'Diamond_Organism_Name', 'Diamond_Family', 'Diamond_GenomeComposition', 'BLASTn_Cover', 'BLASTn_Ident', 'BLASTn_evalue', 'BLASTn_stitle', 'BLASTx_Cover', 'BLASTx_Ident', 'BLASTx_evalue', 'BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family', 'BLASTx_GenomeComposition', 'FullQueryLength']
+    inputfile.columns = ['Sample_name', 'Diamond_QueryID', 'Diamond_SubjectID', 'Diamond_QseqLength', 'Diamond_SseqLength', 'Diamond_Pident', 'Diamond_Evalue', 'Diamond_QCover', 'Diamond_SubjTitle', 'Diamond_Organism_Name', 'Diamond_Family', 'Diamond_GenomeComposition', 'BLASTn_Cover', 'BLASTn_Ident', 'BLASTn_evalue', 'BLASTn_stitle', 'BLASTx_Qlenght','BLASTx_Slenght','BLASTx_Cover', 'BLASTx_Ident', 'BLASTx_evalue', 'BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family', 'BLASTx_GenomeComposition', 'FullQueryLength']
 
     csv_output_path = os.path.join(vvFolder, f"{name}_viralzone.csv")
     inputfile.to_csv(csv_output_path, index=False)
 
   if os.path.getsize(BlastxTable) != 0 and os.path.getsize(BlastnTable) == 0:
-    inputfile = inputfile[['Sample_name', 'QueryID', 'SubjectID', 'QseqLength', 'SseqLength', 'Pident', 'Evalue', 'QCover', 'SubjTitle', 'Organism_Name', 'Family', 'Genome.composition', 'BLASTx_Cover', 'BLASTx_Ident', 'BLASTx_evalue', 'BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family', 'BLASTx_GenomeComposition', 'FullQueryLength']]
+    inputfile = inputfile[['Sample_name', 'QueryID', 'SubjectID', 'QseqLength', 'SseqLength', 'Pident', 'Evalue', 'QCover', 'SubjTitle', 'Organism_Name', 'Family', 'Genome.composition', 'BLASTx_Qlenght','BLASTx_Slenght','BLASTx_Cover', 'BLASTx_Ident', 'BLASTx_evalue', 'BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family', 'BLASTx_GenomeComposition', 'FullQueryLength']]
 
-    inputfile.columns = ['Sample_name', 'Diamond_QueryID', 'Diamond_SubjectID', 'Diamond_QseqLength', 'Diamond_SseqLength', 'Diamond_Pident', 'Diamond_Evalue', 'Diamond_QCover', 'Diamond_SubjTitle', 'Diamond_Organism_Name', 'Diamond_Family', 'Diamond_GenomeComposition', 'BLASTx_Cover', 'BLASTx_Ident', 'BLASTx_evalue', 'BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family', 'BLASTx_GenomeComposition', 'FullQueryLength']
+    inputfile.columns = ['Sample_name', 'Diamond_QueryID', 'Diamond_SubjectID', 'Diamond_QseqLength', 'Diamond_SseqLength', 'Diamond_Pident', 'Diamond_Evalue', 'Diamond_QCover', 'Diamond_SubjTitle', 'Diamond_Organism_Name', 'Diamond_Family', 'Diamond_GenomeComposition','BLASTx_Qlenght','BLASTx_Slenght', 'BLASTx_Cover', 'BLASTx_Ident', 'BLASTx_evalue', 'BLASTx_stitle', 'BLASTx_Organism_Name', 'BLASTx_Family', 'BLASTx_GenomeComposition', 'FullQueryLength']
 
     csv_output_path = os.path.join(vvFolder, f"{name}_viralzone.csv")
     inputfile.to_csv(csv_output_path, index=False)
