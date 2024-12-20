@@ -8,3 +8,5 @@
     <strong>A pipeline for viral diversity analysis</strong>
   </p>
 </div>
+
+### Suport to RVDB HMM Profile version 29.0
