@@ -150729,6 +150729,15 @@ def filter_hmmtable(vvFolder, evalue_threshold=1e-18, bitscore_threshold=50, cov
 
     data_parser = data_parser[["QueryID","Query_name","QLenght","TargetID","TLenght","evalue","score","domain_start","domain_end"]]
 
+    data_parser = (
+    data_parser.loc[data_parser.groupby(["Query_name"])["score"].idxmax()]
+    .reset_index(drop=True)
+    )
+
+    data_parser["domain_cover"] = (data_parser["domain_end"] - data_parser["domain_start"])/data_parser["TLenght"]
+
+    data_parser["domain_cover"] = data_parser["domain_cover"].round(2)
+
     # save in .csv
     # name = hmm_table_file.replace("_hmmsearch.tsv","")
     csv_output_path = os.path.join(vvFolder, f"{name}_hmm.csv")
@@ -150985,7 +150994,7 @@ parser.add_argument("-dmnd_path","--diamond_path", type=str, dest="diamond_path"
                     help="OPTIONAL - Diamond bin application path for BLAST databases: path/to/./diamond", default="None")
 
 parser.add_argument("-v", "--version", action="version", 
-                    version="ViralZone v1.0 ({}) By: {}".format(__date__, __author__))
+                    version=f"ViralZone v{__version__}")
 
 args = parser.parse_args()
 
