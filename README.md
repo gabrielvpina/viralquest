@@ -19,9 +19,9 @@ conda install -c bioconda cap3 diamond hmmer blast
 '''
 pip install orfipy pandas Bio more-itertools pyfiglet
 '''
+# Workflow
+<img src="https://github.com/gabrielvpina/my_images/blob/main/viralzone.png" width="658" height="521">
 
-# Usage
-<img src="https://github.com/gabrielvpina/my_images/blob/main/viralzone_usage.png" width="929" height="815">
 
 
 * Suport to RVDB HMM Profile version 29.0
