@@ -21,7 +21,7 @@ pip install orfipy pandas Bio more-itertools pyfiglet
 '''
 
 # Usage
-<img src="https://github.com/gabrielvpina/my_images/blob/main/viralzone_usage.png" width="490" height="490">
+<img src="https://github.com/gabrielvpina/my_images/blob/main/viralzone_usage.png" width="600" height="490">
 
 
 * Suport to RVDB HMM Profile version 29.0
