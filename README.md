@@ -8,7 +8,6 @@
     <strong>A pipeline for viral diversity analysis</strong>
   </p>
 </div>
-<br>
 
 # Setup
 ## Install required packages:
