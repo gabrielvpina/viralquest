@@ -12,13 +12,13 @@
 
 # Setup
 ## Install required packages:
-'''
+```
 conda install -c bioconda cap3 diamond hmmer blast
-'''
+```
 ### Pip modules:
-'''
+```
 pip install orfipy pandas Bio more-itertools pyfiglet
-'''
+```
 # Workflow
 <img src="https://github.com/gabrielvpina/my_images/blob/main/vz_workflow.png" width="658" height="521">
 
