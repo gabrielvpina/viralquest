@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://github.com/gabrielvpina/my_images/blob/main/vz_blueBG.png" width="490" height="180">
+<img src="https://github.com/gabrielvpina/my_images/blob/main/viralquest.png" width="490" height="220">
   
   <p align="center">
     <strong>A pipeline for viral diversity analysis</strong>
