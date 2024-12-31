@@ -24,3 +24,4 @@ pip install orfipy pandas Bio more-itertools pyfiglet
 
 
 * Suport to RVDB HMM Profile version 29.0
+* Suport to Pfam HMM Profile version 37.2
