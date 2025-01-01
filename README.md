@@ -19,7 +19,7 @@ conda install -c bioconda cap3 diamond hmmer blast
 pip install orfipy pandas Bio more-itertools pyfiglet
 ```
 # Workflow
-<img src="https://github.com/gabrielvpina/my_images/blob/main/VQ_Scheme_bright.png" width="651" height="818">
+<img src="https://github.com/gabrielvpina/my_images/blob/main/VQ_Scheme_bright.png" width="851" height="1018">
 
 
 
