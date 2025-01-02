@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ORF Viewer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .title {
+            text-align: center;
+            color: #1a237e;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+            font-weight: 600;
+        }
+        .contig-name {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            font-weight: 500;
+        }
+        .orf-viewer {
+            position: relative;
+            height: 200px;
+            margin: 40px 0;
+            padding: 20px;
+            background-color: #fafafa;
+            border-radius: 8px;
+        }
+        .sequence-line {
+            position: absolute;
+            top: 50%;
+            width: 100%;
+            height: 3px;
+            background-color: #1a237e;
+            transform: translateY(-50%);
+            z-index: 1;
+        }
+        .orf-block {
+            position: absolute;
+            height: 40px;
+            background: linear-gradient(to right, #3f51b5, #5c6bc0);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 2;
+        }
+        .orf-block:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .orf-arrow {
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-top: 20px solid transparent;
+            border-bottom: 20px solid transparent;
+            z-index: 2;
+        }
+        .orf-arrow-right {
+            right: -20px;
+            border-left: 20px solid #5c6bc0;
+        }
+        .orf-arrow-left {
+            left: -20px;
+            border-right: 20px solid #5c6bc0;
+        }
+        .tooltip {
+            position: fixed;
+            top: 20%;
+            right: 20px;
+            background-color: #fff;
+            color: #333;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 100;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s;
+            width: 300px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border: 1px solid #e0e0e0;
+        }
+        .tooltip strong {
+            color: #1a237e;
+            display: inline-block;
+            width: 120px;
+        }
+        .scale {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 30px;
+            display: flex;
+            justify-content: space-between;
+            color: #666;
+            font-size: 12px;
+        }
+        .scale div {
+            position: relative;
+            padding-top: 10px;
+        }
+        .scale div::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            height: 8px;
+            width: 1px;
+            background-color: #666;
+        }
+        .info-panel {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        .info-panel h3 {
+            color: #1a237e;
+            margin-top: 0;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3f51b5;
+        }
+        .blast-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+        .blast-info-item {
+            background: #fff;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .blast-info-item h4 {
+            margin-top: 0;
+            color: #1a237e;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+        }
+        .info-row {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            margin-bottom: 8px;
+        }
+        .info-label {
+            color: #1a237e;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">ORF Viewer</h1>
+        <div id="contig-name" class="contig-name"></div>
+        <div class="orf-viewer">
+            <div class="sequence-line"></div>
+            <div class="scale"></div>
+            <div id="tooltip" class="tooltip"></div>
+        </div>
+        <div class="info-panel">
+            <h3>BLAST Information</h3>
+            <div id="blast-info" class="blast-info">
+                <!-- BLAST info will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const data = {
+            orfs: [
+                {
+                    contig_full: "contig_10_ORF.198",
+                    start: 3661,
+                    end: 5470,
+                    strand: "-",
+                    length: 1809
+                },
+                {
+                    contig_full: "contig_10_ORF.166",
+                    start: 165,
+                    end: 1461,
+                    strand: "-",
+                    length: 1296
+                }
+            ],
+            hmm_hits: {
+                "contig_10_ORF.166": {
+                    ViralFamily: "Viruses",
+                    Pfam_Description: "Potato leaf roll virus readthrough protein"
+                }
+            },
+            viral_hits: {
+                "Sample_name": "test",
+                "QueryID": "contig_10",
+                "BLASTx_Qlenght": "5670.0",
+                "BLASTx_Slenght": "603.0",
+                "BLASTx_Cover": "31.9",
+                "BLASTx_Ident": "98.8",
+                "BLASTx_evalue": "0.0",
+                "BLASTx_stitle": "YP_004869992.1 P1 [Brassica yellows virus]",
+                "BLASTx_Organism_Name": "Brassica yellows virus",
+                "BLASTx_Family": "Solemoviridae",
+                "BLASTx_GenomeComposition": "ssRNA(+)",
+                "BLASTn_Cover": "99",
+                "BLASTn_Ident": "98.383",
+                "BLASTn_evalue": "0.0",
+                "BLASTn_stitle": "NC_016038.2 Brassica yellows virus isolate BrYV-ABJ, complete genome"
+            }
+        };
+
+        let tooltipTimeout;
+
+        function initialize() {
+            const viewer = document.querySelector('.orf-viewer');
+            const totalLength = 5670;
+            
+            // Set contig name
+            document.getElementById('contig-name').textContent = `Contig: ${data.viral_hits.QueryID}`;
+            
+            // Add scale
+            const scale = document.querySelector('.scale');
+            const steps = 6;
+            for (let i = 0; i <= steps; i++) {
+                const pos = document.createElement('div');
+                pos.textContent = Math.round(totalLength * i / steps).toLocaleString();
+                scale.appendChild(pos);
+            }
+
+            // Add ORFs
+            data.orfs.forEach(orf => {
+                const orfContainer = document.createElement('div');
+                orfContainer.style.position = 'absolute';
+                
+                const orfElement = document.createElement('div');
+                orfElement.className = 'orf-block';
+                
+                const startPercent = (orf.start / totalLength) * 100;
+                const widthPercent = ((orf.end - orf.start) / totalLength) * 100;
+                
+                orfContainer.style.left = startPercent + '%';
+                orfContainer.style.width = widthPercent + '%';
+                orfContainer.style.top = '50%';
+                orfContainer.style.transform = 'translateY(-50%)';
+                
+                orfElement.style.width = '100%';
+                
+                const arrow = document.createElement('div');
+                arrow.className = 'orf-arrow ' + (orf.strand === '+' ? 'orf-arrow-right' : 'orf-arrow-left');
+                
+                if (orf.strand === '-') {
+                    orfContainer.appendChild(arrow);
+                    orfContainer.appendChild(orfElement);
+                } else {
+                    orfContainer.appendChild(orfElement);
+                    orfContainer.appendChild(arrow);
+                }
+
+                orfContainer.addEventListener('mouseover', (e) => showTooltip(e, orf));
+                orfContainer.addEventListener('mouseout', hideTooltip);
+
+                viewer.appendChild(orfContainer);
+            });
+
+            displayBlastInfo();
+        }
+
+        function showTooltip(event, orf) {
+            clearTimeout(tooltipTimeout);
+            const tooltip = document.getElementById('tooltip');
+            const hmmInfo = data.hmm_hits[orf.contig_full] || {};
+            
+            tooltip.innerHTML = `
+                <div><strong>ORF:</strong> ${orf.contig_full}</div>
+                <div><strong>Position:</strong> ${orf.start.toLocaleString()} - ${orf.end.toLocaleString()}</div>
+                <div><strong>Strand:</strong> ${orf.strand}</div>
+                <div><strong>Length:</strong> ${orf.length.toLocaleString()} bp</div>
+                ${hmmInfo.ViralFamily ? `<div><strong>Viral Family:</strong> ${hmmInfo.ViralFamily}</div>` : ''}
+                ${hmmInfo.Pfam_Description ? `<div><strong>Pfam Description:</strong> ${hmmInfo.Pfam_Description}</div>` : ''}
+            `;
+
+            tooltip.style.visibility = 'visible';
+            tooltip.style.opacity = '1';
+        }
+
+        function hideTooltip() {
+            tooltipTimeout = setTimeout(() => {
+                const tooltip = document.getElementById('tooltip');
+                tooltip.style.opacity = '0';
+                setTimeout(() => {
+                    tooltip.style.visibility = 'hidden';
+                }, 300);
+            }, 200);
+        }
+
+        function displayBlastInfo() {
+            const blastInfoContainer = document.getElementById('blast-info');
+            const vh = data.viral_hits;
+
+            const createInfoRow = (label, value) => `
+                <div class="info-row">
+                    <span class="info-label">${label}:</span>
+                    <span>${value}</span>
+                </div>
+            `;
+
+            const blastxInfo = document.createElement('div');
+            blastxInfo.className = 'blast-info-item';
+            blastxInfo.innerHTML = `
+                <h4>BLASTx Results</h4>
+                ${createInfoRow('Query Length', vh.BLASTx_Qlenght)}
+                ${createInfoRow('Subject Length', vh.BLASTx_Slenght)}
+                ${createInfoRow('Coverage', vh.BLASTx_Cover + '%')}
+                ${createInfoRow('Identity', vh.BLASTx_Ident + '%')}
+                ${createInfoRow('E-value', vh.BLASTx_evalue)}
+                ${createInfoRow('Organism', vh.BLASTx_Organism_Name)}
+                ${createInfoRow('Family', vh.BLASTx_Family)}
+                ${createInfoRow('Genome', vh.BLASTx_GenomeComposition)}
+                ${createInfoRow('Title', vh.BLASTx_stitle)}
+            `;
+
+            const blastnInfo = document.createElement('div');
+            blastnInfo.className = 'blast-info-item';
+            blastnInfo.innerHTML = `
+                <h4>BLASTn Results</h4>
+                ${createInfoRow('Coverage', vh.BLASTn_Cover + '%')}
+                ${createInfoRow('Identity', vh.BLASTn_Ident + '%')}
+                ${createInfoRow('E-value', vh.BLASTn_evalue)}
+                ${createInfoRow('Title', vh.BLASTn_stitle)}
+            `;
+
+            blastInfoContainer.appendChild(blastxInfo);
+            blastInfoContainer.appendChild(blastnInfo);
+        }
+
+        document.addEventListener('DOMContentLoaded', initialize);
+    </script>
+</body>
+</html>
