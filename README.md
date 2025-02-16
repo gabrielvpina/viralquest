@@ -12,11 +12,11 @@
 # Setup
 ## Install required packages:
 ```
-conda install -c bioconda cap3 diamond pyhmmer blast
+conda install -c bioconda cap3 diamond blast
 ```
 ### Pip modules:
 ```
-pip install orfipy pandas Bio more-itertools pyfiglet
+pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 ```
 # Workflow
 * Suport to RVDB HMM Profile version 29.0
