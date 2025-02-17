@@ -19,10 +19,11 @@ conda install -c bioconda cap3 diamond blast
 pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 ```
 # Workflow
-* Suport to RVDB HMM Profile version 29.0
-* Suport to Pfam HMM Profile version 37.2
+* Suport to Reference Viral Database (RVDB) HMM Profile version 29.0
+* Suport to Protein Family Database (Pfam) HMM Profile version 37.2
 * Suport to Vfam HMM Profile version 228
-* Suport to EggNOG HMM Profile version 4.5
+* Suport to EggNOG Virus HMM Profile version 4.5
+
 
 <img src="https://github.com/gabrielvpina/my_images/blob/main/vq-scheme.png" width="851" height="1018">
 
