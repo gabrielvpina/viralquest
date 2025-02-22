@@ -560,6 +560,8 @@ def process_Pfam(vvFolder, hmmProfile, CPU):
 
     hmmTable['FullSequence'] = hmmTable['Query_name'].apply(get_sequence)
 
+    hmmTable = hmmTable.sort_values(by="Pfam_Score", ascending=False).drop_duplicates(subset=["Query_name"], keep="first")
+
     # Write table
     csv_output_path = hmmPath
     hmmTable = hmmTable.drop_duplicates()
@@ -788,7 +790,12 @@ def finalTable(vvFolder):
   shutil.move(os.path.join(vvFolder,f"{name}_EggNOG.csv"),mydir_path)
 
 
-  ################## CREATE JSON ######################
+  ################## CREATE JSON #####################
+
+  hmmTable_path = os.path.join(vvFolder,f"{name}_hmm.csv")
+  hmmTable = pd.read_csv(hmmTable_path)
+  valid_query_ids = set(hmmTable["QueryID"].unique())
+
 
   def csv_to_json(csv_file_path1, csv_file_path2):
 
@@ -815,6 +822,9 @@ def finalTable(vvFolder):
               contig = contig_full[:contig_full.index('_ORF.')]
           else:
               contig = contig_full
+
+          if contig not in valid_query_ids:
+            continue  
           
           coordinates_strand = parts[1].replace('[', '').replace(']', '')
           if '(' in coordinates_strand:
@@ -856,7 +866,7 @@ def finalTable(vvFolder):
       with open(output_json_path, mode='w', encoding='utf-8') as json_file:
           json.dump(combined_data, json_file, indent=4)
 
-  hmmTable_path = os.path.join(vvFolder,f"{name}_hmm.csv")
+
 
   combined_json(
       viralSeqs_path,
