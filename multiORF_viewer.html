@@ -50,28 +50,37 @@
             z-index: 1000;
         }
 
-        /* Copy button styles */
         .copy-button {
             margin-left: 5px;
-            padding: 2px 5px;
-            font-size: 11px;
+            padding: 4px 8px;
+            font-size: 12px;
             cursor: pointer;
             border: 1px solid #ccc;
             background: #fff;
             border-radius: 3px;
-            transition: background-color 0.2s;
+            transition: all 0.2s ease;
         }
 
         .copy-button:hover {
-            background-color: #f5f5f5;
+            background-color: #f0f0f0;
+            border-color: #999;
         }
 
-        /* Feedback message styles */
+        .copy-button:active {
+            background-color: #e0e0e0;
+        }
+
         .copy-feedback {
             display: none;
             margin-left: 5px;
             color: #27ae60;
-            font-size: 11px;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .copy-feedback.show {
+            opacity: 1;
         }
 
         /* Loading state */
@@ -92,6 +101,8 @@
             background-color: #fef2f1;
             margin: 10px 0;
         }
+
+
 
         
     </style>
@@ -242,6 +253,7 @@
                     const sequence = orf.sequence || '';
                     const truncatedSeq = sequence.substring(0, 8) + "..";
                     const buttonId = `copy-button-${orf.Query_name.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                    const feedbackId = `feedback-${orf.Query_name.replace(/[^a-zA-Z0-9]/g, '-')}`;
                     
                     return `
                         <div style="font-family: ${styles.fonts.primary}">
@@ -255,12 +267,14 @@
                             <strong>Codons:</strong> ${orf.start_codon} → ${orf.stop_codon}<br>
                             <strong>Sequence:</strong> 
                             <span style="font-family: monospace">${truncatedSeq}</span>
-                            <button id="${buttonId}"
-                                    class="copy-button"
-                                    style="margin-left: 5px; padding: 2px 5px; font-size: 11px; cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;">
+                            <button 
+                                id="${buttonId}"
+                                class="copy-button"
+                                data-sequence="${sequence}"
+                                onclick="handleCopyClick(this)">
                                 Copy
                             </button>
-                            <span class="copy-feedback" style="display: none; margin-left: 5px; color: #27ae60; font-size: 11px;">
+                            <span id="${feedbackId}" class="copy-feedback">
                                 Copied!
                             </span>
                             ${hmmHit ? `
@@ -276,6 +290,7 @@
                         </div>
                     `;
                 };
+
 
                 // Function to handle copy button click (same as before)
                 const handleCopy = (sequence, buttonId) => {
@@ -299,6 +314,37 @@
                             feedback.style.display = 'inline';
                         });
                 };
+
+                window.handleCopyClick = function(button) {
+                    const sequence = button.getAttribute('data-sequence');
+                    const feedbackId = button.id.replace('copy-button-', 'feedback-');
+                    const feedbackElement = document.getElementById(feedbackId);
+                    
+                    navigator.clipboard.writeText(sequence)
+                        .then(() => {
+                            // Show feedback
+                            button.style.display = 'none';
+                            feedbackElement.style.display = 'inline';
+                            feedbackElement.classList.add('show');
+                            
+                            // Reset after 2 seconds
+                            setTimeout(() => {
+                                button.style.display = 'inline';
+                                feedbackElement.classList.remove('show');
+                                setTimeout(() => {
+                                    feedbackElement.style.display = 'none';
+                                }, 300);
+                            }, 2000);
+                        })
+                        .catch(err => {
+                            console.error('Failed to copy:', err);
+                            feedbackElement.textContent = 'Error copying!';
+                            feedbackElement.style.color = '#e74c3c';
+                            feedbackElement.style.display = 'inline';
+                            feedbackElement.classList.add('show');
+                        });
+                };
+
 
                 // Function to show tooltip
                 const showTooltip = (event, orf) => {
