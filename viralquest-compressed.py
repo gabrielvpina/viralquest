@@ -885,7 +885,754 @@ def finalTable(vvFolder):
   for fasta_text in os.listdir(vvFolder):
     if fasta_text.endswith(".fasta"):
       shutil.move(os.path.join(vvFolder, fasta_text), fastaDir_path)
-     
+
+def generate_html_report(vvFolder):
+    jsonData = glob.glob(os.path.join(vvFolder, "*.json"))
+    jsonFile = jsonData[0]
+
+    with open(jsonFile, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        
+    jsonDB = json.dumps(data, indent=4)
+    name = os.path.basename(jsonFile).replace("_bestSeqs.json","")
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ViralQuest</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+        <style>
+            :root {{
+                --primary-color: #2c3e50;
+                --secondary-color: #3498db;
+                --background-color: #f5f7fa;
+                --card-background: #ffffff;
+                --border-color: #e2e8f0;
+                --shadow-color: rgba(0, 0, 0, 0.1);
+                --text-color: #2d3748;
+                --accent-color: #4299e1;
+            }}
+
+            body {{
+                margin: 0;
+                padding: 0;
+                background-color: var(--background-color);
+                color: var(--text-color);
+                font-family: system-ui, -apple-system, sans-serif;
+            }}
+
+            /* Container styles */
+            .page-container {{
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 20px;
+                display: flex;
+                gap: 20px;
+                position: relative;
+            }}
+
+            /* Header styles */
+            header {{
+                background: var(--card-background);
+                padding: 20px;
+                border-radius: 12px;
+                box-shadow: 0 2px 4px var(--shadow-color);
+                margin-bottom: 20px;
+            }}
+
+            header h1 {{
+                color: var(--primary-color);
+                margin: 0 0 10px 0;
+                font-size: 2.5rem;
+            }}
+
+            header h3 {{
+                color: var(--text-color);
+                margin: 0;
+                font-weight: 500;
+                opacity: 0.8;
+            }}
+
+            /* Updated index styles */
+            #contig-index {{
+                width: 200px;
+                background: var(--card-background);
+                border-radius: 12px;
+                padding: 20px;
+                box-shadow: 0 2px 4px var(--shadow-color);
+                position: fixed;
+                top: 130px;  /* Adjust based on your header height */
+                left: 20px;
+                max-height: calc(100vh - 140px);  /* Viewport height minus margins */
+                display: flex;
+                flex-direction: column;
+                transition: transform 0.3s ease;
+                z-index: 1000;
+            }}
+
+            #contig-index.collapsed {{
+                transform: translateX(-250px);
+            }}
+
+            #contig-index h2 {{
+                color: var(--primary-color);
+                margin: 0 0 15px 0;
+                font-size: 1.2rem;
+                padding-right: 30px; /* Make room for toggle button */
+            }}
+
+            .index-list {{
+                list-style: none;
+                padding: 0;
+                margin: 0;
+                overflow-y: auto;
+                flex-grow: 1;
+                /* Improved scrollbar styling */
+                scrollbar-width: thin;
+                scrollbar-color: var(--primary-color) var(--background-color);
+            }}
+
+            .index-item {{
+                padding: 8px 12px;
+                margin: 4px 0;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                color: var(--text-color);
+                font-size: 0.9rem;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }}
+
+            .index-item:hover {{
+                background: var(--accent-color);
+                color: white;
+            }}
+
+            .toggle-index {{
+                position: absolute;
+                right: -30px;
+                top: 10px;
+                background: var(--primary-color);
+                color: white;
+                border: none;
+                border-radius: 0 4px 4px 0;
+                padding: 8px;
+                cursor: pointer;
+                transition: background 0.2s ease;
+                width: 30px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }}
+
+            .toggle-index:hover {{
+                background: var(--accent-color);
+            }}
+
+            /* Adjust main content area to make room for fixed index */
+            .page-container {{
+                margin-left: 290px; /* width of index + some margin */
+                max-width: calc(100% - 310px); /* Adjust based on index width */
+                transition: margin-left 0.3s ease;
+            }}
+
+            /* When index is collapsed */
+            .page-container.index-collapsed {{
+                margin-left: 60px;
+                max-width: calc(100% - 80px);
+            }}
+
+            /* Responsive adjustments */
+            @media (max-width: 768px) {{
+                #contig-index {{
+                    width: 200px;
+                }}
+                
+                .page-container {{
+                    margin-left: 240px;
+                    max-width: calc(100% - 260px);
+                }}
+            }}
+
+            /* Main visualization container */
+            #visualization-container {{
+                flex-grow: 1;
+                background: transparent;
+            }}
+
+            /* Individual visualization wrapper */
+            .visualization-wrapper {{
+                background: var(--card-background);
+                margin-bottom: 30px;
+                border-radius: 12px;
+                padding: 25px;
+                box-shadow: 0 4px 6px var(--shadow-color);
+                transition: transform 0.2s ease;
+            }}
+
+            .visualization-wrapper:hover {{
+                transform: translateY(-2px);
+            }}
+
+            /* Tooltip styles */
+            [class^='tooltip-'] {{
+                position: absolute;
+                display: none;
+                background: var(--card-background);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 15px;
+                box-shadow: 0 4px 12px var(--shadow-color);
+                max-width: 350px;
+                z-index: 1000;
+                font-size: 0.9rem;
+            }}
+
+            /* Copy button styles */
+            .copy-button {{
+                margin-left: 8px;
+                padding: 6px 12px;
+                font-size: 0.8rem;
+                cursor: pointer;
+                border: 1px solid var(--border-color);
+                background: var(--card-background);
+                border-radius: 4px;
+                transition: all 0.2s ease;
+                color: var(--primary-color);
+            }}
+
+            .copy-button:hover {{
+                background: var(--accent-color);
+                color: white;
+                border-color: var(--accent-color);
+            }}
+
+            .copy-feedback {{
+                display: none;
+                margin-left: 8px;
+                color: #10b981;
+                font-size: 0.8rem;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }}
+
+            .copy-feedback.show {{
+                opacity: 1;
+            }}
+
+            /* Loading and error states */
+            .loading, .error {{
+                text-align: center;
+                padding: 30px;
+                font-size: 1rem;
+                border-radius: 8px;
+                margin: 20px 0;
+            }}
+
+            .loading {{
+                background: var(--card-background);
+                color: var(--text-color);
+                box-shadow: 0 2px 4px var(--shadow-color);
+            }}
+
+            .error {{
+                background: #fee2e2;
+                color: #dc2626;
+                border: 1px solid #fecaca;
+            }}
+
+            /* Scrollbar styling */
+            ::-webkit-scrollbar {{
+                width: 8px;
+            }}
+
+            ::-webkit-scrollbar-track {{
+                background: var(--background-color);
+                border-radius: 4px;
+            }}
+
+            ::-webkit-scrollbar-thumb {{
+                background: var(--primary-color);
+                border-radius: 4px;
+            }}
+
+            ::-webkit-scrollbar-thumb:hover {{
+                background: var(--accent-color);
+            }}
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>ViralQuest ORF Viewer</h1>
+            <h3>Click on any ORF bar to view detailed information</h3>
+        </header>
+        
+        <div class="page-container">
+            <aside id="contig-index">
+                <h2>Sequences Index</h2>
+                <button class="toggle-index" onclick="toggleIndex()">☰</button>
+                <ul class="index-list" id="index-list">
+                    <!-- Index items will be dynamically added here -->
+                </ul>
+            </aside>
+
+            <div id="visualization-container">
+                <div id="loading" class="loading">Loading visualizations...</div>
+                <div id="error" class="error" style="display: none;">
+                    Error loading visualizations. Please try again.
+                </div>
+            </div>
+        </div>
+
+        <script>
+
+            function toggleIndex() {{
+                const index = document.getElementById('contig-index');
+                const container = document.querySelector('.page-container');
+                index.classList.toggle('collapsed');
+                container.classList.toggle('index-collapsed');
+            }}
+
+            function createIndex(data) {{
+                const indexList = document.getElementById('index-list');
+                indexList.innerHTML = ''; // Clear existing items
+                
+                data.Viral_Hits.forEach((hit, index) => {{
+                    const li = document.createElement('li');
+                    li.className = 'index-item';
+                    li.textContent = hit.QueryID;
+                    li.onclick = () => {{
+                        document.querySelector(`.visualization-wrapper[data-contig="${{hit.QueryID}}"]`)
+                            .scrollIntoView({{ behavior: 'smooth' }});
+                    }};
+                    indexList.appendChild(li);
+                }});
+            }}
+
+            function createVisualizations(data) {{
+                // Create container for all visualizations
+                const container = d3.select("#visualization-container");
+                container.selectAll("*").remove();
+
+                // Enhanced styling constants (same as before)
+                const styles = {{
+                    trackHeight: 160,
+                    orfHeight: 30,
+                    margin: {{ top: 50, right: 20, bottom: 370, left: 100 }},
+                    colors: {{
+                        complete: "#3498db",
+                        "5-prime-partial": "#e74c3c",
+                        "3-prime-partial": "#f1c40f",
+                        genomeLine: "#2c3e50",
+                        axis: "#7f8c8d"
+                    }},
+                    fonts: {{
+                        primary: "system-ui, -apple-system, sans-serif",
+                        size: {{
+                            title: "16px",
+                            label: "12px",
+                            tooltip: "12px"
+                        }}
+                    }}
+                }};
+
+                // Process each viral hit
+                data.Viral_Hits.forEach((viralHit, index) => {{
+                    const contigId = viralHit.QueryID;
+                    const contigLength = viralHit.BLASTx_Qlenght || viralHit.BLASTn_Qlenght;
+                    const orfs = data.ORF_Data[contigId];
+
+                    // Create individual visualization container
+                    const visualizationDiv = container.append("div")
+                        .attr("class", "visualization-wrapper")
+                        .attr("data-contig", contigId)
+                        .style("margin-bottom", "40px")
+                        .style("border-bottom", "1px solid #ecf0f1")
+                        .style("padding-bottom", "20px");
+
+
+
+                    // Setup dimensions
+                    const width = Math.min(window.innerWidth - 40, 1200);
+                    const height = styles.trackHeight + styles.margin.top + styles.margin.bottom;
+                    const innerWidth = width - styles.margin.left - styles.margin.right;
+
+                    // Create SVG for this contig
+                    const svg = visualizationDiv.append("svg")
+                        .attr("width", width)
+                        .attr("height", height);
+
+                    // Create main group
+                    const mainGroup = svg.append("g")
+                        .attr("transform", `translate(${{styles.margin.left}}, ${{styles.margin.top}})`);
+
+                    // Add title
+                    mainGroup.append("text")
+                        .attr("class", "visualization-title")
+                        .attr("x", innerWidth / 2)
+                        .attr("y", -25)
+                        .attr("text-anchor", "middle")
+                        .style("font-family", styles.fonts.primary)
+                        .style("font-size", styles.fonts.size.title)
+                        .style("font-weight", "600")
+                        .text(`Genome Organization - ${{contigId}}`);
+
+                    // Create scales
+                    const xScale = d3.scaleLinear()
+                        .domain([0, parseInt(contigLength)])
+                        .range([0, innerWidth]);
+
+                    // Create track group
+                    const trackGroup = mainGroup.append("g");
+
+                    // Add genome line with gradient
+                    const gradientId = `genomeLineGradient-${{contigId}}`;
+                    const gradient = svg.append("defs")
+                        .append("linearGradient")
+                        .attr("id", gradientId)
+                        .attr("x1", "0%")
+                        .attr("x2", "100%");
+                    gradient.append("stop")
+                        .attr("offset", "0%")
+                        .attr("stop-color", "#2c3e50");
+                    gradient.append("stop")
+                        .attr("offset", "100%")
+                        .attr("stop-color", "#34495e");
+
+                    trackGroup.append("line")
+                        .attr("class", "genome-line")
+                        .attr("x1", 0)
+                        .attr("x2", innerWidth)
+                        .attr("y1", styles.trackHeight / 2)
+                        .attr("y2", styles.trackHeight / 2)
+                        .style("stroke", `url(#${{gradientId}})`)
+                        .style("stroke-width", 3);
+
+                    // Add scale axis
+                    const xAxis = d3.axisBottom(xScale)
+                        .ticks(10)
+                        .tickFormat(d => `${{d.toLocaleString()}}bp`);
+                    
+                    trackGroup.append("g")
+                        .attr("class", "scale-axis")
+                        .attr("transform", `translate(0, ${{styles.trackHeight + 10}})`)
+                        .call(xAxis)
+                        .style("font-family", styles.fonts.primary)
+                        .style("font-size", styles.fonts.size.label);
+
+                    // Create tooltip (one per visualization)
+                    const tooltip = d3.select("body").append("div")
+                        .attr("class", `tooltip-${{contigId}}`)
+                        .style("position", "absolute")
+                        .style("display", "none")
+                        .style("background", "white")
+                        .style("border", "1px solid #ddd")
+                        .style("border-radius", "4px")
+                        .style("padding", "10px")
+                        .style("box-shadow", "2px 2px 6px rgba(0,0,0,0.2)")
+                        .style("font-family", styles.fonts.primary)
+                        .style("font-size", styles.fonts.size.tooltip)
+                        .style("pointer-events", "auto");
+
+                    // Track tooltip state for this visualization
+                    let tooltipTimeout = null;
+                    let activeTooltip = null;
+                    let isTooltipPinned = false;
+
+                    // Function to create tooltip content (same as before)
+                    const createTooltipContent = (orf, hmmHit) => {{
+                        const sequence = orf.sequence || '';
+                        const truncatedSeq = sequence.substring(0, 8) + "..";
+                        const buttonId = `copy-button-${{orf.Query_name.replace(/[^a-zA-Z0-9]/g, '-')}}`;
+                        const feedbackId = `feedback-${{orf.Query_name.replace(/[^a-zA-Z0-9]/g, '-')}}`;
+                        
+                        return `
+                            <div style="font-family: ${{styles.fonts.primary}}">
+                                <strong style="color: #2c3e50">${{orf.Query_name}}</strong><br>
+                                <hr style="border: 1px solid #ecf0f1; margin: 5px 0">
+                                <strong>Position:</strong> ${{orf.start}}-${{orf.end}}<br>
+                                <strong>Type:</strong> ${{orf.type}}<br>
+                                <strong>Length:</strong> ${{orf.length}}bp<br>
+                                <strong>Frame:</strong> ${{orf.frame}}<br>
+                                <strong>Strand:</strong> ${{orf.strand}}<br>
+                                <strong>Codons:</strong> ${{orf.start_codon}} → ${{orf.stop_codon}}<br>
+                                <strong>Sequence:</strong> 
+                                <span style="font-family: monospace">${{truncatedSeq}}</span>
+                                <button 
+                                    id="${{buttonId}}"
+                                    class="copy-button"
+                                    data-sequence="${{sequence}}"
+                                    onclick="handleCopyClick(this)">
+                                    Copy
+                                </button>
+                                <span id="${{feedbackId}}" class="copy-feedback">
+                                    Copied!
+                                </span>
+                                ${{hmmHit ? `
+                                    <hr style="border: 1px solid #ecf0f1; margin: 5px 0">
+                                    <strong style="color: #2c3e50">HMM Hits:</strong><br>
+                                    ${{['RVDB', 'Vfam', 'Pfam', 'EggNOG'].map(db => 
+                                        hmmHit[`${{db}}_TargetID`] ? 
+                                            `<strong>${{db}}:</strong> ${{hmmHit[`${{db}}_TargetID`]}}
+                                            ${{hmmHit[`${{db}}_Description`] ? ` - ${{hmmHit[`${{db}}_Description`]}}` : ''}}<br>` 
+                                        : ''
+                                    ).join('')}}
+                                ` : ''}}
+                            </div>
+                        `;
+                    }};
+
+
+                    // Function to handle copy button click (same as before)
+                    const handleCopy = (sequence, buttonId) => {{
+                        const button = document.getElementById(buttonId);
+                        const feedback = button.nextElementSibling;
+                        
+                        navigator.clipboard.writeText(sequence)
+                            .then(() => {{
+                                button.style.display = 'none';
+                                feedback.style.display = 'inline';
+                                
+                                setTimeout(() => {{
+                                    button.style.display = 'inline';
+                                    feedback.style.display = 'none';
+                                }}, 2000);
+                            }})
+                            .catch(err => {{
+                                console.error('Failed to copy:', err);
+                                feedback.textContent = 'Error copying!';
+                                feedback.style.color = '#e74c3c';
+                                feedback.style.display = 'inline';
+                            }});
+                    }};
+
+                    window.handleCopyClick = function(button) {{
+                        const sequence = button.getAttribute('data-sequence');
+                        const feedbackId = button.id.replace('copy-button-', 'feedback-');
+                        const feedbackElement = document.getElementById(feedbackId);
+                        
+                        navigator.clipboard.writeText(sequence)
+                            .then(() => {{
+                                // Show feedback
+                                button.style.display = 'none';
+                                feedbackElement.style.display = 'inline';
+                                feedbackElement.classList.add('show');
+                                
+                                // Reset after 2 seconds
+                                setTimeout(() => {{
+                                    button.style.display = 'inline';
+                                    feedbackElement.classList.remove('show');
+                                    setTimeout(() => {{
+                                        feedbackElement.style.display = 'none';
+                                    }}, 300);
+                                }}, 2000);
+                            }})
+                            .catch(err => {{
+                                console.error('Failed to copy:', err);
+                                feedbackElement.textContent = 'Error copying!';
+                                feedbackElement.style.color = '#e74c3c';
+                                feedbackElement.style.display = 'inline';
+                                feedbackElement.classList.add('show');
+                            }});
+                    }};
+
+
+                    // Function to show tooltip
+                    const showTooltip = (event, orf) => {{
+                        const hmmHit = data.HMM_hits.find(hit => hit.Query_name === orf.Query_name);
+                        const sequence = orf.sequence || '';
+                        
+                        tooltip
+                            .style("display", "block")
+                            .style("left", (event.pageX + 15) + "px")
+                            .style("top", (event.pageY - 10) + "px")
+                            .html(createTooltipContent(orf, hmmHit));
+
+                        const buttonId = `copy-button-${{orf.Query_name.replace(/[^a-zA-Z0-9]/g, '-')}}`;
+                        const button = document.getElementById(buttonId);
+                        if (button) {{
+                            button.onclick = () => handleCopy(sequence, buttonId);
+                        }}
+
+                        activeTooltip = orf.Query_name;
+                    }};
+
+                    // Function to hide tooltip
+                    const hideTooltip = () => {{
+                        if (!isTooltipPinned) {{
+                            tooltip.style("display", "none");
+                            activeTooltip = null;
+                        }}
+                    }};
+
+                    // Process ORFs
+                    orfs.forEach(orf => {{
+                        const orfGroup = trackGroup.append("g");
+                        const yOffset = orf.frame > 0 ? -20 : 20;
+                        const orfWidth = xScale(orf.end) - xScale(orf.start);
+                        const arrowSize = Math.min(15, orfWidth / 5);
+
+                        // Create arrow-shaped ORF path
+                        const orfPath = orf.strand === "+" ?
+                            `M ${{xScale(orf.start)}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset}}
+                            L ${{xScale(orf.end) - arrowSize}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset}}
+                            L ${{xScale(orf.end)}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset + styles.orfHeight / 2}}
+                            L ${{xScale(orf.end) - arrowSize}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset + styles.orfHeight}}
+                            L ${{xScale(orf.start)}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset + styles.orfHeight}}
+                            Z` :
+                            `M ${{xScale(orf.start)}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset + styles.orfHeight / 2}}
+                            L ${{xScale(orf.start) + arrowSize}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset}}
+                            L ${{xScale(orf.end)}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset}}
+                            L ${{xScale(orf.end)}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset + styles.orfHeight}}
+                            L ${{xScale(orf.start) + arrowSize}} ${{(styles.trackHeight - styles.orfHeight) / 2 + yOffset + styles.orfHeight}}
+                            Z`;
+
+                        // Add ORF shape with interaction
+                        orfGroup.append("path")
+                            .attr("d", orfPath)
+                            .style("fill", styles.colors[orf.type])
+                            .style("filter", "drop-shadow(2px 2px 2px rgba(0,0,0,0.2))")
+                            .style("cursor", "pointer")
+                            .on("mouseover", (event) => {{
+                                isTooltipPinned = false;
+                                showTooltip(event, orf);
+                            }})
+                            .on("mousemove", (event) => {{
+                                if (!isTooltipPinned) {{
+                                    tooltip
+                                        .style("left", (event.pageX + 15) + "px")
+                                        .style("top", (event.pageY - 10) + "px");
+                                }}
+                            }})
+                            .on("mouseout", () => {{
+                                tooltipTimeout = setTimeout(hideTooltip, 10000);
+                            }})
+                            .on("click", (event) => {{
+                                isTooltipPinned = !isTooltipPinned;
+                                if (isTooltipPinned) {{
+                                    showTooltip(event, orf);
+                                    if (tooltipTimeout) {{
+                                    clearTimeout(tooltipTimeout);
+                                    }}
+                                }} else {{
+                                    hideTooltip();
+                                }}
+                                event.stopPropagation();
+                            }});
+                    }});
+
+                    // Handle tooltip hover
+                    tooltip
+                        .on("mouseenter", () => {{
+                            if (tooltipTimeout) {{
+                                clearTimeout(tooltipTimeout);
+                            }}
+                        }})
+                        .on("mouseleave", () => {{
+                            if (!isTooltipPinned) {{
+                                tooltipTimeout = setTimeout(hideTooltip, 10000);
+                            }}
+                        }});
+
+                    // Add BLAST information section
+                    const blastSection = mainGroup.append("g")
+                        .attr("transform", `translate(0, ${{styles.trackHeight + 60}})`);
+
+                    const blastContent = blastSection.append("foreignObject")
+                        .attr("width", innerWidth)
+                        .attr("height", styles.margin.bottom - 60)
+                        .append("xhtml:div")
+                        .style("font-family", styles.fonts.primary)
+                        .style("font-size", styles.fonts.size.label)
+                        .html(`
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 10px;">
+                                <div>
+                                    <strong style="color: #2c3e50; font-size: 14px">BLASTx Results</strong>
+                                    <hr style="border: 1px solid #ecf0f1; margin: 5px 0">
+                                    ${{viralHit.BLASTx_Subject_Title ? `
+                                        <strong>Subject:</strong> ${{viralHit.BLASTx_Subject_Title}}<br>
+                                        <strong>Organism:</strong> ${{viralHit.BLASTx_Organism_Name}}<br>
+                                        <strong>Coverage:</strong> ${{viralHit.BLASTx_Cover}}%<br>
+                                        <strong>Identity:</strong> ${{viralHit.BLASTx_Ident}}%<br>
+                                        <strong>E-value:</strong> ${{viralHit.BLASTx_evalue}}
+                                    ` : 'No BLASTx hits'}}
+                                </div>
+                                <div>
+                                    <strong style="color: #2c3e50; font-size: 14px">BLASTn Results</strong>
+                                    <hr style="border: 1px solid #ecf0f1; margin: 5px 0">
+                                    ${{viralHit.BLASTn_Subject_Title ? `
+                                        <strong>Subject:</strong> ${{viralHit.BLASTn_Subject_Title}}<br>
+                                        <strong>Coverage:</strong> ${{viralHit.BLASTn_Cover}}%<br>
+                                        <strong>Identity:</strong> ${{viralHit.BLASTn_Ident}}%<br>
+                                        <strong>E-value:</strong> ${{viralHit.BLASTn_evalue}}
+                                    ` : 'No BLASTn hits'}}
+                                </div>
+                                <div style="grid-column: span 2">
+                                    <strong style="color: #2c3e50; font-size: 14px">Taxonomy - BLASTx Hit</strong>
+                                    <hr style="border: 1px solid #ecf0f1; margin: 5px 0">
+                                    <strong>Scientific Name:</strong> ${{viralHit.ScientificName}}<br>
+                                    <strong>Kingdom:</strong> ${{viralHit.Kingdom}}<br>
+                                    <strong>Phylum:</strong> ${{viralHit.Phylum}}<br>
+                                    <strong>Class:</strong> ${{viralHit.Class}}<br>
+                                    <strong>Order:</strong> ${{viralHit.Order}}<br>
+                                    <strong>Family:</strong> ${{viralHit.Family}}<br>
+                                    <strong>Species:</strong> ${{viralHit.Species}}<br>
+                                    <strong>Genome:</strong> ${{viralHit.Genome}}<br>
+                                    <strong>TaxID:</strong> ${{viralHit.TaxId}}
+                                </div>
+                            </div>
+                        `);
+                }});
+
+                // index
+                createIndex(data);
+
+                // Close tooltip when clicking outside (global handler)
+                document.addEventListener("click", (event) => {{
+                    if (!event.target.closest(".tooltip") && !event.target.closest("path")) {{
+                        d3.selectAll("[class^='tooltip-']")
+                            .style("display", "none");
+                    }}
+                }});
+            }}
+
+
+            // Modified data loading and initialization
+            document.addEventListener('DOMContentLoaded', function() {{
+                const loadingDiv = document.getElementById('loading');
+                const errorDiv = document.getElementById('error');
+
+                try {{
+
+                    // My data
+                    const data = {jsonDB}
+
+                    loadingDiv.style.display = 'none';
+                    createVisualizations(data);
+                }} catch (error) {{
+                    console.error('Error initializing visualizations:', error);
+                    loadingDiv.style.display = 'none';
+                    errorDiv.style.display = 'block';
+                }}
+            
+
+            }});
+
+        </script>
+    </body>
+    </html>
+    """
+
+    output_file = os.path.join(vvFolder,f"{name}_viralreport.html")
+
+    with open(output_file, "w", encoding="utf-8") as file:
+        file.write(html_content)
 
 
 
@@ -1054,6 +1801,11 @@ def ViralQuest():
         progress_bar.set_description("Generating final table")
         finalTable(args.outdir)
         progress_bar.update(1)
+
+        ### HTML report
+        progress_bar.set_description("Generating HTML report")
+        generate_html_report(args.outdir)
+        progress_bar.update(1)       
 
     time_end = time.time()
     print(f"The pipeline takes {time_end - time_start:.2f} seconds to run.")
