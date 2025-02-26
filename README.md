@@ -8,7 +8,9 @@
     <strong>A pipeline for viral diversity analysis</strong>
   </p>
 </div>
-<br>
+
+
+
 ## HTML Report example output
 [Click here](https://indigo-silva-18.tiiny.site)
 
