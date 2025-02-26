@@ -10,9 +10,11 @@
 </div>
 
 
-  <p align="center">
-### [HTML Report example output](https://indigo-silva-18.tiiny.site)
-  </p>
+<p align="center">
+  <a href="[center](https://indigo-silva-18.tiiny.site)">
+    HTML Viral Report Output
+  </a>  
+</p>
 
 # Setup
 ## Install required packages:
