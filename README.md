@@ -10,9 +10,9 @@
 </div>
 
 
-
+  <p align="center">
 ### [HTML Report example output](https://indigo-silva-18.tiiny.site)
-
+  </p>
 
 # Setup
 ## Install required packages:
