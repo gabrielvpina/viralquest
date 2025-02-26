@@ -10,11 +10,8 @@
 </div>
 
 
-<p align="center">
-  <a href="[center](https://indigo-silva-18.tiiny.site)">
-    HTML Viral Report Output
-  </a>  
-</p>
+### [HTML Viral Report Output](https://indigo-silva-18.tiiny.site)">
+
 
 # Setup
 ## Install required packages:
