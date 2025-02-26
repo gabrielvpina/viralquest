@@ -10,7 +10,7 @@
 </div>
 
 
-### [HTML Viral Report Output](https://indigo-silva-18.tiiny.site)
+### [Example of HTML Viral Report Output (Click Here)](https://indigo-silva-18.tiiny.site)
 
 
 # Setup
