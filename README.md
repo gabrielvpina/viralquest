@@ -11,7 +11,8 @@
 
 
 
-`HTML Report example output` [Click here](https://indigo-silva-18.tiiny.site)
+### HTML Report example output
+[Click here](https://indigo-silva-18.tiiny.site)
 
 
 # Setup
