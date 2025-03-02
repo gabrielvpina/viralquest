@@ -12,8 +12,8 @@ from operator import itemgetter
 from collections import defaultdict
 
 __author__ = 'Gabriel Rodrigues (gvpina.rodrigues@gmail.com)'
-__version__ = '2.5'
-__date__ = 'February 15, 2025'
+__version__ = '2.6'
+__date__ = 'March 02, 2025'
 
 
 def cap3(inputContig, vvFolder):
@@ -66,6 +66,8 @@ def noCAP3(inputContig, vvFolder):
 
     shutil.copy(infile, outfile)
 
+
+
 def filterfasta(vvFolder):
     min_length = 500  
 
@@ -84,24 +86,31 @@ def filterfasta(vvFolder):
     # Contar número total de sequências antes do filtro
     number_originalSeqs = sum(1 for _ in SeqIO.parse(input_fasta, "fasta"))
 
-    # Filtrar e salvar
-    with open(temp_fasta, "w") as output_handle:
-        filtered_seqs = (seq for seq in SeqIO.parse(input_fasta, "fasta") if len(seq.seq) >= min_length)
-        number_filteredSeqs = SeqIO.write(filtered_seqs, output_handle, "fasta")
+    # Filtrar sequências válidas (armazenando em uma lista)
+    filtered_seqs = [seq for seq in SeqIO.parse(input_fasta, "fasta") if len(seq.seq) >= min_length]
+    number_filteredSeqs = len(filtered_seqs)
 
     if number_filteredSeqs == 0:
         print(f"There is no {min_length} bp found.")
+        return number_originalSeqs, 0  # Retorna sem sobrescrever o original
 
-    # Sobrescrever o arquivo original
-    os.replace(temp_fasta, input_fasta)
+    # Salvar no arquivo temporário e substituir o original
+    with open(temp_fasta, "w") as output_handle:
+        SeqIO.write(filtered_seqs, output_handle, "fasta")
+
+    os.replace(temp_fasta, input_fasta)  # Substitui o arquivo original
 
     return number_originalSeqs, number_filteredSeqs
+
+
+
+
 
 def renameFasta(vvFolder):
     fastaIndex_table = []
 
     for fasta in os.listdir(vvFolder):
-        if fasta.endswith(".fasta"):
+        if fasta.endswith("_vq.fasta"):
             input_fasta = os.path.join(vvFolder, fasta)
 
     mod_headers = []
@@ -133,6 +142,7 @@ viral_compress = base64.b64decode(viral_index)
 metadata_viral = lzma.decompress(viral_compress)
 viral_data = json.loads(metadata_viral)
 viral_metadata = pd.DataFrame(viral_data)
+
 
 def findorf(vvFolder):
 
@@ -200,6 +210,82 @@ def ORFs(vvFolder, numORF):
     output_fasta = os.path.join(vvFolder, f"{name}_biggest_ORFs.fasta")
     with open(output_fasta, "w") as output_handle:
         SeqIO.write(biggest_orfs, output_handle, "fasta")
+
+
+
+
+def filterBLAST(vvFolder, database, CPU, diamond_path):
+    fileFasta = os.path.join(vvFolder, "*_vq.fasta")
+    viral_files = glob.glob(fileFasta)
+
+    for viral_file in viral_files:
+        infile = viral_file
+        sample = os.path.basename(viral_file).replace("_vq.fasta", "")
+        outfile = os.path.join(vvFolder,sample)
+
+        if diamond_path == "None":
+
+          Dblastx_input = [
+          "diamond", "blastx",
+          "--db", database,
+          "--query", infile,
+          "--threads", str(CPU),
+          "--outfmt", "6", "qseqid", "qlen", "slen", "qcovhsp", "pident", "evalue", "stitle",
+          "--max-target-seqs", "1",
+          "--out", f"{outfile}_ref.tsv"
+          ]
+
+          try:
+              # Executa o comando com subprocess.run
+              subprocess.run(Dblastx_input, check=True, capture_output=True)
+        
+          except subprocess.CalledProcessError as e:
+              # Captura e exibe informações sobre o erro
+              print(f"Error: Diamond BLASTx failed with return code {e.returncode}.")
+              print(f"Command output: {e.stdout}")
+              print(f"Command error: {e.stderr}")
+
+
+        else:
+          Dblastx_input = [
+          diamond_path, "blastx",
+          "--db", database,
+          "--query", infile,
+          "--threads", str(CPU),
+          "--outfmt", "6", "qseqid", "qlen", "slen", "qcovhsp", "pident", "evalue", "stitle",
+          "--max-target-seqs", "1",
+          "--out", f"{outfile}_ref.tsv"
+          ]
+          
+          subprocess.run(Dblastx_input, check=True, capture_output=True)
+
+    fasta_files = glob.glob(os.path.join(vvFolder, "*_vq.fasta"))
+    if not fasta_files:
+        raise FileNotFoundError("No file with '_vq.fasta' suffix.")
+
+    fasta_file = fasta_files[0]
+
+    hmm_table_file = f"{outfile}_ref.tsv"
+
+    hmmTable = pd.read_csv(hmm_table_file, sep="\t")
+    hmmTable.columns = ["QueryID","QueryLenght","SubjLenght","Cover","Identity","Evalue","SubjTitle"]  
+    query_names = set(hmmTable['QueryID'])
+    output1 = f"{outfile}_ref.csv"
+    hmmTable.to_csv(output1, index=False)
+    
+
+    output_file = f"{outfile}_filtered.fasta"
+
+    def filter_seqs(input_fasta, output_fasta, queries):
+        with open(output_fasta, "w") as out:
+            for record in SeqIO.parse(input_fasta, "fasta"):
+                if record.id in queries:
+                    SeqIO.write(record, out, "fasta")
+
+    filter_seqs(fasta_file, output_file, query_names)
+
+
+
 
 
 
@@ -626,15 +712,47 @@ def generateFasta(vvFolder):
 
 
 
+def mergeFASTA(vvFolder):
+
+    name_files = glob.glob(os.path.join(vvFolder,  "*_vq.fasta"))
+    name_file = name_files[0]
+    name = os.path.basename(name_file).replace("_vq.fasta","")
+
+    # Arquivos de entrada
+    fasta1 = os.path.join(vvFolder,f"{name}_viralHMM.fasta")
+    fasta2 = os.path.join(vvFolder,f"{name}_filtered.fasta")
+
+    # Arquivo de saída
+    outfile = os.path.join(vvFolder,f"{name}_viralSeq.fasta")
+
+    # Dicionário para armazenar sequências únicas
+    unique_seqs = {}
+
+    # Função para ler e armazenar sequências únicas
+    def add_fasta(file):
+        for record in SeqIO.parse(file, "fasta"):
+            seq_str = str(record.seq)  
+            if seq_str not in unique_seqs:
+                unique_seqs[seq_str] = record 
+
+    # Processa os arquivos de entrada
+    add_fasta(fasta1)
+    add_fasta(fasta2)
+
+    # Escreve as sequências únicas no novo arquivo FASTA
+    SeqIO.write(unique_seqs.values(), outfile, "fasta")    
+
+
+
 
 def blastn(vvFolder, database, CPU):
 
-    fileFasta = os.path.join(vvFolder, "*_viralHMM.fasta")
+    fileFasta = os.path.join(vvFolder, "*_viralSeq.fasta")
     viral_files = glob.glob(fileFasta)
 
     for viral_file in viral_files:
         infile = viral_file
-        sample = os.path.basename(viral_file).replace("_viralHMM.fasta", "")
+        sample = os.path.basename(viral_file).replace("_viralSeq.fasta", "")
         outfile = os.path.join(vvFolder,sample)
 
         blastn_input = ["blastn","-query",infile,"-db",database,"-out",f"{outfile}_blastn.tsv","-outfmt",
@@ -647,12 +765,12 @@ def blastn(vvFolder, database, CPU):
 
 def diamond_blastx(vvFolder, database, CPU, diamond_path):
 
-    fileFasta = os.path.join(vvFolder, "*_viralHMM.fasta")
+    fileFasta = os.path.join(vvFolder, "*_viralSeq.fasta")
     viral_files = glob.glob(fileFasta)
 
     for viral_file in viral_files:
         infile = viral_file
-        sample = os.path.basename(viral_file).replace("_viralHMM.fasta", "")
+        sample = os.path.basename(viral_file).replace("_viralSeq.fasta", "")
         outfile = os.path.join(vvFolder,sample)
 
         if diamond_path == "None":
@@ -808,6 +926,9 @@ def finalTable(vvFolder):
   shutil.move(os.path.join(vvFolder,f"{name}_RVDB.csv"),mydir_path)
   shutil.move(os.path.join(vvFolder,f"{name}_Vfam.csv"),mydir_path)
   shutil.move(os.path.join(vvFolder,f"{name}_EggNOG.csv"),mydir_path)
+  shutil.move(os.path.join(vvFolder,f"{name}_ref.tsv"),mydir_path)
+
+  
 
 
   ################## CREATE JSON #####################
@@ -815,6 +936,10 @@ def finalTable(vvFolder):
   hmmTable_path = os.path.join(vvFolder,f"{name}_hmm.csv")
   hmmTable = pd.read_csv(hmmTable_path)
   valid_query_ids = set(hmmTable["QueryID"].unique())
+
+  refTable_path = os.path.join(vvFolder,f"{name}_ref.csv")
+  refTable = pd.read_csv(refTable_path)
+  valid_query_ids = valid_query_ids.union(set(refTable["QueryID"].unique()))
 
 
   def csv_to_json(csv_file_path1, csv_file_path2):
@@ -905,6 +1030,7 @@ def finalTable(vvFolder):
   for fasta_text in os.listdir(vvFolder):
     if fasta_text.endswith(".fasta"):
       shutil.move(os.path.join(vvFolder, fasta_text), fastaDir_path)
+
 
 def generate_html_report(vvFolder):
     jsonData = glob.glob(os.path.join(vvFolder, "*.json"))
@@ -1677,6 +1803,9 @@ parser = argparse.ArgumentParser(description=usage)
 parser.add_argument("-in", "--input", type=str, dest="input", required=True,
                     help="Fasta file containing non-host contigs to be analyzed.")
 
+parser.add_argument("-ref", "--viralRef", type=str, dest="viralRef", required=True,
+                    help="RefSeq Viral Protein Release file.")                  
+
 parser.add_argument("-out", "--outdir", type=str, required=True,
                     help="Directory where the output files will be saved.")
 
@@ -1730,6 +1859,7 @@ print(f"Input file: {args.input}")
 print(f"Output directory: {args.outdir}")
 print(f"Number of ORFs: {args.numORFs}")
 print(f"CPU cores: {args.cpu}")
+print(f"RefSeq Viral: {args.viralRef}")
 if args.blastn:
   print(f"BLASTn database: {args.blastn}")
 if args.diamond_blastx:
@@ -1772,6 +1902,7 @@ def ViralQuest():
         if args.cap3:
             progress_bar.set_description("Processing FASTA")
             cap3(args.input, args.outdir)
+            filterfasta(args.outdir)
             renameFasta(args.outdir)
             progress_bar.update(1)
         else:
@@ -1785,6 +1916,11 @@ def ViralQuest():
         progress_bar.set_description("Finding ORFs")
         findorf(args.outdir)
         ORFs(args.outdir, args.numORFs)
+        progress_bar.update(1)
+
+        ### Filter w/ refseq sequences
+        progress_bar.set_description("Filter seqs")
+        filterBLAST(args.outdir, args.viralRef, args.cpu, args.diamond_path)
         progress_bar.update(1)
 
         ### HMM Search
@@ -1814,7 +1950,7 @@ def ViralQuest():
         generateFasta(args.outdir)
         progress_bar.update(1)
         
-
+        mergeFASTA(args.outdir)
 
         ### BLAST
         if args.diamond_blastx:
