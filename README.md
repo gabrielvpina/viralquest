@@ -20,7 +20,7 @@ conda install -c bioconda cap3 diamond blast
 pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 ```
 # Workflow
-### [Example of HTML Viral Report Output (Click Here)](https://indigo-silva-18.tiiny.site)
+### [Example of HTML Viral Report Output (Click Here)](https://chocolate-yetta-73.tiiny.site)
 * Suport to Reference Viral Database (RVDB) HMM Profile version 29.0
 * Suport to Protein Family Database (Pfam) HMM Profile version 37.2
 * Suport to Vfam HMM Profile version 228
