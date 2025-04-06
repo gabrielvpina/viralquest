@@ -25,6 +25,7 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 
 ## Setup
+### Python Enviroment and Packages
 Create conda enviroment
 ```
 conda create -n viralquest python=3.12.6
@@ -37,12 +38,14 @@ Install required packages (conda):
 ```
 conda install -c bioconda cap3 diamond blast
 ```
-Pip modules:
+Install required packages (pip):
 ```
 pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 ```
-Install databases
 
+## Install Databases
+### RefSeq Viral release
+The RefSeq viral release is a curated collection of viral genome and protein sequences provided by the NCBI Reference Sequence (RefSeq) database. It includes high-quality, non-redundant, and well-annotated reference sequences for viruses, maintained and updated regularly by NCBI. The required file is `viral.1.protein.faa.gz`, you can download via [this link](https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.1.protein.faa.gz).
 
 
 
