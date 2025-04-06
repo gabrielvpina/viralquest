@@ -12,6 +12,7 @@
 - [Introduction](#introduction)
 - [Setup](#setup)
 - [Install  Databases](#install-databases)
+- [Output Files](#output-files)
 
 
 ## Introduction
@@ -44,7 +45,7 @@ pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 
 
 
-### Output
+## Output Files
 This is the output files:
 ```
 ├── fasta-files
