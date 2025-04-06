@@ -157,7 +157,7 @@ gunzip Pfam-A.hmm.gz
 Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 
 ## Output Files
-This is the output files:
+This is the output directory structure:
 ```
 SAMPLE/
 ├── fasta-files
