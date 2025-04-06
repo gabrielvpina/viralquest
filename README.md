@@ -13,6 +13,7 @@
 - [Setup](#setup)
 - [Install  Databases](#install-databases)
 - [Viral HMM Models](#viral-hmm-models)
+- [Install Pfam Model](#install-pfam-model)
 - [Output Files](#output-files)
 
 
@@ -53,7 +54,13 @@ The RefSeq viral release is a curated collection of viral genome and protein seq
 The BLAST nr (non-redundant protein) and nt (nucleotide) databases are essential resources for viral identification. The nt database is useful for identifying viral genomes or transcripts using nucleotide similarity, while nr is especially powerful for detecting and annotating viral proteins, even in divergent or novel viruses, through translated searches like blastx.
 Download the nr/nt databases in fasta format via [this link](https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/)
 - The file `nr.gz` is the nr database in FASTA
+```
+wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz &
+```
 - The `nt.gz` file correspond to nt.fasta
+```
+wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz &
+```
 
 ## Viral HMM Models
 The `Vfam` and `eggNOG` models needs to be 
@@ -133,6 +140,9 @@ wget https://rvdb-prot.pasteur.fr/files/U-RVDBv29.0-prot.hmm.xz
 unxz -v U-RVDBv29.0-prot.hmm.xz
 ```
 Now it's possible to use the `U-RVDBv29.0-prot.hmm` file in the **ViralQuest** pipeline.
+
+## Install Pfam Model
+
 
 ## Output Files
 This is the output files:
