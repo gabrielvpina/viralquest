@@ -52,18 +52,31 @@ pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 
 ### RefSeq Viral release
 The RefSeq viral release is a curated collection of viral genome and protein sequences provided by the NCBI Reference Sequence (RefSeq) database. It includes high-quality, non-redundant, and well-annotated reference sequences for viruses, maintained and updated regularly by NCBI. The required file is `viral.1.protein.faa.gz`, download via [this link](https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.1.protein.faa.gz).
+- Convert the fasta file to a Diamond Database (.dmnd):
+```
+diamond makedb --in viral.1.protein.faa --db viralDB.dmnd
+```
 
 ### BLAST nr/nt Databases
 The BLAST nr (non-redundant protein) and nt (nucleotide) databases are essential resources for viral identification. The nt database is useful for identifying viral genomes or transcripts using nucleotide similarity, while nr is especially powerful for detecting and annotating viral proteins, even in divergent or novel viruses, through translated searches like blastx.
 Download the nr/nt databases in fasta format via [this link](https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/)
-- The file `nr.gz` is the nr database in FASTA
+### nr database
+1) The file `nr.gz` is the nr database in FASTA
 ```
-wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz 
+wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
 ```
-- The `nt.gz` file correspond to nt.fasta
+2) Decompress the file with `gunzip nr.gz` command.
+
+3) Convert the fasta file to a Diamond Database (.dmnd):
+```
+diamond makedb --in nr --db nr.dmnd
+```
+### nt database
+1) The `nt.gz` file correspond to nt.fasta
 ```
 wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz 
 ```
+2) Decompress the file with `gunzip nt.gz` command.
 
 ## Viral HMM Models
 The `Vfam` and `eggNOG` models are spliced in small models, we must join them in unified models.
