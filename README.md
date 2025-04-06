@@ -10,8 +10,8 @@
 </div>
 
 # Index
-- [Introduction] (#introduction)
-- [Setup] (#setup)
+- [Introduction](#introduction)
+- [Setup](#setup)
 
 
 ## Introduction
