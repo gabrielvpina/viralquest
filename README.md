@@ -25,20 +25,23 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 
 ## Setup
-### Create conda enviroment
+Create conda enviroment
 ```
 conda create -n viralquest python=3.12.6
 ```
-### Install required packages (conda):
-
+Activate conda enviroment
+```
+conda activate viralquest
+```
+Install required packages (conda):
 ```
 conda install -c bioconda cap3 diamond blast
 ```
-### Pip modules:
+Pip modules:
 ```
 pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 ```
-## Install databases
+Install databases
 
 
 
