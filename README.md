@@ -24,6 +24,8 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 <img src="https://github.com/gabrielvpina/viralquest/blob/main/images/VQscheme.png" width="850" height="1220">
 
+### HTML Output
+[Example of HTML Viral Report Output (Click Here)](https://chocolate-yetta-73.tiiny.site)
 
 
 ## Setup
@@ -55,11 +57,11 @@ The BLAST nr (non-redundant protein) and nt (nucleotide) databases are essential
 Download the nr/nt databases in fasta format via [this link](https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/)
 - The file `nr.gz` is the nr database in FASTA
 ```
-wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz &
+wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz 
 ```
 - The `nt.gz` file correspond to nt.fasta
 ```
-wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz &
+wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz 
 ```
 
 ## Viral HMM Models
@@ -81,7 +83,7 @@ tar -xzvf vfam.hmm.tar.gz
 ```
 cat *.hmm >> vfam228.hmm
 ```
-Now it's possible to use the `vfam228.hmm` file in the **ViralQuest** pipeline.
+Now it's possible to use the `vfam228.hmm` file in the **ViralQuest** pipeline!
 
 ### eggNOG Viral HMM
 The eggNOG viral OGs HMM models are part of the eggNOG (evolutionary genealogy of genes: Non-supervised Orthologous Groups) resource and are designed to identify and annotate viral genes and proteins based on orthologous groups (OGs).
@@ -124,7 +126,7 @@ chmod +x download_eggNOG.sh && ./download_eggNOG.sh
 cat eggNOG/hmm_files/*.hmm >> eggNOG.hmm
 ```
 
-Now it's possible to use the `eggNOG.hmm` file in the **ViralQuest** pipeline.
+Now it's possible to use the `eggNOG.hmm` file in the **ViralQuest** pipeline!
 
 ### RVDB Viral HMM
 The Reference Viral Database (RVDB) is a curated collection of viral sequences, and its protein HMM models—RVDB-prot and RVDB-prot-HMM—are designed to enhance the detection and annotation of viral proteins.
@@ -139,42 +141,45 @@ wget https://rvdb-prot.pasteur.fr/files/U-RVDBv29.0-prot.hmm.xz
 ```
 unxz -v U-RVDBv29.0-prot.hmm.xz
 ```
-Now it's possible to use the `U-RVDBv29.0-prot.hmm` file in the **ViralQuest** pipeline.
+Now it's possible to use the `U-RVDBv29.0-prot.hmm` file in the **ViralQuest** pipeline!
 
 ## Install Pfam Model
-
+Pfam is a widely used database of protein families, each represented by a profile Hidden Markov Model (HMM). These models are built from curated multiple sequence alignments and represent conserved domains or full-length protein families. Download the **version 37.2**.
+1) Download the `Pfam-A.hmm.gz` via [this link](https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam37.2/). 
+- Or download via Terminal:
+```
+wget https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam37.2/Pfam-A.hmm.gz
+```
+2) Decompress the file:
+```
+gunzip Pfam-A.hmm.gz
+``` 
+Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 
 ## Output Files
 This is the output files:
 ```
 ├── fasta-files
-│   ├── SRR1234_all_ORFs.fasta
-│   ├── SRR1234_biggest_ORFs.fasta
-│   ├── SRR1234_filtered.fasta
-│   ├── SRR1234_orig.fasta
-│   ├── SRR1234_pfam_ORFs.fasta
-│   ├── SRR1234_viralHMM.fasta
-│   ├── SRR1234_viralSeq.fasta
-│   └── SRR1234_vq.fasta
+│   ├── SAMPLE_all_ORFs.fasta
+│   ├── SAMPLE_biggest_ORFs.fasta
+│   ├── SAMPLE_filtered.fasta
+│   ├── SAMPLE_orig.fasta
+│   ├── SAMPLE_pfam_ORFs.fasta
+│   ├── SAMPLE_viralHMM.fasta
+│   ├── SAMPLE_viralSeq.fasta
+│   └── SAMPLE_vq.fasta
 ├── hit_tables
-│   ├── SRR1234_blastn.tsv
-│   ├── SRR1234_blastx.tsv
-│   ├── SRR1234_EggNOG.csv
-│   ├── SRR1234_ref.tsv
-│   ├── SRR1234_RVDB.csv
-│   └── SRR1234_Vfam.csv
-├── SRR1234_all-BLAST.csv
-├── SRR1234_bestSeqs.json
-├── SRR1234_hmm.csv
-├── SRR1234.log
-├── SRR1234_ref.csv
-├── SRR1234_viral-BLAST.csv
-└── SRR1234_visualization.html
+│   ├── SAMPLE_blastn.tsv
+│   ├── SAMPLE_blastx.tsv
+│   ├── SAMPLE_EggNOG.csv
+│   ├── SAMPLE_ref.tsv
+│   ├── SAMPLE_RVDB.csv
+│   └── SAMPLE_Vfam.csv
+├── SAMPLE_all-BLAST.csv
+├── SAMPLE_bestSeqs.json
+├── SAMPLE_hmm.csv
+├── SAMPLE.log
+├── SAMPLE_ref.csv
+├── SAMPLE_viral-BLAST.csv
+└── SAMPLE_visualization.html
 ```
-
-
-[Example of HTML Viral Report Output (Click Here)](https://chocolate-yetta-73.tiiny.site)
-* Suport to Reference Viral Database (RVDB) HMM Profile version 29.0
-* Suport to Protein Family Database (Pfam) HMM Profile version 37.2
-* Suport to Vfam HMM Profile version 228
-* Suport to EggNOG Virus HMM Profile version 4.5
