@@ -180,10 +180,10 @@ python viralquest.py -in SAMPLE.fasta \
 -dX path/to/nr/diamond/database/nr.dmnd \
 -rvdb /path/to/RVDB/hmm/U-RVDBv29.0-prot.hmm \
 -eggnog /path/to/eggNOG/hmm/eggNOG.hmm \
--vfam /path/to/Vfam/hmm/Vfam-228.hmm \
+-vfam /path/to/Vfam/hmm/Vfam228.hmm \
 -pfam /path/to/Pfam/hmm/Pfam-A.hmm \
 -cpu 4 -maxORFs 5 \
--out testeMaxORFs
+-out SAMPLE
 ```
 
 ## Output Files
