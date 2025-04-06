@@ -159,6 +159,7 @@ Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 ## Output Files
 This is the output files:
 ```
+SAMPLE/
 ├── fasta-files
 │   ├── SAMPLE_all_ORFs.fasta
 │   ├── SAMPLE_biggest_ORFs.fasta
