@@ -81,7 +81,7 @@ tar -xzvf vfam.hmm.tar.gz
 ```
 3) Unify all `.hmm` models in one model:
 ```
-cat *.hmm >> vfam228.hmm
+cat hmm/*.hmm >> vfam228.hmm
 ```
 Now it's possible to use the `vfam228.hmm` file in the **ViralQuest** pipeline!
 
