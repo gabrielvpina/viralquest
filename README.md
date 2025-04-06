@@ -65,7 +65,7 @@ wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz
 ```
 
 ## Viral HMM Models
-The `Vfam` and `eggNOG` models needs to be 
+The `Vfam` and `eggNOG` models are spliced in small models, we must join them in unified models.
 
 ### Vfam HMM
 The VFam HMM models are profile Hidden Markov Models (HMMs) specifically designed for the identification of viral proteins. 
