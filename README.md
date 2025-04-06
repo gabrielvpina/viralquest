@@ -80,7 +80,7 @@ Now it's possible to use the `vfam228.hmm` file in the **ViralQuest** pipeline.
 The eggNOG viral OGs HMM models are part of the eggNOG (evolutionary genealogy of genes: Non-supervised Orthologous Groups) resource and are designed to identify and annotate viral genes and proteins based on orthologous groups (OGs).
 
 **Steps to Install**
-1) Download the viral OGs in the eggNOG Database via [this link](http://eggnog45.embl.de/#/app/viruses). The HMM models download are in the last column.
+1) Download each viral OGs in the eggNOG Database via [this link](http://eggnog45.embl.de/#/app/viruses). The HMM models download are in the last column.
 
 2) Or download the data via this BASH script:
 ```
