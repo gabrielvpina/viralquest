@@ -27,7 +27,7 @@ pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 * Suport to EggNOG Virus HMM Profile version 4.5
 
 
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/images/VQscheme.png" width="850" height="1120">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/images/VQscheme.png" width="850" height="1220">
 
 
 
