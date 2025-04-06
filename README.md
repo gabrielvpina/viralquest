@@ -185,7 +185,7 @@ python viralquest.py -in SAMPLE.fasta \
 -cpu 4 -maxORFs 5 \
 -out SAMPLE
 ```
-> ⚠️ **Warning:** Check the verion of Diamond aligner with `diamond --version` to ensure that the databases use the same version of the diamond blastx executable. The argument `dmnd_path` can be used to select a specific version of a diamond binary to be used in the pipeline.
+> ⚠️ **Warning:** Check the version of Diamond aligner with `diamond --version` to ensure that the databases use the same version of the diamond blastx executable. The argument `dmnd_path` can be used to select a specific version of a diamond binary to be used in the pipeline.
 
 ## Output Files
 This is the output directory structure:
