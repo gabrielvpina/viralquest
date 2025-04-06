@@ -112,7 +112,27 @@ Save as `download_eggNOG.sh`. Now let's execute:
 ```
 chmod +x download_eggNOG.sh && ./download_eggNOG.sh
 ```
+3) Now join all result files:
+```
+cat eggNOG/hmm_files/*.hmm >> eggNOG.hmm
+```
 
+Now it's possible to use the `eggNOG.hmm` file in the **ViralQuest** pipeline.
+
+### RVDB Viral HMM
+The Reference Viral Database (RVDB) is a curated collection of viral sequences, and its protein HMM models—RVDB-prot and RVDB-prot-HMM—are designed to enhance the detection and annotation of viral proteins.
+
+**Download RVDB hmm model**
+1) Visit the RVDB Protein database via [this link](https://rvdb-prot.pasteur.fr/) and download the hmm model version 29.0.
+2) Or download directly via linux termnial:
+```
+wget https://rvdb-prot.pasteur.fr/files/U-RVDBv29.0-prot.hmm.xz
+```
+3) Decompress the model:
+```
+unxz -v U-RVDBv29.0-prot.hmm.xz
+```
+Now it's possible to use the `U-RVDBv29.0-prot.hmm` file in the **ViralQuest** pipeline.
 
 ## Output Files
 This is the output files:
