@@ -174,7 +174,6 @@ Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 This is the arguments of **ViralQuest**:
 ```
 python viralquest.py -in SAMPLE.fasta \
--dmnd_path /path/to/diamond/executable/diamond \
 -ref viral/release/viralDB.dmnd \
 -N path/to/nt/database/nt.fasta \
 -dX path/to/nr/diamond/database/nr.dmnd \
@@ -182,6 +181,7 @@ python viralquest.py -in SAMPLE.fasta \
 -eggnog /path/to/eggNOG/hmm/eggNOG.hmm \
 -vfam /path/to/Vfam/hmm/Vfam228.hmm \
 -pfam /path/to/Pfam/hmm/Pfam-A.hmm \
+-dmnd_path /path/to/diamond/executable/diamond \
 -cpu 4 -maxORFs 5 \
 -out SAMPLE
 ```
