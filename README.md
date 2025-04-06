@@ -9,9 +9,9 @@
   </p>
 </div>
 
-# Index
 - [Introduction](#introduction)
 - [Setup](#setup)
+- [Install  Databases](#install-databases)
 
 
 ## Introduction
@@ -37,7 +37,42 @@ conda install -c bioconda cap3 diamond blast
 ```
 pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
 ```
-### Workflow
+## Install databases
+
+
+
+
+
+
+### Output
+This is the output files:
+```
+├── fasta-files
+│   ├── SRR1234_all_ORFs.fasta
+│   ├── SRR1234_biggest_ORFs.fasta
+│   ├── SRR1234_filtered.fasta
+│   ├── SRR1234_orig.fasta
+│   ├── SRR1234_pfam_ORFs.fasta
+│   ├── SRR1234_viralHMM.fasta
+│   ├── SRR1234_viralSeq.fasta
+│   └── SRR1234_vq.fasta
+├── hit_tables
+│   ├── SRR1234_blastn.tsv
+│   ├── SRR1234_blastx.tsv
+│   ├── SRR1234_EggNOG.csv
+│   ├── SRR1234_ref.tsv
+│   ├── SRR1234_RVDB.csv
+│   └── SRR1234_Vfam.csv
+├── SRR1234_all-BLAST.csv
+├── SRR1234_bestSeqs.json
+├── SRR1234_hmm.csv
+├── SRR1234.log
+├── SRR1234_ref.csv
+├── SRR1234_viral-BLAST.csv
+└── SRR1234_visualization.html
+```
+
+
 [Example of HTML Viral Report Output (Click Here)](https://chocolate-yetta-73.tiiny.site)
 * Suport to Reference Viral Database (RVDB) HMM Profile version 29.0
 * Suport to Protein Family Database (Pfam) HMM Profile version 37.2
