@@ -27,7 +27,7 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 ### HTML Output
 [Example of HTML Viral Report Output (Click Here)](https://chocolate-yetta-73.tiiny.site)
-> ⚠️ **Warning:** The HTML file may have some errors in resolutions below 1920x1080px.
+> ⚠️ **Warning:** The HTML file may have some bugs in resolutions below 1920x1080p. We are working in it 😅
 
 ## Setup
 ### Python Enviroment and Packages
