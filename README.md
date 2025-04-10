@@ -174,21 +174,36 @@ Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 This is the arguments of **ViralQuest**:
 ```
 options:
-  -h, --help            show this help message and exit
-  -in INPUT, --input INPUT Fasta file containing non-host contigs to be analyzed.
-  -ref VIRALREF, --viralRef VIRALREF RefSeq Viral Protein Release file.
-  -out OUTDIR, --outdir OUTDIR Directory where the output files will be saved.
-  --cap3                Activate CAP3 fasta assembly: Deactivated by default.
-  -N BLASTN, --blastn BLASTN Path to the BLASTn database for nucleotide sequence comparison.
-  -dX DIAMOND_BLASTX, --diamond_blastx DIAMOND_BLASTX Path to the Diamond BLASTx database for protein sequence comparison.
-  -rvdb RVDB_HMM, --rvdb_hmm RVDB_HMM Path to the RVDB hmm for conserved domain analysis.
-  -eggnog EGGNOG_HMM, --eggnog_hmm EGGNOG_HMM Path to the EggNOG hmm for conserved domain analysis.
-  -vfam VFAM_HMM, --vfam_hmm VFAM_HMM Path to the Vfam hmm for conserved domain analysis.
-  -pfam PFAM_HMM, --pfam_hmm PFAM_HMM Path to the Pfam hmm for conserved domain analysis.
-  -maxORFs MAXORFS, --maxORFs MAXORFS Number of largest ORFs to select from the input sequences.
-  -cpu CPU, --cpu CPU   Number of CPU cores to be used for computation.
-  -dmnd_path DIAMOND_PATH, --diamond_path DIAMOND_PATH OPTIONAL - Diamond bin application path for BLAST databases: path/to/./diamond
-  -v, --version         show program's version number and exit
+  -h, --help
+show this help message and exit
+  -in, --input
+Fasta file containing non-host contigs to be analyzed.
+  -ref, --viralRef
+RefSeq Viral Protein Release file.
+  -out, --outdir
+Directory where the output files will be saved.
+  --cap3
+Activate CAP3 fasta assembly: Deactivated by default.
+  -N, --blastn
+Path to the BLASTn database for nucleotide sequence comparison.
+  -dX, --diamond_blastx
+Path to the Diamond BLASTx database for protein sequence comparison.
+  -rvdb, --rvdb_hmm
+Path to the RVDB hmm for conserved domain analysis.
+  -eggnog , --eggnog_hmm
+Path to the EggNOG hmm for conserved domain analysis.
+  -vfam, --vfam_hmm
+Path to the Vfam hmm for conserved domain analysis.
+  -pfam, --pfam_hmm
+Path to the Pfam hmm for conserved domain analysis.
+  -maxORFs, --maxORFs
+Number of largest ORFs to select from the input sequences.
+  -cpu, --cpu
+Number of CPU cores to be used for computation.
+  -dmnd_path DIAMOND_PATH, --diamond_path
+OPTIONAL - Diamond bin application path for BLAST databases: path/to/./diamond
+  -v, --version
+show program's version number and exit
 
 #####################################################
 
