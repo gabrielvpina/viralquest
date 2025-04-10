@@ -171,7 +171,7 @@ gunzip Pfam-A.hmm.gz
 Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 
 ## Usage
-This is the arguments of **ViralQuest**:
+The required arguments of **ViralQuest**:
 ```
 options:
   -h, --help
@@ -182,8 +182,6 @@ Fasta file containing non-host contigs to be analyzed.
 RefSeq Viral Protein Release file.
   -out, --outdir
 Directory where the output files will be saved.
-  --cap3
-Activate CAP3 fasta assembly: Deactivated by default.
   -N, --blastn
 Path to the BLASTn database for nucleotide sequence comparison.
   -dX, --diamond_blastx
@@ -199,11 +197,13 @@ Path to the Pfam hmm for conserved domain analysis.
   -maxORFs, --maxORFs
 Number of largest ORFs to select from the input sequences.
   -cpu, --cpu
-Number of CPU cores to be used for computation.
+Number of CPU threads.
+
+------------------- OPTIONAL --------------------------------
   -dmnd_path DIAMOND_PATH, --diamond_path
-OPTIONAL - Diamond bin application path for BLAST databases: path/to/./diamond
-  -v, --version
-show program's version number and exit
+OPTIONAL - Diamond bin application path for BLAST databases: path/to/diamond
+  --cap3
+OPTIONAL - Activate CAP3 fasta assembly: Deactivated by default.
 
 #####################################################
 
