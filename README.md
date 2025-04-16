@@ -71,7 +71,7 @@ wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
 ```
 diamond makedb --in nr --db nr.dmnd
 ```
-> ⚠️ **Warning:** Check the version of diamond, make sure is the same version used to build the RefSeq Viral Release `.dmnd` file.
+> ⚠️ **Warning:** Check the version of diamond, make sure that is the same version used to build the RefSeq Viral Release `.dmnd` file.
 
 ### nt database
 1) The `nt.gz` file correspond to nt.fasta
