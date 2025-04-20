@@ -45,7 +45,7 @@ conda install -c bioconda cap3 diamond blast
 ```
 Install required packages (pip):
 ```
-pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer
+pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer rich
 ```
 
 ## Install Databases
