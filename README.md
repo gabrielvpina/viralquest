@@ -208,8 +208,15 @@ OPTIONAL - Diamond bin application path for BLAST databases: path/to/diamond
 OPTIONAL - Activate CAP3 fasta assembly: Deactivated by default.
 
 #####################################################
-
-python viralquest.py -in SAMPLE.fasta \
+```
+### Query example
+First, make the `viralquest.py` an executable:
+```
+chmod +x viralquest.py
+```
+This is a structure of viralquest query:
+```
+./viralquest.py -in SAMPLE.fasta \
 -ref viral/release/viralDB.dmnd \
 -N path/to/nt/database/nt.fasta \
 -dX path/to/nr/diamond/database/nr.dmnd \
