@@ -9,13 +9,8 @@
   </p>
 </div>
 
-- [Introduction](#introduction)
-- [Setup](#setup)
-- [Install  Databases](#install-databases)
-- [Viral HMM Models](#viral-hmm-models)
-- [Install Pfam Model](#install-pfam-model)
-- [Usage](#usage)
-- [Output Files](#output-files)
+- [Setup](#setup) - [Install  Databases](#install-databases) - [Viral HMM Models](#viral-hmm-models)
+- [Install Pfam Model](#install-pfam-model) - [Usage](#usage) - [Output Files](#output-files)
 
 
 ## Introduction
