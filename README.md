@@ -285,6 +285,7 @@ You can use either a local LLM (via Ollama) or an API key to process and integra
 ```
 pip install langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
 ```
+Install this modules in the existent viralquest conda enviroment.
 ### Local LLM (via Ollama)
 You can run a local LLM on your machine using Ollama. However, it is important to select a model that is well-suited for processing the data. In our tests, the smallest model that provided acceptable performance was qwen3:4b. Therefore, we recommend using this model as a minimum requirement for running this type of analysis.
 
