@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/images/headerLogo.png" width="530" height="180">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/headerLogo.png" width="530" height="180">
   
   <p align="center">
     <strong>A pipeline for viral diversity analysis</strong>
@@ -22,7 +22,7 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 
 
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/images/VQscheme.png" width="850" height="1220">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/vqNEW.png" width="850" height="1220">
 
 ### HTML Output
 [Example of HTML Viral Report Output (Click Here)](https://apricot-diannne-42.tiiny.site)
@@ -259,4 +259,4 @@ SAMPLE/
 └── SAMPLE_visualization.html
 ```
 **Sequence Viewer in HTML file**
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/images/print_vq2.png" width="850" height="500">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/print_vq2.png" width="850" height="500">
