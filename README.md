@@ -15,6 +15,7 @@
 - [Install Pfam Model](#install-pfam-model)
 - [Usage](#usage)
 - [Output Files](#output-files)
+- [AI Summary](#ai-summary)
 
 
 ## Introduction
