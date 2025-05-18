@@ -40,12 +40,16 @@ conda activate viralquest
 ```
 Install required packages (conda):
 ```
-conda install -c bioconda cap3 diamond blast
+conda install -c bioconda cap3 blast
 ```
 Install required packages (pip):
 ```
 pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer rich
 ```
+
+### Install Diamond aligner
+To run ViralQuest is necessary install Diamond aligner (> v2.0.0), you can download the binary via (GitHub repository)[https://github.com/bbuchfink/diamond] or directly via (this link)[https://github.com/bbuchfink/diamond/releases/download/v2.1.11/diamond-linux64.tar.gz]. After download the binary `diamond`, just copy to `/usr/bin/` directory or use the `dmnd_path` argument directly in viralquest. 
+
 
 ## Install Databases
 
@@ -70,7 +74,7 @@ wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
 ```
 diamond makedb --in nr --db nr.dmnd
 ```
-> ⚠️ **Warning:** Check the version of diamond, make sure that is the same version used to build the RefSeq Viral Release `.dmnd` file.
+> ⚠️ **Warning:** Check the version of diamond, make sure that is the same version or higher then the used to build the RefSeq Viral Release `.dmnd` file.
 
 ### nt database
 1) The `nt.gz` file correspond to nt.fasta
@@ -174,46 +178,58 @@ Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 ## Usage
 The required arguments of **ViralQuest**:
 ```
-options:
-  -h, --help
-show this help message and exit
-  -in, --input
-Fasta file containing non-host contigs to be analyzed.
-  -ref, --viralRef
-RefSeq Viral Protein Release file.
-  -out, --outdir
-Directory where the output files will be saved.
-  -N, --blastn
-Path to the BLASTn database for nucleotide sequence comparison.
-  -dX, --diamond_blastx
-Path to the Diamond BLASTx database for protein sequence comparison.
-  -rvdb, --rvdb_hmm
-Path to the RVDB hmm for conserved domain analysis.
-  -eggnog , --eggnog_hmm
-Path to the EggNOG hmm for conserved domain analysis.
-  -vfam, --vfam_hmm
-Path to the Vfam hmm for conserved domain analysis.
-  -pfam, --pfam_hmm
-Path to the Pfam hmm for conserved domain analysis.
-  -maxORFs, --maxORFs
-Number of largest ORFs to select from the input sequences.
-  -cpu, --cpu
-Number of CPU threads.
+------------------- REQUIRED --------------------------------
 
-------------------- OPTIONAL --------------------------------
-  -dmnd_path DIAMOND_PATH, --diamond_path
-OPTIONAL - Diamond bin application path for BLAST databases: path/to/diamond
-  --cap3
-OPTIONAL - Activate CAP3 fasta assembly: Deactivated by default.
+-in/--input
+    Fasta file containing non-host contigs to be analyzed.
+-ref/--viralRef
+    RefSeq Viral Protein Release file.
+-out/--outdir
+    Directory where the output files will be saved.
+-N/--blastn
+    Path to the BLASTn database for nucleotide sequence comparison.
+-dX/--diamond_blastx
+    Path to the Diamond BLASTx database for protein sequence comparison.
+-rvdb/--rvdb_hmm
+    Path to the RVDB hmm for conserved domain analysis.
+-eggnog/--eggnog_hmm
+    Path to the EggNOG hmm for conserved domain analysis.
+-vfam/--vfam_hmm
+    Path to the Vfam hmm for conserved domain analysis.
+-pfam/--pfam_hmm
+    Path to the Pfam hmm for conserved domain analysis.
+-maxORFs/--maxORFs
+    Number of largest ORFs to select from the input sequences.
+-cpu/--cpu
+    Number of CPU threads.
 
-#####################################################
+
+-dmnd_path/--diamond_path
+    OPTIONAL - Diamond bin application path for BLAST databases: path/to/diamond
+--cap3
+    OPTIONAL - Activate CAP3 fasta assembly: Deactivated by default.
+
+------------------- MERGE REPORTS ---------------------------
+
+--merge-json
+    Merge JSON files in a directory to create a general ViralQuest HTML report.
+    When used, other arguments are ignored.
+
+------------------- AI SUMMARY (OPTIONAL) --------------------
+
+--model-type 
+    Type of model to use for analysis (ollama, openai, anthropic, google).
+--model-name
+    Name of the model (e.g., "qwen3:4b" for ollama, "gpt-3.5-turbo" for OpenAI).
+--api-key
+    API key for cloud models (required for OpenAI, Anthropic, Google).
 ```
 ### Query example
 First, make the `viralquest.py` an executable:
 ```
 chmod +x viralquest.py
 ```
-This is a structure of viralquest query:
+This is a structure of viralquest query (without AI summary resource):
 ```
 ./viralquest.py -in SAMPLE.fasta \
 -ref viral/release/viralDB.dmnd \
@@ -260,3 +276,8 @@ SAMPLE/
 ```
 **Sequence Viewer in HTML file**
 <img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/print_vq2.png" width="850" height="500">
+
+## AI Summary
+It's possible use a Local LLM (via ollama) or an API Key to process and combine the actual viral data (BLAST result + HMM characterization) with 
+### Install necessary pip modules
+
