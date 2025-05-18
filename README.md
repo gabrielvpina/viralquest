@@ -279,6 +279,14 @@ SAMPLE/
 <img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/print_vq2.png" width="850" height="500">
 
 ## AI Summary
-It's possible use a Local LLM (via ollama) or an API Key to process and combine the actual viral data (BLAST result + HMM characterization) with 
-### Install necessary pip modules
+You can use either a local LLM (via Ollama) or an API key to process and integrate viral data — such as BLAST results and HMM characterizations — with the internal ViralQuest database, which includes viral family information from ICTV (International Committee on Taxonomy of Viruses) and ViralZone. This database contains information on over 200 viral families, including details such as host range, geographic distribution, viral vectors, and more. The LLM can summarize this information to provide a broader and more insightful perspective on the viral data.
 
+### Install necessary pip modules
+```
+pip install langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
+```
+### Local LLM (via Ollama)
+You can use a local LLM in your machine via ollama to run this analysis, however is necessary to select a model that fits well with the data. In our analysis, the minimum model that have an acceptable performance in returns the information was `qwen3:4b`, so we recomend this model at minimum to run this kind of analysis. 
+
+### LLM assist with API
+The API supported in ViralQuest is `Google`, `OpenAI` and `Anthropic`, for models of Gemini, ChatGPT and Claude - respectivly. It's necessary to check the usage terms of each one service due the amount of requests in a short period of time (3 to 15 requests in less than a minute, depending of viral sequences number)
