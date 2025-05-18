@@ -13,9 +13,10 @@
 - [Install  Databases](#install-databases)
 - [Viral HMM Models](#viral-hmm-models)
 - [Install Pfam Model](#install-pfam-model)
+- [AI Summary](#ai-summary)
 - [Usage](#usage)
 - [Output Files](#output-files)
-- [AI Summary](#ai-summary)
+
 
 
 ## Introduction
