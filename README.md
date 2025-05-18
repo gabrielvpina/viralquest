@@ -50,7 +50,7 @@ pip install orfipy pandas Bio more-itertools pyfiglet pyhmmer rich
 ```
 
 ### Install Diamond aligner
-To run ViralQuest is necessary install Diamond aligner (> v2.0.0), you can download the binary via [GitHub repository](https://github.com/bbuchfink/diamond) or directly via [this link](https://github.com/bbuchfink/diamond/releases/download/v2.1.11/diamond-linux64.tar.gz). After download the binary `diamond`, just copy to `/usr/bin/` directory or use the `dmnd_path` argument directly in viralquest. 
+To run ViralQuest is necessary install Diamond aligner (> v2.0.0), you can download the binary via [GitHub repository](https://github.com/bbuchfink/diamond) or directly via [this link](https://github.com/bbuchfink/diamond/releases/download/v2.1.11/diamond-linux64.tar.gz). After download the binary `diamond`, just copy to user binary directory with `cp diamond /usr/bin/` directory or use the `dmnd_path` argument directly in viralquest. 
 
 
 ## Install Databases
