@@ -22,7 +22,7 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 
 
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/vqNEW.png" width="850" height="1220">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/vqNEW.png" width="850" height="1120">
 
 ### HTML Output
 [Example of HTML Viral Report Output (Click Here)](https://apricot-diannne-42.tiiny.site)
