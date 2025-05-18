@@ -286,7 +286,28 @@ You can use either a local LLM (via Ollama) or an API key to process and integra
 pip install langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
 ```
 ### Local LLM (via Ollama)
-You can use a local LLM in your machine via ollama to run this analysis, however is necessary to select a model that fits well with the data. In our analysis, the minimum model that have an acceptable performance in returns the information was `qwen3:4b`, so we recomend this model at minimum to run this kind of analysis. 
+You can run a local LLM on your machine using Ollama. However, it is important to select a model that is well-suited for processing the data. In our tests, the smallest model that provided acceptable performance was qwen3:4b. Therefore, we recommend using this model as a minimum requirement for running this type of analysis.
 
-### LLM assist with API
-The API supported in ViralQuest is `Google`, `OpenAI` and `Anthropic`, for models of Gemini, ChatGPT and Claude - respectivly. It's necessary to check the usage terms of each one service due the amount of requests in a short period of time (3 to 15 requests in less than a minute, depending of viral sequences number)
+### LLM Assistance via API
+ViralQuest supports API-based LLMs from Google, OpenAI, and Anthropic, corresponding to the Gemini, ChatGPT, and Claude models, respectively. Please review the usage terms of each service, as a high number of requests in a short period (e.g., 3 to 15 requests per minute, depending on the number of viral sequences) may be subject to rate limits or usage restrictions.
+
+### LLM in ViralQuest
+The arguments available to use local or API LLMs are:
+```
+--model-type 
+    Type of model to use for analysis (ollama, openai, anthropic, google).
+--model-name
+    Name of the model (e.g., "qwen3:4b" for ollama, "gpt-3.5-turbo" for OpenAI).
+--api-key
+    API key for cloud models (required for OpenAI, Anthropic, Google).
+```
+This is a use of the arguments with a **Local LLM (Ollama)**:
+```
+--model-type ollama --model-name "qwen3:8b"
+```
+Now using an **API key**:
+```
+--model-type google --model-name "gemini-2.0-flash" --api-key "12345-My-API-Key_HERE67890"
+```
+
+A tutorial to install a local LLM via ollama is available in the wiki page.
