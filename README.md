@@ -176,6 +176,41 @@ gunzip Pfam-A.hmm.gz
 ``` 
 Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 
+## AI Summary
+You can use either a local LLM (via Ollama) or an API key to process and integrate viral data — such as BLAST results and HMM characterizations — with the internal ViralQuest database, which includes viral family information from ICTV (International Committee on Taxonomy of Viruses) and ViralZone. This database contains information on over 200 viral families, including details such as host range, geographic distribution, viral vectors, and more. The LLM can summarize this information to provide a broader and more insightful perspective on the viral data.
+
+### Install necessary pip modules
+```
+pip install langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
+```
+Install this modules in the existent viralquest conda enviroment.
+### Local LLM (via Ollama)
+You can run a local LLM on your machine using Ollama. However, it is important to select a model that is well-suited for processing the data. In our tests, the smallest model that provided acceptable performance was `qwen3:4b`. Therefore, we recommend using this model as a minimum requirement for running this type of analysis.
+
+### LLM Assistance via API
+ViralQuest supports API-based LLMs from `Google`, `OpenAI`, and `Anthropic`, corresponding to the Gemini, ChatGPT, and Claude models, respectively. Please review the usage terms of each service, as a high number of requests in a short period (e.g., 3 to 15 requests per minute, depending on the number of viral sequences) may be subject to rate limits or usage restrictions.
+
+### LLM in ViralQuest
+The arguments available to use local or API LLMs are:
+```
+--model-type 
+    Type of model to use for analysis (ollama, openai, anthropic, google).
+--model-name
+    Name of the model (e.g., "qwen3:4b" for ollama, "gpt-3.5-turbo" for OpenAI).
+--api-key
+    API key for cloud models (required for OpenAI, Anthropic, Google).
+```
+This is a use of the arguments with a **Local LLM (Ollama)**:
+```
+--model-type ollama --model-name "qwen3:8b"
+```
+Now using an **API key**:
+```
+--model-type google --model-name "gemini-2.0-flash" --api-key "12345-My-API-Key_HERE67890"
+```
+
+A tutorial to install a local LLM via ollama is available in the wiki page.
+
 ## Usage
 The required arguments of **ViralQuest**:
 ```
@@ -277,38 +312,3 @@ SAMPLE/
 ```
 **Sequence Viewer in HTML file**
 <img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/print_vq2.png" width="850" height="500">
-
-## AI Summary
-You can use either a local LLM (via Ollama) or an API key to process and integrate viral data — such as BLAST results and HMM characterizations — with the internal ViralQuest database, which includes viral family information from ICTV (International Committee on Taxonomy of Viruses) and ViralZone. This database contains information on over 200 viral families, including details such as host range, geographic distribution, viral vectors, and more. The LLM can summarize this information to provide a broader and more insightful perspective on the viral data.
-
-### Install necessary pip modules
-```
-pip install langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
-```
-Install this modules in the existent viralquest conda enviroment.
-### Local LLM (via Ollama)
-You can run a local LLM on your machine using Ollama. However, it is important to select a model that is well-suited for processing the data. In our tests, the smallest model that provided acceptable performance was `qwen3:4b`. Therefore, we recommend using this model as a minimum requirement for running this type of analysis.
-
-### LLM Assistance via API
-ViralQuest supports API-based LLMs from `Google`, `OpenAI`, and `Anthropic`, corresponding to the Gemini, ChatGPT, and Claude models, respectively. Please review the usage terms of each service, as a high number of requests in a short period (e.g., 3 to 15 requests per minute, depending on the number of viral sequences) may be subject to rate limits or usage restrictions.
-
-### LLM in ViralQuest
-The arguments available to use local or API LLMs are:
-```
---model-type 
-    Type of model to use for analysis (ollama, openai, anthropic, google).
---model-name
-    Name of the model (e.g., "qwen3:4b" for ollama, "gpt-3.5-turbo" for OpenAI).
---api-key
-    API key for cloud models (required for OpenAI, Anthropic, Google).
-```
-This is a use of the arguments with a **Local LLM (Ollama)**:
-```
---model-type ollama --model-name "qwen3:8b"
-```
-Now using an **API key**:
-```
---model-type google --model-name "gemini-2.0-flash" --api-key "12345-My-API-Key_HERE67890"
-```
-
-A tutorial to install a local LLM via ollama is available in the wiki page.
