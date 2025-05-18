@@ -287,10 +287,10 @@ pip install langchain langchain-core langchain-ollama langchain-openai langchain
 ```
 Install this modules in the existent viralquest conda enviroment.
 ### Local LLM (via Ollama)
-You can run a local LLM on your machine using Ollama. However, it is important to select a model that is well-suited for processing the data. In our tests, the smallest model that provided acceptable performance was qwen3:4b. Therefore, we recommend using this model as a minimum requirement for running this type of analysis.
+You can run a local LLM on your machine using Ollama. However, it is important to select a model that is well-suited for processing the data. In our tests, the smallest model that provided acceptable performance was `qwen3:4b`. Therefore, we recommend using this model as a minimum requirement for running this type of analysis.
 
 ### LLM Assistance via API
-ViralQuest supports API-based LLMs from Google, OpenAI, and Anthropic, corresponding to the Gemini, ChatGPT, and Claude models, respectively. Please review the usage terms of each service, as a high number of requests in a short period (e.g., 3 to 15 requests per minute, depending on the number of viral sequences) may be subject to rate limits or usage restrictions.
+ViralQuest supports API-based LLMs from `Google`, `OpenAI`, and `Anthropic`, corresponding to the Gemini, ChatGPT, and Claude models, respectively. Please review the usage terms of each service, as a high number of requests in a short period (e.g., 3 to 15 requests per minute, depending on the number of viral sequences) may be subject to rate limits or usage restrictions.
 
 ### LLM in ViralQuest
 The arguments available to use local or API LLMs are:
