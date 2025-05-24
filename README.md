@@ -262,13 +262,9 @@ The required arguments of **ViralQuest**:
     API key for cloud models (required for OpenAI, Anthropic, Google).
 ```
 ### Query example
-First, make the `viralquest.py` an executable:
-```
-chmod +x viralquest.py
-```
 This is a structure of viralquest query (without AI summary resource):
 ```
-./viralquest.py -in SAMPLE.fasta \
+python viralquest.py -in SAMPLE.fasta \
 -ref viral/release/viralDB.dmnd \
 -N path/to/nt/database/nt.fasta \
 -dX path/to/nr/diamond/database/nr.dmnd \
