@@ -239,12 +239,6 @@ The required arguments of **ViralQuest**:
     Path to the BLASTn database for nucleotide sequence comparison.
 -dX/--diamond_blastx
     Path to the Diamond BLASTx database for protein sequence comparison.
--rvdb/--rvdb_hmm
-    Path to the RVDB hmm for conserved domain analysis.
--eggnog/--eggnog_hmm
-    Path to the EggNOG hmm for conserved domain analysis.
--vfam/--vfam_hmm
-    Path to the Vfam hmm for conserved domain analysis.
 -pfam/--pfam_hmm
     Path to the Pfam hmm for conserved domain analysis.
 -maxORFs/--maxORFs
@@ -252,6 +246,16 @@ The required arguments of **ViralQuest**:
 -cpu/--cpu
     Number of CPU threads.
 
+--------- VIRAL HMM (at least one is required) --------------
+
+-rvdb/--rvdb_hmm
+    Path to the RVDB hmm for conserved domain analysis.
+-eggnog/--eggnog_hmm
+    Path to the EggNOG hmm for conserved domain analysis.
+-vfam/--vfam_hmm
+    Path to the Vfam hmm for conserved domain analysis.
+
+------------------- OPTIONAL ---------------------------
 
 -dmnd_path/--diamond_path
     OPTIONAL - Diamond bin application path for BLAST databases: path/to/diamond
@@ -266,12 +270,13 @@ The required arguments of **ViralQuest**:
 
 ------------------- AI SUMMARY (OPTIONAL) --------------------
 
---model-type 
+--model-type
     Type of model to use for analysis (ollama, openai, anthropic, google).
 --model-name
     Name of the model (e.g., "qwen3:4b" for ollama, "gpt-3.5-turbo" for OpenAI).
 --api-key
     API key for cloud models (required for OpenAI, Anthropic, Google).
+
 ```
 ### Query example
 This is a structure of viralquest query (without AI summary resource):
