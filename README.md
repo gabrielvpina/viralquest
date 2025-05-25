@@ -262,20 +262,20 @@ The required arguments of **ViralQuest**:
 --cap3
     OPTIONAL - Activate CAP3 fasta assembly: Deactivated by default.
 
-------------------- MERGE REPORTS ---------------------------
-
---merge-json
-    Merge JSON files in a directory to create a general ViralQuest HTML report.
-    When used, other arguments are ignored.
-
 ------------------- AI SUMMARY (OPTIONAL) --------------------
 
---model-type
+--model-type 
     Type of model to use for analysis (ollama, openai, anthropic, google).
 --model-name
     Name of the model (e.g., "qwen3:4b" for ollama, "gpt-3.5-turbo" for OpenAI).
 --api-key
     API key for cloud models (required for OpenAI, Anthropic, Google).
+
+------------------- MERGE REPORTS ---------------------------
+
+--merge-json
+    Merge JSON files in a directory to create a general ViralQuest HTML report.
+    When used, other arguments are ignored.
 
 ```
 ### Query example
