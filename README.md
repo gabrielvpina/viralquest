@@ -86,6 +86,18 @@ wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nt.gz
 2) Decompress the file with `gunzip nt.gz` command.
 
 ## Viral HMM Models
+### Important note
+Hidden Markov Model (HMM) models are essential for identifying divergent viral sequences and refining sequence selection.
+
+For this task, three models are available:
+
+- RVDB (Reference Viral DataBase) Protein
+- Vfam
+- eggNOG
+
+At least one of these models is necessary to run the pipeline. However, it's recommended to use all three concurrently.
+
+
 The `Vfam` and `eggNOG` models are spliced in small models, we must join them in unified models.
 
 ### Vfam HMM
