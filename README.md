@@ -289,8 +289,7 @@ python viralquest.py -in SAMPLE.fasta \
 -eggnog /path/to/eggNOG/hmm/eggNOG.hmm \
 -vfam /path/to/Vfam/hmm/Vfam228.hmm \
 -pfam /path/to/Pfam/hmm/Pfam-A.hmm \
--dmnd_path /path/to/diamond/executable/diamond \
--cpu 4 -maxORFs 5 \
+-cpu 4 -maxORFs 4 \
 -out SAMPLE
 ```
 > ⚠️ **Warning:** Check the version of Diamond aligner with `diamond --version` to ensure that the databases use the same version of the diamond blastx executable. The argument `dmnd_path` can be used to select a specific version of a diamond binary to be used in the pipeline.
