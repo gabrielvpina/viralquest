@@ -222,7 +222,7 @@ Now using an **API key**:
 --model-type google --model-name "gemini-2.0-flash" --api-key "12345-My-API-Key_HERE67890"
 ```
 
-A tutorial to install a local LLM via ollama is available in the [wiki](https://github.com/gabrielvpina/viralquest/wiki/Setup-AI-Summary-resource) page.
+A tutorial to install a local LLM via ollama or Google Gemini free API is available in the [wiki](https://github.com/gabrielvpina/viralquest/wiki/Setup-AI-Summary-resource) page.
 
 ## Usage
 The required arguments of **ViralQuest**:
