@@ -194,7 +194,7 @@ You can use either a local LLM (via Ollama) or an API key to process and integra
 
 ### Install necessary pip modules
 ```
-pip install langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
+pip install ollama langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
 ```
 Install this modules in the existent viralquest conda enviroment.
 ### Local LLM (via Ollama)
