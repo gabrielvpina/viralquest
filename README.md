@@ -60,10 +60,6 @@ Now you can test and run the `viralquest.py` to check if all dependencies are in
 python viralquest.py --version
 ```
 
-### Install Diamond aligner
-Before run the pipeline, check the version of diamond using `diamond --version` command, install Diamond aligner (> v2.0.0), this version may not be available in conda packages. Alternatively, you can download the binary file via [GitHub repository](https://github.com/bbuchfink/diamond) or directly via [this link](https://github.com/bbuchfink/diamond/releases/download/v2.1.11/diamond-linux64.tar.gz). After download the binary `diamond`, just copy to user binary directory with `cp diamond /usr/bin/` directory or use the `dmnd_path` argument directly in viralquest. 
-
-
 ## Install Databases
 
 ### RefSeq Viral release
