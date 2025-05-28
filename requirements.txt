@@ -1,0 +1,17 @@
+# Core dependencies
+orfipy
+pandas
+biopython
+more-itertools
+pyfiglet
+pyhmmer
+rich
+
+# LLM dependencies
+ollama
+langchain
+langchain-core
+langchain-ollama
+langchain-openai
+langchain-anthropic
+langchain-google-genai
