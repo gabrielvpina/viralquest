@@ -43,7 +43,7 @@ conda activate viralquest
 ```
 Install required packages (conda):
 ```
-conda install -c bioconda cap3 blast diamond
+conda install -c bioconda cap3 blast diamond=2.1.11
 ```
 Clone the repository from GitHub:
 ```
