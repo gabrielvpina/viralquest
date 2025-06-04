@@ -35,7 +35,7 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 ### Python Enviroment and Packages
 Create conda enviroment
 ```
-conda create -n viralquest
+conda create -n viralquest python=3.12
 ```
 Activate conda enviroment
 ```
