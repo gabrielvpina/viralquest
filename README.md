@@ -32,15 +32,6 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 ## Setup
 ### Download the repository
-Clone the repository from GitHub:
-```
-git clone https://github.com/gabrielvpina/viralquest.git
-```
-Now go to the directory and install the pip packages from `requirements.txt`:
-```
-cd viralquest
-pip install -r requirements.txt
-```
 ### Python Enviroment and Packages
 Create conda enviroment
 ```
@@ -53,6 +44,15 @@ conda activate viralquest
 Install required packages (conda):
 ```
 conda install -c bioconda cap3 blast diamond
+```
+Clone the repository from GitHub:
+```
+git clone https://github.com/gabrielvpina/viralquest.git
+```
+Now go to the directory and install the pip packages from `requirements.txt`:
+```
+cd viralquest
+pip install -r requirements.txt
 ```
 ### Run code
 Now you can test and run the `viralquest.py` to check if all dependencies are installed:
