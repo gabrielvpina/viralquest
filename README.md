@@ -31,9 +31,35 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 > ⚠️ **Warning:** The HTML file may have some bugs in resolutions below 1920x1080p.
 
 ## Setup
-### Conda is required to install all the dependencies
+
+### Docker install
+Clone the repository from GitHub:
+```
+git clone https://github.com/gabrielvpina/viralquest.git
+cd viralquest
+```
+Build the Dockerfile:
+```
+docker build -t viralquest .
+```
+Create an alias to use viralquest:
+```
+alias viralquest='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'
+```
+OR save the alias, if is necessary log out the session:
+```
+echo "alias viralquest='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'" >> ~/.bashrc
+```
+Verify if it works:
+```
+viralquest --help
+```
+> **Note**: Docker instalation is still under development, some of the debugs and responses of CLI interface are unavailable.
+
+
+### Conda install (Manual install)
 You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
-### Python Enviroment and Packages
+
 Create conda enviroment
 ```
 conda create -n viralquest python=3.12
@@ -44,7 +70,15 @@ conda activate viralquest
 ```
 Install required packages (conda):
 ```
-conda install -c bioconda cap3 blast diamond=2.1.11
+conda install -c bioconda cap3 blast
+```
+Install Diamond aligner
+```
+wget https://github.com/bbuchfink/diamond/releases/download/v2.1.12/diamond-linux64.tar.gz
+tar -xzvf diamond-linux64.tar.gz
+chmod +x diamond
+sudo cp diamond /usr/bin/
+rm diamond-linux64.tar.gz
 ```
 Clone the repository from GitHub:
 ```
@@ -58,7 +92,7 @@ pip install -r requirements.txt
 ### Run code
 Now you can test and run the `viralquest.py` to check if all dependencies are installed:
 ```
-python viralquest.py --version
+python viralquest.py --help
 ```
 
 ## Install Databases
