@@ -32,7 +32,7 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 ## Setup
 
-### Docker install
+### Install via Docker
 Clone the repository from GitHub:
 ```
 git clone https://github.com/gabrielvpina/viralquest.git
@@ -57,7 +57,7 @@ viralquest --help
 > **Note**: Docker instalation is still under development, some of the debugs and responses of CLI interface are unavailable.
 
 
-### Conda install (Manual install)
+### Install via conda (Manual install)
 You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
 
 Create conda enviroment
@@ -77,7 +77,7 @@ Install Diamond aligner
 wget https://github.com/bbuchfink/diamond/releases/download/v2.1.12/diamond-linux64.tar.gz
 tar -xzvf diamond-linux64.tar.gz
 chmod +x diamond
-sudo cp diamond /usr/bin/
+cp diamond $CONDA_PREFIX/bin/
 rm diamond-linux64.tar.gz
 ```
 Clone the repository from GitHub:
@@ -93,6 +93,17 @@ pip install -r requirements.txt
 Now you can test and run the `viralquest.py` to check if all dependencies are installed:
 ```
 python viralquest.py --help
+```
+Convert the `viralquest.py` in a executable:
+```
+# read as executable
+chmod +x viralquest.py
+# copy to conda binaries
+cp viralquest.py $CONDA_PREFIX/bin/
+```
+Now it's possible to execute directly:
+```
+viralquest.py --help
 ```
 
 ## Install Databases
