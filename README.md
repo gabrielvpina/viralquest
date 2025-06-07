@@ -32,6 +32,34 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 ## Setup
 
+### Install via conda (recomended)
+You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
+
+Create conda enviroment
+```
+conda create -n viralquest python=3.12
+```
+Activate conda enviroment
+```
+conda activate viralquest
+```
+Clone the repository from GitHub:
+```
+git clone https://github.com/gabrielvpina/viralquest.git
+```
+Go to directory:
+```
+cd viralquest
+```
+Execute the `setup.py` script:
+```
+python setup.py
+```
+Check if ViralQuest is installed:
+```
+viralquest.py --help
+```
+
 ### Install via Docker
 Clone the repository from GitHub:
 ```
@@ -44,67 +72,17 @@ docker build -t viralquest .
 ```
 Create an alias to use viralquest:
 ```
-alias viralquest='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'
+alias viralquest.py='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'
 ```
 OR save the alias, if is necessary log out the session:
 ```
-echo "alias viralquest='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'" >> ~/.bashrc
+echo "alias viralquest.py='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'" >> ~/.bashrc
 ```
 Verify if it works:
 ```
-viralquest --help
-```
-> **Note**: Docker instalation is still under development, some of the debugs and responses of CLI interface are unavailable.
-
-
-### Install via conda (Manual install)
-You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
-
-Create conda enviroment
-```
-conda create -n viralquest python=3.12
-```
-Activate conda enviroment
-```
-conda activate viralquest
-```
-Install required packages (conda):
-```
-conda install -c bioconda cap3 blast
-```
-Install Diamond aligner
-```
-wget https://github.com/bbuchfink/diamond/releases/download/v2.1.12/diamond-linux64.tar.gz
-tar -xzvf diamond-linux64.tar.gz
-chmod +x diamond
-cp diamond $CONDA_PREFIX/bin/
-rm diamond-linux64.tar.gz
-```
-Clone the repository from GitHub:
-```
-git clone https://github.com/gabrielvpina/viralquest.git
-```
-Now go to the directory and install the pip packages from `requirements.txt`:
-```
-cd viralquest
-pip install -r requirements.txt
-```
-### Run code
-Now you can test and run the `viralquest.py` to check if all dependencies are installed:
-```
-python viralquest.py --help
-```
-Convert the `viralquest.py` in a executable:
-```
-# read as executable
-chmod +x viralquest.py
-# copy to conda binaries
-cp viralquest.py $CONDA_PREFIX/bin/
-```
-Now it's possible to execute directly:
-```
 viralquest.py --help
 ```
+> **Note**: Docker instalation is still under development, some of the debugs and responses of CLI interface are unavailable.
 
 ## Install Databases
 
