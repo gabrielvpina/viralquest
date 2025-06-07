@@ -292,10 +292,10 @@ OUTPUT_sample/
 │   ├── SAMPLE_EggNOG.csv
 │   ├── SAMPLE_hmm.csv
 │   └── SAMPLE_ref.csv
-├── SAMPLE_bestSeqs.json # JSON with BLAST, HMM and ORFs information
-├── SAMPLE.log # Some parameters used in the execution of the pipeline
-├── SAMPLE_viral-BLAST.csv # BLAST result of viral sequences found
-├── SAMPLE_viral.fa # FASTA of viral sequences found
+├── SAMPLE_bestSeqs.json      # JSON with BLAST, HMM and ORFs information
+├── SAMPLE.log                # Some parameters used in the execution of the pipeline
+├── SAMPLE_viral-BLAST.csv    # BLAST result of viral sequences found
+├── SAMPLE_viral.fa           # FASTA of viral sequences found
 └── SAMPLE_visualization.html # HTML report
 ```
 **Sequence Viewer in HTML file**
