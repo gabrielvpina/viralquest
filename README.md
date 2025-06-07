@@ -273,7 +273,9 @@ python viralquest.py -in SAMPLE.fasta \
 ## Output Files
 This is the output directory structure:
 ```
-SAMPLE/
+INPUT: SAMPLE.fasta
+
+OUTPUT_sample/
 ├── fasta-files
 │   ├── SAMPLE_all_ORFs.fasta
 │   ├── SAMPLE_biggest_ORFs.fasta
@@ -284,19 +286,17 @@ SAMPLE/
 │   ├── SAMPLE_viralSeq.fasta
 │   └── SAMPLE_vq.fasta
 ├── hit_tables
+│   ├── SAMPLE_all-BLAST.csv
 │   ├── SAMPLE_blastn.tsv
 │   ├── SAMPLE_blastx.tsv
 │   ├── SAMPLE_EggNOG.csv
-│   ├── SAMPLE_ref.tsv
-│   ├── SAMPLE_RVDB.csv
-│   └── SAMPLE_Vfam.csv
-├── SAMPLE_all-BLAST.csv
-├── SAMPLE_bestSeqs.json
-├── SAMPLE_hmm.csv
-├── SAMPLE.log
-├── SAMPLE_ref.csv
-├── SAMPLE_viral-BLAST.csv
-└── SAMPLE_visualization.html
+│   ├── SAMPLE_hmm.csv
+│   └── SAMPLE_ref.csv
+├── SAMPLE_bestSeqs.json # JSON with BLAST, HMM and ORFs information
+├── SAMPLE.log # Some parameters used in the execution of the pipeline
+├── SAMPLE_viral-BLAST.csv # BLAST result of viral sequences found
+├── SAMPLE_viral.fa # FASTA of viral sequences found
+└── SAMPLE_visualization.html # HTML report
 ```
 **Sequence Viewer in HTML file**
 <img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/print_vq2.png" width="850" height="500">
