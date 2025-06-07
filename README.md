@@ -32,7 +32,7 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 ## Setup
 
-### Install via conda (recomended)
+### Install via conda (recommended)
 You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
 
 Create conda enviroment
