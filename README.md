@@ -46,9 +46,6 @@ conda activate viralquest
 Clone the repository from GitHub:
 ```
 git clone https://github.com/gabrielvpina/viralquest.git
-```
-Go to directory:
-```
 cd viralquest
 ```
 Execute the `setup.py` script:
