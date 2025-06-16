@@ -13,7 +13,7 @@ This analysis explores the host response to Human Coronavirus 229E (HCoV-229E) i
 
 - Title: ZBTB7A promotes virus-host homeostasis during human coronavirus 229E infection I
 - SRA Run Accession: `SRR18182068`
-- 
+
 **Abstract Summary:**
   
 This study identifies the ZBTB7A protein as a key factor in promoting cellular survival during an HCoV-229E infection.
