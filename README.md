@@ -29,6 +29,7 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 ### HTML Output
 [Example of HTML Viral Report Output (Click Here)](https://aqua-cristi-28.tiiny.site)
 > ⚠️ **Warning:** The HTML file may have some bugs in resolutions below 1920x1080p.
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/screenshot_vq_COV.png" width="850" height="500">
 
 ## Setup
 
@@ -301,5 +302,3 @@ OUTPUT_sample/
 ├── SAMPLE_viral.fa           # FASTA of viral sequences found
 └── SAMPLE_visualization.html # HTML report
 ```
-**Sequence Viewer in HTML file**
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/print_vq2.png" width="850" height="500">
