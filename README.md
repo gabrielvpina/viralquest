@@ -54,7 +54,7 @@ cd viralquest
 ```
 Execute the `setup.py` script:
 ```
-python install.py
+python setup.py
 ```
 Check if ViralQuest is installed:
 ```

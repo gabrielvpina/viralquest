@@ -54,4 +54,4 @@ where = ["."]
 include = ["viralquest*"]
 
 [tool.setuptools.package-data]
-"*" = ["bin/*", "misc/*"]
+"viralquest" = ["bin/*", "misc/*"]
