@@ -1,0 +1,14 @@
+orfipy==0.0.4
+pandas==2.2.3
+biopython==1.84
+more-itertools
+pyfiglet
+pyhmmer==0.11.0
+rich==13.9.4
+ollama==0.4.7
+langchain==0.3.7
+langchain-core==0.3.59
+langchain-ollama==0.3.2
+langchain-openai==0.3.17
+langchain-anthropic==0.3.13
+langchain-google-genai==2.1.4
