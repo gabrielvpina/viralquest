@@ -12,7 +12,7 @@ from .finalReport import generate_html_report
 from .mergeJSON import merge_json_files
 
 __author__ = 'Gabriel Rodrigues (gvpina.rodrigues@gmail.com)'
-__version__ = '2.6.13'
+__version__ = '2.6.14'
 __date__ = 'Jun 23, 2025'
 
 

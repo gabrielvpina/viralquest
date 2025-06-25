@@ -11,7 +11,7 @@ from rich import box
 
 
 __author__ = 'Gabriel Rodrigues (gvpina.rodrigues@gmail.com)'
-__version__ = '2.6.13'
+__version__ = '2.6.14'
 __date__ = 'Jun 23, 2025'
 
 
