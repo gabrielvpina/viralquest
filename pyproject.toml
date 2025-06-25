@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "viralquest"
+version = "2.6.16"
+description = "A bioinformatics tool for viral genome analysis and characterization."
+readme = "README.md"
+authors = [{name = "Gabriel Rodrigues", email = "gvpina.rodrigues@gmail.com"}]
+license = {text = "MIT"}
+keywords = ["bioinformatics", "viral genomics", "genome annotation", "blast", "hmmer"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "orfipy==0.0.4",
+    "pandas==2.2.3",
+    "biopython==1.84",
+    "more-itertools",
+    "pyfiglet",
+    "pyhmmer==0.11.0",
+    "rich==13.9.4",
+    "ollama==0.4.7",
+    "langchain==0.3.7",
+    "langchain-core==0.3.59",
+    "langchain-ollama==0.3.2",
+    "langchain-openai==0.3.17",
+    "langchain-anthropic==0.3.13",
+    "langchain-google-genai==2.1.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/gabrielvpina/viralquest"
+Repository = "https://github.com/gabrielvpina/viralquest"
+Documentation = "https://github.com/gabrielvpina/viralquest/blob/main/README.md"
+"Bug Reports" = "https://github.com/gabrielvpina/viralquest/issues"
+
+[project.scripts]
+viralquest = "viralquest.main:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["viralquest*"]
+
+[tool.setuptools.package-data]
+"viralquest" = ["bin/*", "misc/*"]

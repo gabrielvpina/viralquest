@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/headerLogo.png" width="530" height="180">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/headerLogo.png?raw=true" width="530" height="180">
   
   <p align="center">
     <strong>A pipeline for viral diversity analysis</strong>
@@ -24,16 +24,23 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 
 
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/figure1.png" width="850" height="550">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/figure1.png?raw=true" width="850" height="550">
 
 ### HTML Output
 [Example of HTML Viral Report Output (Click Here)](https://aqua-cristi-28.tiiny.site)
 > ⚠️ **Warning:** The HTML file may have some bugs in resolutions below 1920x1080p.
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/screenshot_vq_COV.png" width="850" height="550">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/screenshot_vq_COV.png?raw=true" width="850" height="550">
 
 ## Setup
 
-### Install via conda (recommended)
+### Install via PyPI
+
+Use pip to install ViralQuest
+```
+pip install viralquest
+```
+
+### Install via conda (Manually)
 You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
 
 Create conda enviroment
@@ -52,9 +59,9 @@ Go to directory:
 ```
 cd viralquest
 ```
-Execute the `setup.py` script:
+Execute the `install.py` script:
 ```
-python setup.py
+python install.py
 ```
 Check if ViralQuest is installed:
 ```
