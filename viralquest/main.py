@@ -67,15 +67,15 @@ def show_rich_help():
     
     # eequired arguments section
     required_panel = Panel(
-        "[bold white]-i/--input[/bold white]\n"
+        "[bold white]-in/--input[/bold white]\n"
         "  Fasta file to be analyzed. It's recomended a short name file (e.g. 'CTL3.fasta') \n\n"
-        "[bold white]-o/--outdir[/bold white]\n"
+        "[bold white]-out/--outdir[/bold white]\n"
         "  Directory where the output files will be saved.\n\n"
         "[bold white]-ref/--viralRef[/bold white]\n"
         "  RefSeq Viral Protein Release file. Path to .dmnd file\n\n"
         "[bold white]--blastn_online[/bold white]\n"
         "  NCBI email to execute online BLASTn search using NCBI BLAST web service.\n\n"
-        "[bold white]--diamond_blastx/-dx[/bold white]\n"
+        "[bold white]--diamond_blastx/-dX[/bold white]\n"
         "  Path to the Diamond BLASTx database (.dmnd) for protein sequence comparison.\n\n"
         "[bold white]-pfam/--pfam_hmm[/bold white]\n"
         "  Path to the Pfam hmm for conserved domain analysis.",
