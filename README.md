@@ -20,6 +20,15 @@
 - [Usage](#usage)
 - [Output Files](#output-files)
 
+[![Setup](https://img.shields.io/badge/Setup-informational)](#setup)
+[![Install Databases](https://img.shields.io/badge/Install_Databases-informational)](#install-databases)
+[![Viral HMM Models](https://img.shields.io/badge/Viral_HMM_Models-informational)](#viral-hmm-models)
+[![Install Pfam Model](https://img.shields.io/badge/Install_Pfam_Model-informational)](#install-pfam-model)
+[![AI Summary](https://img.shields.io/badge/AI_Summary-informational)](#ai-summary)
+[![Usage](https://img.shields.io/badge/Usage-informational)](#usage)
+[![Output Files](https://img.shields.io/badge/Output_Files-informational)](#output-files)
+
+
 
 
 ## Introduction
