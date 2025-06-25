@@ -36,15 +36,6 @@
   </a>
 </p>
 
-<h2 id="setup">Setup</h2>
-<h2 id="install-databases">Install Databases</h2>
-<h2 id="viral-hmm-models">Viral HMM Models</h2>
-<h2 id="install-pfam-model">Install Pfam Model</h2>
-<h2 id="ai-summary">AI Summary</h2>
-<h2 id="usage">Usage</h2>
-<h2 id="output-files">Output Files</h2>
-
-
 
 
 ## Introduction
