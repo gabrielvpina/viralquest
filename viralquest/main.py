@@ -9,11 +9,7 @@ from rich.columns import Columns
 from rich.text import Text
 from rich import box
 
-
-__author__ = 'Gabriel Rodrigues (gvpina.rodrigues@gmail.com)'
-__version__ = '2.6.14'
-__date__ = 'Jun 23, 2025'
-
+from __init__ import __author__, __version__, __date__
 
 
 ascii_banner = pyfiglet.figlet_format("ViralQuest")
