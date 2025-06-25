@@ -288,10 +288,10 @@ A tutorial to install a local LLM via ollama or Google Gemini free API is availa
 ### Query example
 This is a structure of viralquest query (without AI summary resource):
 ```
-python viralquest.py -in SAMPLE.fasta \
+viralquest -in SAMPLE.fasta \
 -ref viral/release/viralDB.dmnd \
--N path/to/nt/database/nt.fasta \
--dX path/to/nr/diamond/database/nr.dmnd \
+--blastn_online yourNCBI@email.com \
+--diamond_blastx path/to/nr/diamond/database/nr.dmnd \
 -rvdb /path/to/RVDB/hmm/U-RVDBv29.0-prot.hmm \
 -eggnog /path/to/eggNOG/hmm/eggNOG.hmm \
 -vfam /path/to/Vfam/hmm/Vfam228.hmm \
