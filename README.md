@@ -6,10 +6,10 @@
   
   <p align="center">
     <strong>A pipeline for viral diversity analysis</strong>
-    [![pypi version](https://img.shields.io/badge/ViralQuest-v2.6.16-COLOR2%3Fcolor%3DCOLOR1)](https://pypi.org/project/viralquest/)
   </p>
 </div>
 
+[![pypi version](https://img.shields.io/badge/ViralQuest-v2.6.16-COLOR2%3Fcolor%3DCOLOR1)](https://pypi.org/project/viralquest/)
 - [Setup](#setup)
 - [Install  Databases](#install-databases)
 - [Viral HMM Models](#viral-hmm-models)
