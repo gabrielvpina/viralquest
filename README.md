@@ -7,7 +7,9 @@
   <p align="center">
     <strong>A pipeline for viral diversity analysis</strong>
     <br>
-    <img alt="Static Badge" src="https://img.shields.io/badge/ViralQuest-v2.6.17-COLOR2%3Fcolor%3DCOLOR1">
+      <a href="(https://pypi.org/project/viralquest/)">
+        <img alt="Static Badge" src="https://img.shields.io/badge/ViralQuest-v2.6.17-COLOR2%3Fcolor%3DCOLOR1">
+      </a>
   </p>
 </div>
 
