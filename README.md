@@ -12,15 +12,37 @@
 </div>
 
 
-<div style="text-align: center;">
-  [![Setup](https://img.shields.io/badge/Setup-informational)](#setup)
-  [![Install Databases](https://img.shields.io/badge/Install_Databases-informational)](#install-databases)
-  [![Viral HMM Models](https://img.shields.io/badge/Viral_HMM_Models-informational)](#viral-hmm-models)
-  [![Install Pfam Model](https://img.shields.io/badge/Install_Pfam_Model-informational)](#install-pfam-model)
-  [![AI Summary](https://img.shields.io/badge/AI_Summary-informational)](#ai-summary)
-  [![Usage](https://img.shields.io/badge/Usage-informational)](#usage)
-  [![Output Files](https://img.shields.io/badge/Output_Files-informational)](#output-files)
-</div>
+<p align="center">
+  <a href="#setup">
+    <img src="https://img.shields.io/badge/Setup-informational" alt="Setup">
+  </a>
+  <a href="#install-databases">
+    <img src="https://img.shields.io/badge/Install_Databases-informational" alt="Install Databases">
+  </a>
+  <a href="#viral-hmm-models">
+    <img src="https://img.shields.io/badge/Viral_HMM_Models-informational" alt="Viral HMM Models">
+  </a>
+  <a href="#install-pfam-model">
+    <img src="https://img.shields.io/badge/Install_Pfam_Model-informational" alt="Install Pfam Model">
+  </a>
+  <a href="#ai-summary">
+    <img src="https://img.shields.io/badge/AI_Summary-informational" alt="AI Summary">
+  </a>
+  <a href="#usage">
+    <img src="https://img.shields.io/badge/Usage-informational" alt="Usage">
+  </a>
+  <a href="#output-files">
+    <img src="https://img.shields.io/badge/Output_Files-informational" alt="Output Files">
+  </a>
+</p>
+
+<h2 id="setup">Setup</h2>
+<h2 id="install-databases">Install Databases</h2>
+<h2 id="viral-hmm-models">Viral HMM Models</h2>
+<h2 id="install-pfam-model">Install Pfam Model</h2>
+<h2 id="ai-summary">AI Summary</h2>
+<h2 id="usage">Usage</h2>
+<h2 id="output-files">Output Files</h2>
 
 
 
