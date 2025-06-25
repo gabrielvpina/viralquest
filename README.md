@@ -12,14 +12,6 @@
 </div>
 
 
-- [Setup](#setup)
-- [Install  Databases](#install-databases)
-- [Viral HMM Models](#viral-hmm-models)
-- [Install Pfam Model](#install-pfam-model)
-- [AI Summary](#ai-summary)
-- [Usage](#usage)
-- [Output Files](#output-files)
-
 [![Setup](https://img.shields.io/badge/Setup-informational)](#setup)
 [![Install Databases](https://img.shields.io/badge/Install_Databases-informational)](#install-databases)
 [![Viral HMM Models](https://img.shields.io/badge/Viral_HMM_Models-informational)](#viral-hmm-models)
