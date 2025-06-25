@@ -9,7 +9,7 @@ from rich.columns import Columns
 from rich.text import Text
 from rich import box
 
-from __init__ import __author__, __version__, __date__
+from .info import __author__, __version__, __date__
 
 
 ascii_banner = pyfiglet.figlet_format("ViralQuest")

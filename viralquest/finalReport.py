@@ -1,6 +1,6 @@
 import os, glob, json, shutil, shutil
 
-from __init__ import __version__
+from .info import __version__
 
 
 def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_repo, diamond_blastx_repo, pfam_hmm_repo, filteredSeqs, originalSeqs, numberTotalORFs, number_viralSeqs, cpu_repo):

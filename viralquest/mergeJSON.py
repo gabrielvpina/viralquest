@@ -1,6 +1,6 @@
 import os, json
 
-from __init__ import __version__
+from .info import __version__
 
 def merge_json_files(directory_path: str) -> None:
     """
