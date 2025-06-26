@@ -36,4 +36,4 @@ This analysis investigates the transcriptome of Aedes aegypti midguts to underst
 
 - Title: A Vago-like gene enhances dengue and Zika virus dissemination in Aedes aegypti
 - Sample Type: Aedes aegypti midguts from VLG-1 mutant line, 5 days post DENV1 infection
-- SRA Run Accession: SRR29420330
+- SRA Run Accession: `SRR29420330`
