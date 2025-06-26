@@ -29,7 +29,7 @@ This analysis investigates the transcriptome of Aedes aegypti larvae, focusing o
 - SRA Run Accession: `SRR27437768`
 
 
-## `DENV_visualization.html: Dengue and Zika Virus Dissemination in Aedes aegypti (RNA-Seq)
+## `DENV_visualization.html`: Dengue and Zika Virus Dissemination in Aedes aegypti (RNA-Seq)
 This analysis investigates the transcriptome of Aedes aegypti midguts to understand the role of a Vago-like gene (VLG-1) in arbovirus dissemination.
 
 **Information about study:**
