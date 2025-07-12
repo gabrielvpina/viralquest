@@ -228,8 +228,8 @@ def create_progress_table(steps, current_step, step_status):
         padding=(0, 1)
     )
     table.add_column("Status", style="cyan", width=15, justify="center")
-    table.add_column("Step", style="white", width=50)
-    table.add_column("Time", style="dim", width=15, justify="right")
+    table.add_column("Step", style="white", width=50, justify="center")
+    table.add_column("Time", style="dim", width=15, justify="center")
 
     # Create a spinner
     spinner = Spinner("dots", style="cyan")
@@ -241,7 +241,7 @@ def create_progress_table(steps, current_step, step_status):
         if i < current_step:
             # Completed step
             elapsed = step_status.get(i, {}).get('elapsed', '')
-            table.add_row("✓", f"[green]{step}[/]", f"[dim]{elapsed}[/]")
+            table.add_row("✓", f"[blue]{step}[/]", f"[dim]{elapsed}[/]")
         elif i == current_step:
             # Current step
             table.add_row(spinner, f"[cyan bold]{step}[/]", "[dim]running...[/]")
@@ -291,7 +291,7 @@ def main():
     steps = [step for step in steps if step is not None] 
     
     console = Console()
-    console.print(Panel(Text(f"""Running ViralQuest 🔍""", style="bold green"), width=80))
+    console.print(Panel(Text(f"""Running ViralQuest 🔍""", style="bold blue", justify="Center"), width=80))
 
     active_steps = [step for step in steps if step is not None]
     step_status = {}
