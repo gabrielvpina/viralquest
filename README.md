@@ -2,20 +2,42 @@
 
 <div align="center">
 
-<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/headerLogo.png?raw=true" width="530" height="180">
+<img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/headerLogo.png?raw=true" width="430" height="140">
   
   <p align="center">
     <strong>A pipeline for viral diversity analysis</strong>
+    <br>
+    <br>
+      <a href="https://pypi.org/project/viralquest/">
+        <img alt="Static Badge" src="https://img.shields.io/badge/ViralQuest-v2.6.17-COLOR2%3Fcolor%3DCOLOR1">
+      </a>
   </p>
 </div>
 
-- [Setup](#setup)
-- [Install  Databases](#install-databases)
-- [Viral HMM Models](#viral-hmm-models)
-- [Install Pfam Model](#install-pfam-model)
-- [AI Summary](#ai-summary)
-- [Usage](#usage)
-- [Output Files](#output-files)
+
+<p align="center">
+  <a href="#setup">
+    <img src="https://img.shields.io/badge/Setup-informational" alt="Setup">
+  </a>
+  <a href="#install-databases">
+    <img src="https://img.shields.io/badge/Install_Databases-informational" alt="Install Databases">
+  </a>
+  <a href="#viral-hmm-models">
+    <img src="https://img.shields.io/badge/Viral_HMM_Models-informational" alt="Viral HMM Models">
+  </a>
+  <a href="#install-pfam-model">
+    <img src="https://img.shields.io/badge/Install_Pfam_Model-informational" alt="Install Pfam Model">
+  </a>
+  <a href="#ai-summary">
+    <img src="https://img.shields.io/badge/AI_Summary-informational" alt="AI Summary">
+  </a>
+  <a href="#usage">
+    <img src="https://img.shields.io/badge/Usage-informational" alt="Usage">
+  </a>
+  <a href="#output-files">
+    <img src="https://img.shields.io/badge/Output_Files-informational" alt="Output Files">
+  </a>
+</p>
 
 
 
@@ -43,51 +65,43 @@ pip install viralquest
 ### Install via conda (Manually)
 You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
 
-Create conda enviroment
 ```
+# Create conda enviroment
 conda create -n viralquest python=3.12
-```
-Activate conda enviroment
-```
+
+# Activate conda enviroment
 conda activate viralquest
-```
-Clone the repository from GitHub:
-```
+
+# Clone the repository from GitHub:
 git clone https://github.com/gabrielvpina/viralquest.git
-```
-Go to directory:
-```
+
+# Go to directory:
 cd viralquest
-```
-Execute the `install.py` script:
-```
+
+# Execute the `install.py` script:
 python install.py
-```
-Check if ViralQuest is installed:
-```
+
+# Check if ViralQuest is installed:
 viralquest.py --help
 ```
 
 ### Install via Docker
-Clone the repository from GitHub:
+
 ```
+# Clone the repository from GitHub:
 git clone https://github.com/gabrielvpina/viralquest.git
 cd viralquest
-```
-Build the Dockerfile:
-```
+
+# Build the Dockerfile:
 docker build -t viralquest .
-```
-Create an alias to use viralquest:
-```
+
+# Create an alias to use viralquest:
 alias viralquest.py='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'
-```
-OR save the alias, if is necessary log out the session:
-```
+
+# OR save the alias, if is necessary log out the session:
 echo "alias viralquest.py='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'" >> ~/.bashrc
-```
-Verify if it works:
-```
+
+# Verify if it works:
 viralquest.py --help
 ```
 > **Note**: Docker instalation is still under development, some of the debugs and responses of CLI interface are unavailable.
@@ -267,10 +281,10 @@ A tutorial to install a local LLM via ollama or Google Gemini free API is availa
 ### Query example
 This is a structure of viralquest query (without AI summary resource):
 ```
-python viralquest.py -in SAMPLE.fasta \
+viralquest -in SAMPLE.fasta \
 -ref viral/release/viralDB.dmnd \
--N path/to/nt/database/nt.fasta \
--dX path/to/nr/diamond/database/nr.dmnd \
+--blastn_online yourNCBI@email.com \
+--diamond_blastx path/to/nr/diamond/database/nr.dmnd \
 -rvdb /path/to/RVDB/hmm/U-RVDBv29.0-prot.hmm \
 -eggnog /path/to/eggNOG/hmm/eggNOG.hmm \
 -vfam /path/to/Vfam/hmm/Vfam228.hmm \
