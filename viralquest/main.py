@@ -221,14 +221,14 @@ def create_progress_table(steps, current_step, step_status):
     """Create a clean progress table with status indicators"""
     table = Table(
         box=box.ROUNDED,
-        #expand=False,
-        show_header=False,
+        expand=True,
+        show_header=True,
         border_style="bright_black",
         width=80,
         padding=(0, 1)
     )
-    table.add_column("Status", style="cyan", width=8, justify="center")
-    table.add_column("Step", style="white", width=60)
+    table.add_column("Status", style="cyan", width=15, justify="center")
+    table.add_column("Step", style="white", width=50)
     table.add_column("Time", style="dim", width=15, justify="right")
 
     # Create a spinner
@@ -244,7 +244,6 @@ def create_progress_table(steps, current_step, step_status):
             table.add_row("✓", f"[green]{step}[/]", f"[dim]{elapsed}[/]")
         elif i == current_step:
             # Current step
-            #table.add_row("🔄", f"[cyan bold]{step}[/]", "[dim]running...[/]")
             table.add_row(spinner, f"[cyan bold]{step}[/]", "[dim]running...[/]")
         else:
             # Pending step
@@ -282,9 +281,9 @@ def main():
         "HMMsearch Vfam - Detect viral elements" if args.vfam_hmm else None,
         "HMMsearch EggNOG - Detect viral elements" if args.eggnog_hmm else None,
         "HMMsearch Pfam - General characterization" if args.pfam_hmm else None,
-        "Running BLASTx" if args.diamond_blastx else None,
-        "Running BLASTn" if args.blastn else None,
-        "Running Online BLASTn" if args.blastn_online else None,
+        "Running BLASTx - Viral characterization" if args.diamond_blastx else None,
+        "Running BLASTn - Viral characterization" if args.blastn else None,
+        "Running Online BLASTn - Viral characterization" if args.blastn_online else None,
         "Generating final table",
         "Generating AI Summary" if args.model_type and args.model_name else None,
         "Generating HTML report"
