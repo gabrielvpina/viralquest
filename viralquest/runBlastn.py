@@ -132,4 +132,3 @@ def blastn_online(vvFolder, database, email):
                     # write row with errors
                     output_file.write(f"{record.id}\tNaN\tNaN\tNaN\tNaN\tNaN\tNaN\n")
                     continue
-                

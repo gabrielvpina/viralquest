@@ -9,7 +9,7 @@
     <br>
     <br>
       <a href="https://pypi.org/project/viralquest/">
-        <img alt="Static Badge" src="https://img.shields.io/badge/ViralQuest-v2.6.17-COLOR2%3Fcolor%3DCOLOR1">
+        <img alt="Static Badge" src="https://img.shields.io/badge/ViralQuest-v2.6.18-COLOR2%3Fcolor%3DCOLOR1">
       </a>
   </p>
 </div>
@@ -55,9 +55,9 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 ## Setup
 
-### Install via PyPI
+### Install via PyPI (Recommended)
 
-Use pip to install ViralQuest
+Use pip to install the latest stable version of ViralQuest
 ```
 pip install viralquest
 ```
@@ -65,51 +65,43 @@ pip install viralquest
 ### Install via conda (Manually)
 You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
 
-Create conda enviroment
 ```
+# Create conda enviroment
 conda create -n viralquest python=3.12
-```
-Activate conda enviroment
-```
+
+# Activate conda enviroment
 conda activate viralquest
-```
-Clone the repository from GitHub:
-```
+
+# Clone the repository from GitHub:
 git clone https://github.com/gabrielvpina/viralquest.git
-```
-Go to directory:
-```
+
+# Go to directory:
 cd viralquest
-```
-Execute the `install.py` script:
-```
+
+# Execute the `install.py` script:
 python install.py
-```
-Check if ViralQuest is installed:
-```
+
+# Check if ViralQuest is installed:
 viralquest.py --help
 ```
 
 ### Install via Docker
-Clone the repository from GitHub:
+
 ```
+# Clone the repository from GitHub:
 git clone https://github.com/gabrielvpina/viralquest.git
 cd viralquest
-```
-Build the Dockerfile:
-```
+
+# Build the Dockerfile:
 docker build -t viralquest .
-```
-Create an alias to use viralquest:
-```
+
+# Create an alias to use viralquest:
 alias viralquest.py='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'
-```
-OR save the alias, if is necessary log out the session:
-```
+
+# OR save the alias, if is necessary log out the session:
 echo "alias viralquest.py='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'" >> ~/.bashrc
-```
-Verify if it works:
-```
+
+# Verify if it works:
 viralquest.py --help
 ```
 > **Note**: Docker instalation is still under development, some of the debugs and responses of CLI interface are unavailable.
@@ -253,11 +245,6 @@ Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 ## AI Summary
 You can use either a local LLM (via Ollama) or an API key to process and integrate viral data — such as BLAST results and HMM characterizations — with the internal ViralQuest database, which includes viral family information from ICTV (International Committee on Taxonomy of Viruses) and ViralZone. This database contains information on over 200 viral families, including details such as host range, geographic distribution, viral vectors, and more. The LLM can summarize this information to provide a broader and more insightful perspective on the viral data.
 
-### Install necessary pip modules
-```
-pip install ollama langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
-```
-Install this modules in the existent viralquest conda enviroment.
 ### Local LLM (via Ollama)
 You can run a local LLM on your machine using Ollama. However, it is important to select a model that is well-suited for processing the data. In our tests, the smallest model that provided acceptable performance was `qwen3:4b`. Therefore, we recommend using this model as a minimum requirement for running this type of analysis.
 

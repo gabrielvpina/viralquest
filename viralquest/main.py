@@ -1,22 +1,21 @@
 import argparse, sys, os
-import pyfiglet
+#import pyfiglet
 import time
 
 # rich dependencies
 from rich.console import Console
 from rich.panel import Panel
+from rich.align import Align
 from rich.columns import Columns
 from rich.text import Text
 from rich import box
 
 from .info import __author__, __version__, __date__
+from .cli import final_colored_ascii_banner
 
 
-ascii_banner = pyfiglet.figlet_format("ViralQuest")
-
-# deactivate help
 parser = argparse.ArgumentParser(
-    description=ascii_banner,
+    description=final_colored_ascii_banner,
     add_help=False,  
     formatter_class=argparse.RawDescriptionHelpFormatter
 )
@@ -30,10 +29,10 @@ parser.add_argument("-in", "--input", type=str, dest="input")
 parser.add_argument("-ref", "--viralRef", type=str, dest="viralRef")
 parser.add_argument("-out", "--outdir", type=str)
 parser.add_argument("--cap3", action="store_true")
-parser.add_argument("-N", "--blastn", type=str)
+parser.add_argument("-n", "--blastn", type=str)
 parser.add_argument("--blastn_online", type=str, dest="blastn_online")
 parser.add_argument("--blastn_onlineDB", type=str, default="nt", dest="blastn_onlineDB")
-parser.add_argument("-dX", "--diamond_blastx", type=str, dest="diamond_blastx")
+parser.add_argument("-x", "--diamond_blastx", type=str, dest="diamond_blastx")
 parser.add_argument("-rvdb", "--rvdb_hmm", type=str, dest="rvdb_hmm")
 parser.add_argument("-eggnog", "--eggnog_hmm", type=str, dest="eggnog_hmm")
 parser.add_argument("-vfam", "--vfam_hmm", type=str, dest="vfam_hmm")
@@ -52,68 +51,71 @@ parser.add_argument('--api-key', required=False, type=str)
 console = Console()
 
 def show_rich_help():
-    """Display beautiful help using rich formatting"""
     
     # ASCII banner
-    ascii_banner = pyfiglet.figlet_format("ViralQuest")
+    #ascii_banner = pyfiglet.figlet_format("ViralQuest")
     
     # help content
     help_text = Text()
-    help_text.append(ascii_banner, style="bold cyan")
+    # pyfiglet -  help_text.append(ascii_banner, style="bold blue")
+    print('')
+    print(final_colored_ascii_banner)
     help_text.append("\nA tool for viral diversity analysis and characterization.\n", style="italic")
     help_text.append("More info: https://github.com/gabrielvpina/viralquest\n\n", style="dim blue underline")
-    
+    #console.print(final_colored_ascii_banner)
     console.print(help_text)
-    
     # eequired arguments section
     required_panel = Panel(
-        "[bold white]-in/--input[/bold white]\n"
-        "  Fasta file to be analyzed. It's recomended a short name file (e.g. 'CTL3.fasta') \n\n"
-        "[bold white]-out/--outdir[/bold white]\n"
+        "[bold white]--input/-in[/bold white]\n"
+        "  Fasta file to be analyzed. It's recomended a short name file (e.g.'CTL3.fasta') \n\n"
+        "[bold white]--outdir/-out[/bold white]\n"
         "  Directory where the output files will be saved.\n\n"
-        "[bold white]-ref/--viralRef[/bold white]\n"
+        "[bold white]--viralRef/-ref[/bold white]\n"
         "  RefSeq Viral Protein Release file. Path to .dmnd file\n\n"
         "[bold white]--blastn_online[/bold white]\n"
         "  NCBI email to execute online BLASTn search using NCBI BLAST web service.\n\n"
-        "[bold white]--diamond_blastx/-dX[/bold white]\n"
+        "[bold white]--diamond_blastx/-x[/bold white]\n"
         "  Path to the Diamond BLASTx database (.dmnd) for protein sequence comparison.\n\n"
-        "[bold white]-pfam/--pfam_hmm[/bold white]\n"
+        "[bold white]--pfam_hmm/-pfam[/bold white]\n"
         "  Path to the Pfam hmm for conserved domain analysis.",
         title="[bold red]REQUIRED ARGUMENTS[/bold red]",
         border_style="red",
+        width=85, 
         box=box.ROUNDED
     )
 
     # Viral HMM 
     viral_hmm_panel = Panel(
-        "[bold white]-rvdb/--rvdb_hmm[/bold white]\n"
+        "[bold white]--rvdb_hmm/-rvdb[/bold white]\n"
         "  Path to the RVDB hmm for conserved domain analysis.\n\n"
-        "[bold white]-eggnog/--eggnog_hmm[/bold white]\n"
+        "[bold white]--eggnog_hmm/-eggnog[/bold white]\n"
         "  Path to the EggNOG hmm for conserved domain analysis.\n\n"
-        "[bold white]-vfam/--vfam_hmm[/bold white]\n"
+        "[bold white]--vfam_hmm/-eggnog[/bold white]\n"
         "  Path to the Vfam hmm for conserved domain analysis.\n\n"
         "[bold yellow]Note:[/bold yellow] At least one of these is required.",
         title="[bold yellow]VIRAL HMM DATABASES[/bold yellow]",
         border_style="yellow",
+        width=85, 
         box=box.ROUNDED
     )
     
     # optional arguments 
     optional_panel = Panel(
-        "[bold white]-N/--blastn[/bold white]\n"
+        "[bold white]--blastn/-n[/bold white]\n"
         "  Path to the BLASTn database for nucleotide sequence comparison.\n\n"
         "[bold white]--blastn_onlineDB[/bold white]\n"
         "  NCBI Nucleotide database for online BLASTn web service (DEFAULT='nt').\n\n"
-        "[bold white]-maxORFs/--maxORFs[/bold white]\n"
+        "[bold white]--maxORFs/-maxORFs[/bold white]\n"
         "  Number of largest ORFs to select from the input sequences (DEFAULT=2).\n\n"
-        "[bold white]-cpu/--cpu[/bold white]\n"
+        "[bold white]--cpu/-cpu[/bold white]\n"
         "  Number of CPU threads (DEFAULT=2).\n\n"
-        "[bold white]-dmnd_path/--diamond_path[/bold white]\n"
+        "[bold white]--diamond_path/-dmnd_path[/bold white]\n"
         "  Diamond executable application path for BLAST databases: path/to/diamond\n\n"
         "[bold white]--cap3[/bold white]\n"
         "  Activate CAP3 fasta assembly: Deactivated by default.",
         title="[bold green]OPTIONAL ARGUMENTS[/bold green]",
         border_style="green",
+        width=85, 
         box=box.ROUNDED
     )
     
@@ -127,15 +129,17 @@ def show_rich_help():
         "  API key for cloud models (required for OpenAI, Anthropic, Google).",
         title="[bold magenta]AI SUMMARY (OPTIONAL)[/bold magenta]",
         border_style="magenta",
+        width=85, 
         box=box.ROUNDED
     )
     
     # reports section
     merge_panel = Panel(
         "[bold white]--merge-json[/bold white]\n"
-        "  Merge JSON files in a directory to create a general ViralQuest HTML report.When used, other arguments are ignored.",
+        "  Input Type: dir/ Merge JSON files in a directory to create a general ViralQuest HTML report. When used, other arguments are ignored.",
         title="[bold blue]MERGE REPORTS[/bold blue]",
         border_style="blue",
+        width=85, 
         box=box.ROUNDED
     )
     
@@ -157,6 +161,7 @@ def show_rich_help():
         "[bold white]-v/--version[/bold white] Show program's version number and exit",
         title="[bold cyan]OTHER OPTIONS[/bold cyan]",
         border_style="cyan",
+        width=85, 
         box=box.ROUNDED
     )
     console.print(help_footer)
@@ -176,21 +181,6 @@ if "-h" in sys.argv or "--help" in sys.argv:
 
 # Parse normal
 args = parser.parse_args()
-
-
-###################### Exclude directory ########################################################
-if os.path.exists(args.outdir):
-    error_footer = Panel(
-        f"[bold white]ERROR:[/bold white] Output directory '{args.outdir}' already exists. Please choose a different directory or remove it.",
-        title="[bold red]Output Error[/bold red]",
-        border_style="red",
-        box=box.ROUNDED
-    )
-    console.print(error_footer)
-    sys.exit(1)
-#################################################################################################
-
-
 
 
 
@@ -216,65 +206,7 @@ else:
 
 ############################## CHECK ARGUMENTS ###########################################################
 
-# Check BLASTx and BLASTn arguments
-if not args.diamond_blastx:
-    #parser.error("--diamond_blastx must be specified.")
-    error_footer2 = Panel(
-        f"[bold white]ERROR:[/bold white] --diamond_blastx must be specified.",
-        title="[bold red]BLASTx Argument Required[/bold red]",
-        border_style="red",
-        box=box.ROUNDED
-    )
-    console.print(error_footer2)
-    sys.exit(1)
 
-if args.blastn and args.blastn_online:
-    #parser.error("--blastn or --blastn_online can't be executed in the same time.")
-    error_footer3 = Panel(
-        f"[bold white]ERROR:[/bold white] --blastn or --blastn_online can't be executed in the same time.",
-        title="[bold red]BLASTn Argument Error[/bold red]",
-        border_style="red",
-        box=box.ROUNDED
-    )   
-    console.print(error_footer3)
-    sys.exit(1)
-
-# HMM Files Check
-if args.rvdb_hmm: 
-    file_path = args.rvdb_hmm
-    if not os.path.isfile(file_path):
-        console.print(
-            f"\n[bold red]ERROR:[/bold red] No RVDB HMM model file found. The file specified with {file_path} could not be located.",
-            style="red"
-        )
-        sys.exit(1)
-
-if args.eggnog_hmm: 
-    file_path = args.eggnog_hmm
-    if not os.path.isfile(file_path):
-        console.print(
-            f"\n[bold red]ERROR:[/bold red] No eggNOG HMM model file found. The file specified with {file_path} could not be located.",
-            style="red"
-        )
-        sys.exit(1)
-
-if args.vfam_hmm: 
-    file_path = args.vfam_hmm
-    if not os.path.isfile(file_path):
-        console.print(
-            f"\n[bold red]ERROR:[/bold red] No Vfam HMM model file found. The file specified with {file_path} could not be located.",
-            style="red"
-        )
-        sys.exit(1)
-
-if args.pfam_hmm: 
-    file_path = args.pfam_hmm
-    if not os.path.isfile(file_path):
-        console.print(
-            f"\n[bold red]ERROR:[/bold red] No Pfam HMM model file found. The file specified with {file_path} could not be located.",
-            style="red"
-        )
-        sys.exit(1)
 
 ####################################
 
@@ -286,7 +218,48 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich import box
 
+def create_progress_table(steps, current_step, step_status):
+    """Create a clean progress table with status indicators"""
+    table = Table(
+        box=box.ROUNDED,
+        expand=True,
+        show_header=True,
+        border_style="bright_black",
+        width=80,
+        padding=(0, 1)
+    )
+    table.add_column("Status", style="cyan", width=15, justify="center")
+    table.add_column("Current Process", style="white", width=50, justify="center")
+    table.add_column("Time", style="dim", width=15, justify="center")
+
+    # Create a spinner
+    spinner = Spinner("dots", style="cyan")
+    
+    for i, step in enumerate(steps):
+        if step is None:
+            continue
+            
+        if i < current_step:
+            # Completed step
+            elapsed = step_status.get(i, {}).get('elapsed', '')
+            table.add_row("✓", f"[blue]{step}[/]", f"[dim]{elapsed}[/]")
+        elif i == current_step:
+            # Current step
+            table.add_row(spinner, f"[cyan bold]{step}[/]", "[dim]running...[/]")
+        else:
+            # Pending step
+            table.add_row("⏳", f"[dim]{step}[/]", "")
+    
+    return table
+
+
+
 def main():
+    print(" ")
+    print(final_colored_ascii_banner)
+
+    from .cli import trackErrors
+    trackErrors(args)
 
     from .inputFASTA import validateFasta, cap3, noCAP3
     from .processFASTA import copyfasta, filterfasta, renameFasta
@@ -309,9 +282,9 @@ def main():
         "HMMsearch Vfam - Detect viral elements" if args.vfam_hmm else None,
         "HMMsearch EggNOG - Detect viral elements" if args.eggnog_hmm else None,
         "HMMsearch Pfam - General characterization" if args.pfam_hmm else None,
-        "Running BLASTx" if args.diamond_blastx else None,
-        "Running BLASTn" if args.blastn else None,
-        "Running Online BLASTn" if args.blastn_online else None,
+        "Running BLASTx - Viral characterization" if args.diamond_blastx else None,
+        "Running BLASTn - Viral characterization" if args.blastn else None,
+        "Running Online BLASTn - Viral characterization" if args.blastn_online else None,
         "Generating final table",
         "Generating AI Summary" if args.model_type and args.model_name else None,
         "Generating HTML report"
@@ -319,37 +292,17 @@ def main():
     steps = [step for step in steps if step is not None] 
     
     console = Console()
-    console.print(Panel(Text(f"""Running ViralQuest 🔍""", style="bold green"), subtitle="Viral sequence analysis"))
-    
-    # Create a spinner
-    spinner = Spinner("dots", style="cyan")
-    
-    # Initialize current_step before defining the function that uses it
+    console.print(Panel(Align.center(f"[bold white]Running ViralQuest[/bold white] 🔍"), border_style="blue", width=80))
+
+    active_steps = [step for step in steps if step is not None]
+    step_status = {}
     current_step = 0
-    
-    # Create a status table for all the steps
-    def get_status_table():
-        table = Table(box=box.ROUNDED, expand=True, show_header=False, border_style="bright_black")
-        table.add_column("Status", style="cyan", width=3)
-        table.add_column("Task", style="white")
-        
-        for i, step in enumerate(steps):
-            if i < current_step:
-                # Completed step
-                table.add_row("✓", f"[green]{step}[/]")
-            elif i == current_step:
-                # Current step with spinner
-                table.add_row(spinner, f"[cyan]{step}[/]")
-            else:
-                # Pending step
-                table.add_row("○", f"[dim white]{step}[/]")
-        
-        return table
-    
-    # Start the live display
-    with Live(get_status_table(), console=console, refresh_per_second=8) as live:
+
+    with Live(create_progress_table(active_steps, current_step, step_status), 
+              console=console, refresh_per_second=8) as live:
         
         # Processing FASTA
+        step_start = time.time()  # Start timing for this step
         is_valid = validateFasta(args.input)
         if not is_valid:
             print("FASTA validation failed. Check non-nuclotide characters in input file\n")
@@ -365,19 +318,24 @@ def main():
             copyfasta(args.outdir)
             filterfasta(args.outdir)
             renameFasta(args.outdir)
+        step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
         current_step += 1
-        live.update(get_status_table())
+        live.update(create_progress_table(active_steps, current_step, step_status))
         
         # ORFs profile
+        step_start = time.time()  # Reset timing for this step
         findorf(args.outdir)
         ORFs(args.outdir, args.maxORFs)
+        step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
         current_step += 1
-        live.update(get_status_table())
+        live.update(create_progress_table(active_steps, current_step, step_status))
         
         # Filter w/ refseq sequences
+        step_start = time.time()  # Reset timing for this step
         filterBLAST(args.outdir, args.viralRef, args.cpu, diamond_path=None, log_file=None)
+        step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
         current_step += 1
-        live.update(get_status_table())
+        live.update(create_progress_table(active_steps, current_step, step_status))
         
         # HMM Search
         if args.pfam_hmm and not args.rvdb_hmm and not args.eggnog_hmm and not args.vfam_hmm:
@@ -385,58 +343,78 @@ def main():
             sys.exit(1)
 
         if args.rvdb_hmm:
+            step_start = time.time()  # Reset timing for this step
             process_RVDB(args.outdir, args.rvdb_hmm, args.cpu, score_threshold=10)
+            step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
             current_step += 1
-            live.update(get_status_table())
+            live.update(create_progress_table(active_steps, current_step, step_status))
             
         if args.vfam_hmm:
+            step_start = time.time()  # Reset timing for this step
             process_VFAM(args.outdir, args.vfam_hmm, args.cpu, score_threshold=10)
+            step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
             current_step += 1
-            live.update(get_status_table())
+            live.update(create_progress_table(active_steps, current_step, step_status))
             
         if args.eggnog_hmm:
+            step_start = time.time()  # Reset timing for this step
             process_EggNOG(args.outdir, args.eggnog_hmm, args.cpu, score_threshold=10)
+            step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
             current_step += 1
-            live.update(get_status_table())
+            live.update(create_progress_table(active_steps, current_step, step_status))
             
+        step_start = time.time()  # Reset timing for this step
         pfamFasta(args.outdir)
         process_Pfam(args.outdir, args.pfam_hmm, args.cpu)
         generateFasta(args.outdir)
+        step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
         current_step += 1
-        live.update(get_status_table())
+        live.update(create_progress_table(active_steps, current_step, step_status))
         
         mergeFASTA(args.outdir)
         
         # BLAST
         if args.diamond_blastx:
+            step_start = time.time()  # Reset timing for this step
             diamond_blastx(args.outdir, args.diamond_blastx, args.cpu)
+            step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
             current_step += 1
-            live.update(get_status_table())
+            live.update(create_progress_table(active_steps, current_step, step_status))
             
         if args.blastn:
+            step_start = time.time()  # Reset timing for this step
             generateFasta_blastn(args.outdir)
             blastn(args.outdir, args.blastn, args.cpu)
+            step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
             current_step += 1
-            live.update(get_status_table())
+            live.update(create_progress_table(active_steps, current_step, step_status))
 
         if args.blastn_online:
+            step_start = time.time()  # Reset timing for this step
             generateFasta_blastn(args.outdir)
             blastn_online(args.outdir, args.blastn_onlineDB, args.blastn_online)
+            step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
             current_step += 1
-            live.update(get_status_table())
+            live.update(create_progress_table(active_steps, current_step, step_status))
             
         # Final table
+        step_start = time.time()  # Reset timing for this step
         finalTable(args.outdir)
         exec_cleaning(args.outdir)
+        step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
         current_step += 1
-        live.update(get_status_table())
+        live.update(create_progress_table(active_steps, current_step, step_status))
 
         # AI summary
         if args.model_type and args.model_name:
-            current_step += 1
+            step_start = time.time()  # Reset timing for this step
             analyze_viral_sequences(args)
+            step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
+            current_step += 1
+            live.update(create_progress_table(active_steps, current_step, step_status))
         
-        # HTML report #########################################################
+        # HTML report
+        step_start = time.time()  # Reset timing for this step
 
         if args.cap3:
             cap3check = "true"
@@ -464,10 +442,10 @@ def main():
         numberTotalORFs = countBiggestORFsFasta(f"{args.outdir}/fasta-files")
         number_viralSeqs = getViralSeqsNumber(args.outdir)
 
-
         generate_html_report(args.outdir, cap3check, input_repo, outdir_repo, blastn_repo, diamond_blastx_repo, pfam_hmm_repo, filteredSeqs, originalSeqs, numberTotalORFs, number_viralSeqs, cpu_repo)
+        step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
         current_step += 1
-        live.update(get_status_table())
+        live.update(create_progress_table(active_steps, current_step, step_status))
     
     time_end = time.time()
     console.print(f"[bold green]The pipeline took [/][bold yellow]{time_end - time_start:.2f}[/][bold green] seconds to run.[/]")
