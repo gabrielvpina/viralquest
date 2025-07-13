@@ -36,7 +36,7 @@ def trackErrors(args):
         console.print(error_footer2)
         sys.exit(1)
 
-    if args.blastn and args.blastn_online:
+    if args.blastn_local and args.blastn_online:
         #parser.error("--blastn or --blastn_online can't be executed in the same time.")
         error_footer3 = Panel(
             f"[bold white]ERROR:[/bold white] --blastn or --blastn_online can't be executed in the same time.",
@@ -168,7 +168,7 @@ def trackErrors(args):
             try:
                 # Create initial box
                 request_box = Panel(
-                    Align.center(f"[bold white]Checking OpenAI API key:[/bold white] {args.api_key} 🔄"),
+                    Align.center(f"[bold white]Checking OpenAI API key:[/bold white] {args.model_name} 🔄"),
                     border_style="blue",
                     width=80,
                     box=box.ROUNDED
@@ -188,7 +188,7 @@ def trackErrors(args):
                     
                     # Update the same box with OK status
                     success_box = Panel(
-                        Align.center(f"[bold white]Checking OpenAI API key:[/bold white] {args.api_key} [bold green]OK[/bold green]"),
+                        Align.center(f"[bold white]Checking OpenAI API key:[/bold white] {args.model_name} [bold green]OK[/bold green]"),
                         border_style="green",
                         width=80,
                         box=box.ROUNDED
@@ -223,7 +223,7 @@ def trackErrors(args):
             try:
                 # Create initial box
                 request_box = Panel(
-                    Align.center(f"[bold white]Checking Anthropic API key:[/bold white] {args.api_key} 🔄"),
+                    Align.center(f"[bold white]Checking Anthropic API key:[/bold white] {args.model_name} 🔄"),
                     border_style="blue",
                     width=80,
                     box=box.ROUNDED
@@ -250,7 +250,7 @@ def trackErrors(args):
                     
                     # Update the same box with OK status
                     success_box = Panel(
-                        Align.center(f"[bold white]Checking Anthropic API key:[/bold white] {args.api_key} [bold green]OK[/bold green]"),
+                        Align.center(f"[bold white]Checking Anthropic API key:[/bold white] {args.model_name} [bold green]OK[/bold green]"),
                         border_style="green",
                         width=80,
                         box=box.ROUNDED
@@ -285,7 +285,7 @@ def trackErrors(args):
             try:
                 # Create initial box
                 request_box = Panel(
-                    Align.center(f"[bold white]Checking Google API key:[/bold white] {args.api_key} 🔄"),
+                    Align.center(f"[bold white]Checking Google API key:[/bold white] {args.model_name} 🔄"),
                     border_style="blue",
                     width=80,
                     box=box.ROUNDED
@@ -300,7 +300,7 @@ def trackErrors(args):
                     
                     # Update the same box with OK status
                     success_box = Panel(
-                        Align.center(f"[bold white]Checking Google API key:[/bold white] {args.api_key} [bold green]OK[/bold green]"),
+                        Align.center(f"[bold white]Checking Google API key:[/bold white] {args.model_name} [bold green]OK[/bold green]"),
                         border_style="green",
                         width=80,
                         box=box.ROUNDED

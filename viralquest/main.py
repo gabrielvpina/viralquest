@@ -29,7 +29,7 @@ parser.add_argument("-in", "--input", type=str, dest="input")
 parser.add_argument("-ref", "--viralRef", type=str, dest="viralRef")
 parser.add_argument("-out", "--outdir", type=str)
 parser.add_argument("--cap3", action="store_true")
-parser.add_argument("-n", "--blastn", type=str)
+parser.add_argument("-n", "--blastn_local", type=str)
 parser.add_argument("--blastn_online", type=str, dest="blastn_online")
 parser.add_argument("--blastn_onlineDB", type=str, default="nt", dest="blastn_onlineDB")
 parser.add_argument("-x", "--diamond_blastx", type=str, dest="diamond_blastx")
@@ -37,7 +37,7 @@ parser.add_argument("-rvdb", "--rvdb_hmm", type=str, dest="rvdb_hmm")
 parser.add_argument("-eggnog", "--eggnog_hmm", type=str, dest="eggnog_hmm")
 parser.add_argument("-vfam", "--vfam_hmm", type=str, dest="vfam_hmm")
 parser.add_argument("-pfam", "--pfam_hmm", type=str, dest="pfam_hmm")
-parser.add_argument("-maxORFs", "--maxORFs", type=int, dest="maxORFs", default=2)
+parser.add_argument("-orf", "--maxORFs", type=int, dest="maxORFs", default=2)
 parser.add_argument("-cpu", "--cpu", type=int, dest="cpu", default=2)
 parser.add_argument("-dmnd_path", "--diamond_path", type=str, dest="diamond_path", default="None")
 parser.add_argument("-v", "--version", action="version", version=f"ViralQuest v{__version__}")
@@ -67,11 +67,11 @@ def show_rich_help():
     # eequired arguments section
     required_panel = Panel(
         "[bold white]--input/-in[/bold white]\n"
-        "  Fasta file to be analyzed. It's recomended a short name file (e.g.'CTL3.fasta') \n\n"
+        "  .fasta file input. It's recomended a short name file (e.g.'CTL3.fasta') \n\n"
         "[bold white]--outdir/-out[/bold white]\n"
         "  Directory where the output files will be saved.\n\n"
         "[bold white]--viralRef/-ref[/bold white]\n"
-        "  RefSeq Viral Protein Release file. Path to .dmnd file\n\n"
+        "  RefSeq Viral Protein Release file. Path to .dmnd (diamond db) file\n\n"
         "[bold white]--blastn_online[/bold white]\n"
         "  NCBI email to execute online BLASTn search using NCBI BLAST web service.\n\n"
         "[bold white]--diamond_blastx/-x[/bold white]\n"
@@ -90,7 +90,7 @@ def show_rich_help():
         "  Path to the RVDB hmm for conserved domain analysis.\n\n"
         "[bold white]--eggnog_hmm/-eggnog[/bold white]\n"
         "  Path to the EggNOG hmm for conserved domain analysis.\n\n"
-        "[bold white]--vfam_hmm/-eggnog[/bold white]\n"
+        "[bold white]--vfam_hmm/-vfam[/bold white]\n"
         "  Path to the Vfam hmm for conserved domain analysis.\n\n"
         "[bold yellow]Note:[/bold yellow] At least one of these is required.",
         title="[bold yellow]VIRAL HMM DATABASES[/bold yellow]",
@@ -101,16 +101,14 @@ def show_rich_help():
     
     # optional arguments 
     optional_panel = Panel(
-        "[bold white]--blastn/-n[/bold white]\n"
+        "[bold white]--blastn_local/-n[/bold white]\n"
         "  Path to the BLASTn database for nucleotide sequence comparison.\n\n"
         "[bold white]--blastn_onlineDB[/bold white]\n"
         "  NCBI Nucleotide database for online BLASTn web service (DEFAULT='nt').\n\n"
-        "[bold white]--maxORFs/-maxORFs[/bold white]\n"
-        "  Number of largest ORFs to select from the input sequences (DEFAULT=2).\n\n"
+        "[bold white]--maxORFs/-orf[/bold white]\n"
+        "  Number of max largest non-overlapping ORFs from sequence (DEFAULT=2).\n\n"
         "[bold white]--cpu/-cpu[/bold white]\n"
-        "  Number of CPU threads (DEFAULT=2).\n\n"
-        "[bold white]--diamond_path/-dmnd_path[/bold white]\n"
-        "  Diamond executable application path for BLAST databases: path/to/diamond\n\n"
+        "  Number of CPU threads (DEFAULT=2).\n"
         "[bold white]--cap3[/bold white]\n"
         "  Activate CAP3 fasta assembly: Deactivated by default.",
         title="[bold green]OPTIONAL ARGUMENTS[/bold green]",
@@ -157,8 +155,8 @@ def show_rich_help():
     
     # help
     help_footer = Panel(
-        "[bold white]-h/--help[/bold white]    Show this help message and exit\n"
-        "[bold white]-v/--version[/bold white] Show program's version number and exit",
+        "[bold white]--help/-h[/bold white] Show this help message and exit\n"
+        "[bold white]--version/-v[/bold white] Show program's version number and exit",
         title="[bold cyan]OTHER OPTIONS[/bold cyan]",
         border_style="cyan",
         width=85, 
@@ -275,18 +273,18 @@ def main():
 
     time_start = time.time()
     steps = [
-        "Processing FASTA",
+        f"Check FASTA file - {args.input}",
         f"Finding ORFs - {args.maxORFs} maximum ORFs",
         f"Filter sequences - Viral RefSeq alignment",
         "HMMsearch RVDB - Detect viral elements" if args.rvdb_hmm else None,
         "HMMsearch Vfam - Detect viral elements" if args.vfam_hmm else None,
         "HMMsearch EggNOG - Detect viral elements" if args.eggnog_hmm else None,
-        "HMMsearch Pfam - General characterization" if args.pfam_hmm else None,
+        "HMMsearch Pfam - Functional Domains" if args.pfam_hmm else None,
         "Running BLASTx - Viral characterization" if args.diamond_blastx else None,
-        "Running BLASTn - Viral characterization" if args.blastn else None,
+        "Running BLASTn - Viral characterization" if args.blastn_local else None,
         "Running Online BLASTn - Viral characterization" if args.blastn_online else None,
         "Generating final table",
-        "Generating AI Summary" if args.model_type and args.model_name else None,
+        f"Generating AI Summary - {args.model_name}" if args.model_type and args.model_name else None,
         "Generating HTML report"
     ]
     steps = [step for step in steps if step is not None] 
@@ -381,10 +379,10 @@ def main():
             current_step += 1
             live.update(create_progress_table(active_steps, current_step, step_status))
             
-        if args.blastn:
+        if args.blastn_local:
             step_start = time.time()  # Reset timing for this step
             generateFasta_blastn(args.outdir)
-            blastn(args.outdir, args.blastn, args.cpu)
+            blastn(args.outdir, args.blastn_local, args.cpu)
             step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
             current_step += 1
             live.update(create_progress_table(active_steps, current_step, step_status))
@@ -424,10 +422,10 @@ def main():
         input_repo = os.path.basename(args.input)
         outdir_repo = os.path.basename(args.outdir)
 
-        if args.blastn:
-            blastn_repo= os.path.basename(args.blastn)
-        if args.blastn_online:
-            blastn_repo= f"Online DB - {args.blastn_onlineDB}"
+        if args.blastn_local:
+            blastn_repo= os.path.basename(args.blastn_local)
+        if args.blastn_local_online:
+            blastn_repo= f"Online DB - {args.blastn_local_onlineDB}"
 
         diamond_blastx_repo = os.path.basename(args.diamond_blastx)
         pfam_hmm_repo = os.path.basename(args.pfam_hmm)
@@ -463,7 +461,7 @@ Output directory: {args.outdir}
 Number of ORFs: {args.maxORFs}
 CAP3 Assembly: {args.cap3}
 CPU cores: {args.cpu}
-BLASTn database: {args.blastn}
+BLASTn database: {args.blastn_local}
 Diamond BLASTx database: {args.diamond_blastx}
 RVDB hmm profile database: {args.rvdb_hmm}
 Pfam hmm profile database: {args.pfam_hmm}
