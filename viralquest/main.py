@@ -5,6 +5,7 @@ import time
 # rich dependencies
 from rich.console import Console
 from rich.panel import Panel
+from rich.align import Align
 from rich.columns import Columns
 from rich.text import Text
 from rich import box
@@ -228,7 +229,7 @@ def create_progress_table(steps, current_step, step_status):
         padding=(0, 1)
     )
     table.add_column("Status", style="cyan", width=15, justify="center")
-    table.add_column("Step", style="white", width=50, justify="center")
+    table.add_column("Current Process", style="white", width=50, justify="center")
     table.add_column("Time", style="dim", width=15, justify="center")
 
     # Create a spinner
@@ -291,7 +292,7 @@ def main():
     steps = [step for step in steps if step is not None] 
     
     console = Console()
-    console.print(Panel(Text(f"""Running ViralQuest 🔍""", style="bold blue", justify="Center"), width=80))
+    console.print(Panel(Align.center(f"[bold white]Running ViralQuest[/bold white] 🔍"), border_style="blue", width=80))
 
     active_steps = [step for step in steps if step is not None]
     step_status = {}
