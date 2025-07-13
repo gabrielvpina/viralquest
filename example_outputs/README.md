@@ -19,12 +19,11 @@ This analysis explores the host response to Human Coronavirus 229E (HCoV-229E) i
 This study identifies the ZBTB7A protein as a key factor in promoting cellular survival during an HCoV-229E infection.
 
 
-## `MSQ_visualization.html`: Mosquito Microbiome (RNA-seq)
-This analysis investigates the transcriptome of Aedes aegypti larvae, focusing on a specific gene involved in the mosquito's antiviral response.
+## `DENV_visualization.html`: Dengue and Zika Virus Dissemination in Aedes aegypti (RNA-Seq)
+This analysis investigates the transcriptome of Aedes aegypti midguts to understand the role of a Vago-like gene (VLG-1) in arbovirus dissemination.
 
 **Information about study:**
 
-- Title: Evolution of the loqs2 gene encoding an Aedes specific dsRNA binding protein
-- Sample Type: Wild-type Aedes aegypti larvae at the L4 stage
-- SRA Run Accession: `SRR27437768`
-
+- Title: A Vago-like gene enhances dengue and Zika virus dissemination in Aedes aegypti
+- Sample Type: Aedes aegypti midguts from VLG-1 mutant line, 5 days post DENV1 infection
+- SRA Run Accession: `SRR29420330`
