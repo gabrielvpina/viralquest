@@ -46,58 +46,62 @@ def blastn(vvFolder, database, CPU, blastn_path=None):
   
 
 
+import warnings
+from Bio import BiopythonWarning
+
 def blastn_online(vvFolder, database, email):
+    from Bio.Blast import NCBIXML, NCBIWWW
+    from Bio import SeqIO
+    import os
+    import glob
+    import time
 
-    from Bio.Blast import NCBIXML
-
-    """
-    Execute online BLASTn search for viral sequences using NCBI BLAST web service.
-    """
-    
-    # Set email for NCBI contact
-    from Bio.Blast import NCBIWWW
+    # define NCBI e-mail
     NCBIWWW.email = email
-    
+
     fileFasta = os.path.join(vvFolder, "*_viral.fa")
     viral_files = glob.glob(fileFasta)
-    
+
     for viral_file in viral_files:
         infile = viral_file
         sample = os.path.basename(viral_file).replace("_viral.fa", "")
         outfile = os.path.join(vvFolder, f"{sample}_blastn.tsv")
-        
+
         if not os.path.exists(infile):
             continue
-        
+
         try:
             records = list(SeqIO.parse(infile, "fasta"))
         except Exception as e:
             continue
-        
+
         if not records:
             continue
-        
+
         with open(outfile, "w") as output_file:
             for record in records:
                 try:
-                    result_handle = NCBIWWW.qblast(
-                        program="blastn",
-                        database=database,
-                        sequence=str(record.seq),
-                        format_type="XML",
-                        hitlist_size=1
-                    )
-                    
+                    # supress BiopythonWarning for qblast
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", BiopythonWarning)
+                        result_handle = NCBIWWW.qblast(
+                            program="blastn",
+                            database=database,
+                            sequence=str(record.seq),
+                            format_type="XML",
+                            hitlist_size=1
+                        )
+
                     blast_records = NCBIXML.read(result_handle)
                     result_handle.close()
-                    
+
                     if blast_records.alignments:
                         alignment = blast_records.alignments[0]
                         hsp = alignment.hsps[0]
-                        
+
                         query_coverage = (hsp.align_length / blast_records.query_length) * 100
                         percent_identity = (hsp.identities / hsp.align_length) * 100
-                        
+
                         output_line = (
                             f"{record.id}\t"
                             f"{blast_records.query_length}\t"
@@ -107,10 +111,10 @@ def blastn_online(vvFolder, database, email):
                             f"{hsp.expect}\t"
                             f"{alignment.title}\n"
                         )
-                        
+
                         output_file.write(output_line)
                     else:
-                        # No hits found - write NaN line
+                        # line w/ NaN
                         output_line = (
                             f"{record.id}\t"
                             f"{len(record.seq)}\t"
@@ -121,12 +125,10 @@ def blastn_online(vvFolder, database, email):
                             f"NaN\n"
                         )
                         output_file.write(output_line)
-                    
-                    time.sleep(1)
-                    
+
+                    time.sleep(1) # NCBI limit rate
+
                 except Exception as e:
-                    # Write NaN line for errors
+                    # write row with errors
                     output_file.write(f"{record.id}\tNaN\tNaN\tNaN\tNaN\tNaN\tNaN\n")
                     continue
-
-                
