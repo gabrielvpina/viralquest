@@ -55,9 +55,9 @@ ViralQuest is a Python-based bioinformatics pipeline designed to detect, identif
 
 ## Setup
 
-### Install via PyPI
+### Install via PyPI (Recommended)
 
-Use pip to install ViralQuest
+Use pip to install the latest stable version of ViralQuest
 ```
 pip install viralquest
 ```
