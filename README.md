@@ -245,11 +245,6 @@ Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
 ## AI Summary
 You can use either a local LLM (via Ollama) or an API key to process and integrate viral data — such as BLAST results and HMM characterizations — with the internal ViralQuest database, which includes viral family information from ICTV (International Committee on Taxonomy of Viruses) and ViralZone. This database contains information on over 200 viral families, including details such as host range, geographic distribution, viral vectors, and more. The LLM can summarize this information to provide a broader and more insightful perspective on the viral data.
 
-### Install necessary pip modules
-```
-pip install ollama langchain langchain-core langchain-ollama langchain-openai langchain-anthropic langchain-google-genai 
-```
-Install this modules in the existent viralquest conda enviroment.
 ### Local LLM (via Ollama)
 You can run a local LLM on your machine using Ollama. However, it is important to select a model that is well-suited for processing the data. In our tests, the smallest model that provided acceptable performance was `qwen3:4b`. Therefore, we recommend using this model as a minimum requirement for running this type of analysis.
 
