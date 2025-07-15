@@ -1,17 +1,17 @@
 import os, subprocess, shutil, shutil
 from Bio import SeqIO
-import pkg_resources
+# import pkg_resources
 import os
 
 def get_binary_path(binary_name):
     """Get the path to a binary file included in the package"""
-    try:
-        # Try to get the path from the installed package
-        return pkg_resources.resource_filename('viralquest', f'bin/{binary_name}')
-    except:
-        # Fallback to relative path for development
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(os.path.dirname(script_dir), 'bin', binary_name)
+    # try:
+    #     # Try to get the path from the installed package
+    #     return pkg_resources.resource_filename('viralquest', f'bin/{binary_name}')
+    # except:
+    # Fallback to relative path for development
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(os.path.dirname(script_dir), 'bin', binary_name)
 
 def validateFasta(inputContig):
     """
