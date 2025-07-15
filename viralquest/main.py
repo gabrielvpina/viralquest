@@ -108,7 +108,7 @@ def show_rich_help():
         "[bold white]--maxORFs/-orf[/bold white]\n"
         "  Number of max largest non-overlapping ORFs from sequence (DEFAULT=2).\n\n"
         "[bold white]--cpu/-cpu[/bold white]\n"
-        "  Number of CPU threads (DEFAULT=2).\n"
+        "  Number of CPU threads (DEFAULT=2).\n\n"
         "[bold white]--cap3[/bold white]\n"
         "  Activate CAP3 fasta assembly: Deactivated by default.",
         title="[bold green]OPTIONAL ARGUMENTS[/bold green]",
