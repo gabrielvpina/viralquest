@@ -424,8 +424,8 @@ def main():
 
         if args.blastn_local:
             blastn_repo= os.path.basename(args.blastn_local)
-        if args.blastn_local_online:
-            blastn_repo= f"Online DB - {args.blastn_local_onlineDB}"
+        if args.blastn_online:
+            blastn_repo= f"Online DB - {args.blastn_onlineDB}"
 
         diamond_blastx_repo = os.path.basename(args.diamond_blastx)
         pfam_hmm_repo = os.path.basename(args.pfam_hmm)
