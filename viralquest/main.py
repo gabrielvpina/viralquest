@@ -397,7 +397,7 @@ def main():
             
         # Final table
         step_start = time.time()  # Reset timing for this step
-        finalTable(args.outdir)
+        finalTable(args.outdir, args)
         exec_cleaning(args.outdir)
         step_status[current_step] = {'elapsed': f"{time.time() - step_start:.1f}s"}
         current_step += 1

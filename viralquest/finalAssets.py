@@ -1,4 +1,4 @@
-import os, glob, csv, json, shutil, shutil, warnings
+import os, glob, csv, json, shutil, shutil, warnings, sys
 from collections import defaultdict
 from Bio import SeqIO
 import pandas as pd
@@ -6,7 +6,7 @@ import pandas as pd
 from .data import viral_metadata
 from .dmndBLASTx import extract_organism_name
 
-def finalTable(vvFolder):
+def finalTable(vvFolder, args):
 
     tables = glob.glob(os.path.join(vvFolder, "*_vq.fasta"))
     first_name = tables[0]
@@ -236,8 +236,15 @@ def finalTable(vvFolder):
         viralSeqs = viralSeqs.dropna(axis=1, how='all')
         viralHmmTable.to_csv(hmmTable_path, index=False)
     else:
-        hmmTable = hmmTable[hmmTable["RVDB_Score"] > 1000]
+        if args.rvdb_hmm:
+                hmmTable = hmmTable[hmmTable["RVDB_Score"] > 800]
+        if args.vfam_hmm:
+                hmmTable = hmmTable[hmmTable["Vfam_Score"] > 800]
+        if args.eggnog_hmm:
+                hmmTable = hmmTable[hmmTable["EggNOG_Score"] > 800]
+
         hmmTable.to_csv(hmmTable_path, index=False)
+    
 
     # blastx hits
     refTable_path = os.path.join(vvFolder, f"{name}_ref.csv")
@@ -255,6 +262,15 @@ def finalTable(vvFolder):
 
     def csv_to_json(csv_file_path1, csv_file_path2):
         # Create JSON file
+        # Dealing with high values in FullSequence field (for large genomes)
+        max_int = sys.maxsize
+        while True:
+            try:
+                csv.field_size_limit(max_int)
+                break
+            except OverflowError:
+                max_int = int(max_int / 10)
+        ####################################################################
 
         with open(csv_file_path1, mode='r', encoding='utf-8') as file:
             csv_reader = csv.DictReader(file)
