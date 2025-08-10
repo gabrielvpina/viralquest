@@ -62,29 +62,6 @@ Use pip to install the latest stable version of ViralQuest
 pip install viralquest
 ```
 
-### Install via conda (Manually)
-You can install conda [here](https://www.anaconda.com/docs/getting-started/miniconda/install#linux-terminal-installer)
-
-```
-# Create conda enviroment
-conda create -n viralquest python=3.12
-
-# Activate conda enviroment
-conda activate viralquest
-
-# Clone the repository from GitHub:
-git clone https://github.com/gabrielvpina/viralquest.git
-
-# Go to directory:
-cd viralquest
-
-# Execute the `install.py` script:
-python install.py
-
-# Check if ViralQuest is installed:
-viralquest.py --help
-```
-
 ### Install via Docker
 
 ```
@@ -94,17 +71,7 @@ cd viralquest
 
 # Build the Dockerfile:
 docker build -t viralquest .
-
-# Create an alias to use viralquest:
-alias viralquest.py='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'
-
-# OR save the alias, if is necessary log out the session:
-echo "alias viralquest.py='docker run --rm -it -v $(pwd):/workspace -v /run/media:/run/media -v /home:/home --user $(id -u):$(id -g) -w /workspace -e TERM=$TERM -e FORCE_COLOR=1 viralquest conda run -n viralquest python -u /app/viralquest.py'" >> ~/.bashrc
-
-# Verify if it works:
-viralquest.py --help
 ```
-> **Note**: Docker instalation is still under development, some of the debugs and responses of CLI interface are unavailable.
 
 ## Install Databases
 
