@@ -2260,7 +2260,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                     }}))
                     .force("charge", d3.forceManyBody().strength(d => {{
                         // Less repulsion for more compact layout
-                        if (d.type === "phylum") return -2500;
+                        if (d.type === "phylum") return -1800;
                         if (d.type === "family") return -250;
                         return -70;
                     }}))
