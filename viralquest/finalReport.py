@@ -2749,8 +2749,6 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
 
 
 
-
-
                 function exportSelectedAsGenbankFeatures() {{
                     // all ids and contig names in selected boxes
                     const selected = Array.from(document.querySelectorAll('.sequence-checkbox:checked'))
@@ -2773,7 +2771,6 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                         // search ORFs in each contig
                         const orfs = jsonData.ORF_Data[contigId];
 
-                       
                         if (orfs && orfs.length > 0) {{
                             orfs.forEach(orf => {{
                                 // search strand
@@ -2789,13 +2786,25 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                                 const orfNameParts = orf.Query_name.split('_');
                                 const orfName = orfNameParts[orfNameParts.length - 1];
 
-                                // search hmm hits
+                                // === LÓGICA ATUALIZADA PARA MÚLTIPLAS PROPRIEDADES ===
+                                let productDescription = 'hypothetical protein'; // 1. Define um valor padrão
+
+                                // 2. Encontra o único objeto de hit para o ORF
                                 const hmmHit = jsonData.HMM_hits.find(h => h.Query_name === orf.Query_name);
 
-                                // product description
-                                const productDescription = (hmmHit && hmmHit.Pfam_Description) 
-                                                        ? hmmHit.Pfam_Description 
-                                                        : 'hypothetical protein';
+                                // 3. Se o objeto de hit for encontrado, processa suas chaves
+                                if (hmmHit) {{
+                                    // 4. Pega os valores de todas as chaves que começam com "Pfam_Description"
+                                    const descriptions = Object.keys(hmmHit)
+                                        .filter(key => key.startsWith('Pfam_Description'))
+                                        .map(key => hmmHit[key]);
+
+                                    // 5. Se encontrou descrições, junta-as com um pipe
+                                    if (descriptions.length > 0) {{
+                                        productDescription = descriptions.join(' | ');
+                                    }}
+                                }}
+                                // === FIM DA LÓGICA ATUALIZADA ===
 
                                 // format features
                                 const geneLine = `${{startPos}}\t${{endPos}}\tgene\n\t\t\tgene\t${{orfName}}\n`;
