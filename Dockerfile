@@ -1,53 +1,32 @@
-FROM continuumio/miniconda3:latest
+FROM python:3.12-slim AS builder
 
-ENV CONDA_ENV_NAME=viralquest
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONIOENCODING=utf-8
-ENV TERM=xterm-256color
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN conda update -n base -c defaults conda && \
-    conda install -n base -c conda-forge mamba
+COPY pyproject.toml MANIFEST.in ./
+COPY viralquest ./viralquest
 
-RUN mamba create -n ${CONDA_ENV_NAME} python=3.12 -y
+RUN unxz viralquest/bin/*.xz && \
+    chmod +x viralquest/bin/*
 
-SHELL ["conda", "run", "-n", "viralquest", "/bin/bash", "-c"]
+RUN pip install --no-cache-dir .
 
-RUN mamba install -n ${CONDA_ENV_NAME} -c bioconda cap3 blast -y
+FROM python:3.12-slim
 
-RUN wget https://github.com/bbuchfink/diamond/releases/download/v2.1.12/diamond-linux64.tar.gz && \
-    tar -xzf diamond-linux64.tar.gz && \
-    chmod +x diamond && \
-    mv diamond /opt/conda/envs/${CONDA_ENV_NAME}/bin/ && \
-    rm diamond-linux64.tar.gz
+RUN useradd --create-home --shell /bin/bash appuser
 
-RUN apt-get update && apt-get install -y \
-    git \
-    wget \
-    build-essential \
-    gcc \
-    g++ \
-    make \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-RUN git clone https://github.com/gabrielvpina/viralquest.git .
+RUN chown -R appuser:appuser /usr/local/lib/python3.12/site-packages
+RUN chown -R appuser:appuser /usr/local/bin
 
-RUN conda run -n ${CONDA_ENV_NAME} pip install -r requirements.txt
+USER appuser
+WORKDIR /home/appuser
 
-RUN echo "conda activate ${CONDA_ENV_NAME}" >> ~/.bashrc
-
-RUN conda run -n ${CONDA_ENV_NAME} python viralquest.py --version
-
-RUN echo '#!/bin/bash\ncd /workspace\nconda run -n viralquest python /app/viralquest.py "$@"' > /usr/local/bin/viralquest-wrapper && \
-    chmod +x /usr/local/bin/viralquest-wrapper
-
-RUN useradd -m -u 1000 -s /bin/bash viraluser && \
-    chown -R viraluser:viraluser /app
-
-WORKDIR /workspace
-
-USER viraluser
-
-CMD ["conda", "run", "-n", "viralquest", "/bin/bash"]
+ENTRYPOINT ["viralquest"]
+CMD ["--help"]

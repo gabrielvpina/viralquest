@@ -66,6 +66,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                 --chart-color-1: #3498db;
                 --chart-color-2: #2ecc71;
                 --chart-color-3: #e74c3c;
+                --buttom-color: #e3efef;
             }}
 
             body {{
@@ -713,6 +714,43 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                 gap: 20px;
             }}
 
+
+
+            /* buttom back to top */
+            #backToTopBtn {{
+                display: none; 
+                position: fixed; 
+                bottom: 20px; 
+                right: 30px; 
+                z-index: 99; 
+                border: none;
+                outline: none;
+                background-color: #3498db; /*#007bff;*/ 
+                color: white;
+                cursor: pointer;
+                padding: 15px;
+                border-radius: 50%; 
+                width: 55px;
+                height: 55px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                transition: background-color 0.3s, opacity 0.4s, visibility 0.4s;
+            }}
+
+           #backToTopBtn.show {{
+                display: flex; 
+                opacity: 1;
+                visibility: visible;
+            }}
+
+            #backToTopBtn:hover {{
+                background-color: #0056b3; 
+            }}
+
+
+
         </style>
     </head>
     <body>
@@ -812,6 +850,12 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
             </div>
         </div>
 
+        <button id="backToTopBtn" title="Back to Top">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 19V5M5 12l7-7 7 7"/>
+        </svg>
+        </button>
+
         <!-- Known Viruses Dashboard to be placed after the existing stats-dashboard div -->
         <div class="stats-dashboard known-viruses-dashboard">
             <h2>Known Viruses</h2>
@@ -830,7 +874,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
         <div class="stats-dashboard known-viruses-dashboard">
             <h2>Viral Taxonomy</h2>
             <div class="known-viruses-description">
-                <p>Network visualization of viruses grouped by phylum and family</p>
+                <p>Network visualization of viruses grouped by phylum and family. Hover for details. Click and drag nodes.</p>
             </div>
             <div class="taxonomy-container" id="taxonomy-container">
                 <!-- Known virus cards will be dynamically added here -->
@@ -861,6 +905,29 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
         </div>
 
         <script>
+
+        // "Back to top" buttom
+        const backToTopButton = document.getElementById("backToTopBtn");
+        function scrollFunction() {{
+            if (document.body.scrollTop > 200 || document.documentElement.scrollTop > 200) {{
+                backToTopButton.classList.add("show");
+            }} else {{
+                backToTopButton.classList.remove("show");
+            }}
+        }}
+
+        function scrollToTop() {{
+            window.scrollTo({{
+                top: 0,
+                behavior: 'smooth' 
+            }});
+        }}
+
+        window.onscroll = function() {{
+            scrollFunction();
+        }};
+
+        backToTopButton.addEventListener("click", scrollToTop);
 
         const jsonData = {jsonDB}
 
@@ -1317,19 +1384,19 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                     const buttonPaddingHorizontal = 12;
                     const buttonPaddingVertical = 6;
                     const fontSize = "1rem";
-                    const borderRadius = 4;
+                    const borderRadius = 16;
                     const textColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
-                    const backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--card-background');
-                    const borderColor = getComputedStyle(document.documentElement).getPropertyValue('--border-color');
+                    const backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--buttom-color');
+                    const borderColor = getComputedStyle(document.documentElement).getPropertyValue('--shadow-color');
                     const hoverBackgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color');
                     const hoverTextColor = "white";
                     const hoverBorderColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color');
 
-                    const buttonText = "FASTA to clipboard";
+                    const buttonText = "Copy FASTA";
                     const textElement = copyButton.append("text")
                         .attr("x", 0)
                         .attr("y", 0)
-                        .attr("dy", "0.35em")
+                        .attr("dy", "0.45em")
                         .style("text-anchor", "middle")
                         .style("font-family", styles.fonts.primary)
                         .style("font-size", fontSize)
@@ -1347,7 +1414,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                         .attr("y", -buttonHeight / 2 + 2)
                         .style("fill", backgroundColor)
                         .style("stroke", borderColor)
-                        .style("stroke-width", 1)
+                        .style("stroke-width", 2)
                         .attr("rx", borderRadius)
                         .attr("ry", borderRadius);
 
@@ -2106,7 +2173,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                 // Create a new div for our visualization
                 const taxonomyDiv = container.append("div")
                     .attr("class", "taxonomy-visualization-wrapper")
-                    .style("width", "97%")
+                    .style("width", "96.8%")
                     .style("height", "500px")
                     .style("background-color", "#ffffff")
                     .style("border-radius", "8px")
@@ -2136,7 +2203,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                         phylum: "#3498db",     // Blue for phylum
                         family: "#2ecc71",     // Green for family
                         virus: "#e74c3c",      // Red for viruses
-                        link: "#ecf0f1",       // Light gray for links
+                        link: "#c0c4c4",       // Light gray for links
                         highlight: "#ff7f0e"   // Orange for highlighting
                     }},
                     fonts: {{
@@ -2188,12 +2255,12 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                 const simulation = d3.forceSimulation(processedData.nodes)
                     .force("link", d3.forceLink(processedData.links).id(d => d.id).distance(d => {{
                         // Shorter distances for a more compact layout
-                        if (d.source.type === "phylum" && d.target.type === "family") return 220;
-                        return 90;
+                        if (d.source.type === "phylum" && d.target.type === "family") return 100;
+                        return 20;
                     }}))
                     .force("charge", d3.forceManyBody().strength(d => {{
                         // Less repulsion for more compact layout
-                        if (d.type === "phylum") return -250;
+                        if (d.type === "phylum") return -1800;
                         if (d.type === "family") return -250;
                         return -70;
                     }}))
@@ -2203,7 +2270,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                     .force("y", d3.forceY().strength(0.1))
                     .force("collision", d3.forceCollide().radius(d => {{
                         // Smaller collision radiuses for compact layout
-                        if (d.type === "phylum") return 50;
+                        if (d.type === "phylum") return 120;
                         if (d.type === "family") return 50;
                         return 20;
                     }}));
@@ -2215,7 +2282,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                     .data(processedData.links)
                     .enter().append("line")
                     .attr("stroke", styles.colors.link)
-                    .attr("stroke-opacity", 0.6)
+                    .attr("stroke-opacity", 1)
                     .attr("stroke-width", d => {{
                         // Different stroke widths based on link type
                         if (d.source.type === "phylum" && d.target.type === "family") return 2;
@@ -2674,6 +2741,146 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                     document.getElementById('export-tsv-btn').addEventListener('click', exportSelectedAsTSV);
                 }}
 
+
+
+
+
+
+
+
+
+                function exportSelectedAsGenbankFeatures() {{
+                    // all ids and contig names in selected boxes
+                    const selected = Array.from(document.querySelectorAll('.sequence-checkbox:checked'))
+                        .map(cb => cb.getAttribute('data-contig'));
+
+                    // verify 
+                    if (selected.length === 0) {{
+                        alert('Please, select at least one sequence.');
+                        return;
+                    }}
+
+                    // start string
+                    let genbankContent = '';
+
+                    // iterate each contig
+                    selected.forEach(contigId => {{
+                        // add header
+                        genbankContent += `>Feature ${{contigId}}\n`;
+
+                        // search ORFs in each contig
+                        const orfs = jsonData.ORF_Data[contigId];
+
+                        if (orfs && orfs.length > 0) {{
+                            orfs.forEach(orf => {{
+                                // search strand
+                                // reverse order if negative strand
+                                let startPos = orf.start;
+                                let endPos = orf.end;
+                                if (orf.strand === '-') {{
+                                    startPos = orf.end;
+                                    endPos = orf.start;
+                                }}
+
+                                // extract orf name
+                                const orfNameParts = orf.Query_name.split('_');
+                                const orfName = orfNameParts[orfNameParts.length - 1];
+
+                                // === LÓGICA ATUALIZADA PARA MÚLTIPLAS PROPRIEDADES ===
+                                let productDescription = 'hypothetical protein'; // 1. Define um valor padrão
+
+                                // 2. Encontra o único objeto de hit para o ORF
+                                const hmmHit = jsonData.HMM_hits.find(h => h.Query_name === orf.Query_name);
+
+                                // 3. Se o objeto de hit for encontrado, processa suas chaves
+                                if (hmmHit) {{
+                                    // 4. Pega os valores de todas as chaves que começam com "Pfam_Description"
+                                    const descriptions = Object.keys(hmmHit)
+                                        .filter(key => key.startsWith('Pfam_Description'))
+                                        .map(key => hmmHit[key]);
+
+                                    // 5. Se encontrou descrições, junta-as com um pipe
+                                    if (descriptions.length > 0) {{
+                                        productDescription = descriptions.join(' | ');
+                                    }}
+                                }}
+                                // === FIM DA LÓGICA ATUALIZADA ===
+
+                                // format features
+                                const geneLine = `${{startPos}}\t${{endPos}}\tgene\n\t\t\tgene\t${{orfName}}\n`;
+                                const cdsLine = `${{startPos}}\t${{endPos}}\tCDS\n\t\t\tproduct\t${{productDescription}}\n`;
+
+                                // add line between features
+                                genbankContent += geneLine + cdsLine + '\n';
+                            }});
+                        }}
+                    }});
+
+                    // gbk file
+                    const blob = new Blob([genbankContent], {{ type: 'text/plain' }});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'viralquest_features.gbk'; // file name
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }}
+
+
+
+
+                // Select FASTA option
+                function exportSelectedAsFASTA() {{
+                    // every IDs in selected boxes
+                    const selected = Array.from(document.querySelectorAll('.sequence-checkbox:checked'))
+                        .map(cb => cb.getAttribute('data-contig'));
+
+                    // how many sequences are selected
+                    if (selected.length === 0) {{
+                        alert('Please, select at least one sequence.');
+                        return;
+                    }}
+
+                    // Fasta string
+                    let fastaContent = '';
+
+                    // all over JSON contigs
+                    selected.forEach(contigId => {{
+                        // find viral hit in JSON
+                        const viralHit = jsonData.Viral_Hits.find(h => h.QueryID === contigId);
+
+                        // if hit and viralseq
+                        if (viralHit && viralHit.FullSeq) {{
+
+                            const header = `>${{viralHit.QueryID}} - ${{viralHit.BLASTx_Organism_Name || 'Unknown Organism'}}\n`;
+
+                            // complete sequence
+                            const sequence = `${{viralHit.FullSeq}}\n`;
+
+                            // header
+                            fastaContent += header + `${{sequence}}\n`;
+                        }}
+                    }});
+
+                    // fasta file
+                    const blob = new Blob([fastaContent], {{ type: 'text/plain' }});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'viralquest_contigs.fasta'; // file name
+                    document.body.appendChild(a); 
+                    a.click();
+                    document.body.removeChild(a); 
+                    URL.revokeObjectURL(url);
+                }}
+
+
+
+
+
+
                 // export selected data as TSV
                 function exportSelectedAsTSV() {{
                     const selected = Array.from(document.querySelectorAll('.sequence-checkbox:checked'))
@@ -2795,8 +3002,10 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                     <div class="export-format">
                         <label>Format:</label>
                         <select id="export-format">
-                        <option value="tsv">TSV (Data)</option>
+                        <option value="tsv">TSV (Table)</option>
                         <option value="svg">SVG (Graphics)</option>
+                        <option value="fasta">FASTA (Sequence)</option>
+                        <option value="genbank">GenBank (Features)</option>
                         </select>
                     </div>
                     <div class="toggle-columns" id="customize-columns">Customize Columns</div>
@@ -2835,8 +3044,10 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                     exportSelectedAsTSV();
                     }} else if (format === 'svg') {{
                     exportSelectedAsGraphics('svg');
-                    }} else if (format === 'pdf') {{
-                    exportSelectedAsGraphics('pdf');
+                    }} else if (format === 'fasta') {{
+                    exportSelectedAsFASTA();
+                    }} else if (format === 'genbank') {{
+                    exportSelectedAsGenbankFeatures('genbank');
                     }}
                 }});
                 
@@ -3145,7 +3356,7 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                     titleText.setAttribute('x', 20);
                     titleText.setAttribute('y', 20);
                     titleText.setAttribute('font-family', 'Arial, sans-serif');
-                    titleText.setAttribute('font-size', '16px');
+                    titleText.setAttribute('font-size', '13px');
                     titleText.setAttribute('font-weight', 'bold');
                     //titleText.textContent = 'ViralQuest Visualization Export';
                     
@@ -3173,15 +3384,15 @@ def generate_html_report(vvFolder, cap3check, input_repo, outdir_repo, blastn_re
                         groupClone.setAttribute('transform', `translate(20, ${{totalHeight}})`);
                         
                         // label for this contig
-                        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                        label.setAttribute('x', 0);
-                        label.setAttribute('y', -10);
-                        label.setAttribute('font-family', 'Arial, sans-serif');
-                        label.setAttribute('font-size', '14px');
-                        label.setAttribute('font-weight', 'bold');
-                        label.textContent = contigId;
+                        //const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        //label.setAttribute('x', 0);
+                        //label.setAttribute('y', -10);
+                        //label.setAttribute('font-family', 'Arial, sans-serif');
+                        //label.setAttribute('font-size', '14px');
+                        //label.setAttribute('font-weight', 'bold');
+                        //label.textContent = contigId;
                         
-                        groupClone.insertBefore(label, groupClone.firstChild);
+                        // groupClone.insertBefore(label, groupClone.firstChild);
                         
                         // combined SVG
                         combinedSvg.appendChild(groupClone);

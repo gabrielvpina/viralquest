@@ -273,7 +273,7 @@ def main():
 
     time_start = time.time()
     steps = [
-        f"Check FASTA file - {args.input}",
+        f"Check FASTA file - {os.path.basename(args.input)}",
         f"Finding ORFs - {args.maxORFs} maximum ORFs",
         f"Filter sequences - Viral RefSeq alignment",
         "HMMsearch RVDB - Detect viral elements" if args.rvdb_hmm else None,
@@ -446,7 +446,7 @@ def main():
         live.update(create_progress_table(active_steps, current_step, step_status))
     
     time_end = time.time()
-    console.print(f"[bold green]The pipeline took [/][bold yellow]{time_end - time_start:.2f}[/][bold green] seconds to run.[/]")
+    console.print(f"[bold green]The sample {os.path.basename(args.input)} took [/][bold yellow]{time_end - time_start:.2f}[/][bold green] seconds to run.[/]")
     
     # Log file generation (unchanged)
     name = os.path.basename(args.input)
