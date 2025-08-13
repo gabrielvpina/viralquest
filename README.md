@@ -44,6 +44,7 @@
 ## Introduction
 ViralQuest is a Python-based bioinformatics pipeline designed to detect, identify, and characterize viral sequences from assembled contig datasets. It streamlines the analysis of metagenomic or transcriptomic data by integrating multiple steps—such as sequence alignment, taxonomic classification, and annotation—into a cohesive and automated workflow. ViralQuest is particularly useful for virome studies, enabling researchers to uncover viral diversity, assess potential host-virus interactions, and explore the ecological or clinical significance of detected viruses.
 
+Link to preprint paper: [https://doi.org/10.1101/2025.08.10.669577](https://doi.org/10.1101/2025.08.10.669577)
 
 
 <img src="https://github.com/gabrielvpina/viralquest/blob/main/misc/figure1.png?raw=true" width="850" height="550">
