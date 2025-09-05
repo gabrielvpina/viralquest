@@ -17,7 +17,7 @@ def findorf(vvFolder):
   saida = vvFolder
 
   # Executa orfipy - genetic code 01
-  orfipy = ["orfipy","--partial-3","--partial-5","--table", "1", "--outdir", saida, entrada, "--pep", f"{nome}_all_ORFs.fasta"]
+  orfipy = ["orfipy","--partial-3","--partial-5","--table", "1", "--ignore-case", "--outdir", saida, entrada, "--pep", f"{nome}_all_ORFs.fasta"]
 
   subprocess.run(orfipy, check=True, capture_output=True)
 
