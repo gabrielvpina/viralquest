@@ -10,6 +10,7 @@
     <br>
       <a href="https://pypi.org/project/viralquest/">
         <img alt="Static Badge" src="https://img.shields.io/badge/ViralQuest-v2.6.22-COLOR2%3Fcolor%3DCOLOR1">
+        <img alt="Static Badge" src="https://img.shields.io/badge/Linux-COLOR2%3Fcolor%3DCOLOR1">
       </a>
   </p>
 </div>
