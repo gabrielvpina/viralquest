@@ -58,7 +58,7 @@ Link to preprint paper: [https://doi.org/10.1101/2025.08.10.669577](https://doi.
 
 ### Install via PyPI (Recommended)
 
-Use pip to install the latest stable version of ViralQuest
+Use pip to install the latest stable version of ViralQuest for linux64 machines.
 ```
 pip install viralquest
 ```
