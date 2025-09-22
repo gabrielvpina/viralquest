@@ -2,12 +2,12 @@ function populateKnownVirusesDashboard(data) {
 const container = document.getElementById('known-viruses-container');
 const noKnownVirusesElement = document.getElementById('no-known-viruses');
 
-// Filter viral hits that meet the criteria (≥90% identity, ≥70% coverage in BLASTx)
+// Filter viral hits (≥90% identity, ≥70% coverage in BLASTx)
 const knownViruses = data.Viral_Hits.filter(hit => 
 hit.BLASTx_Ident >= 90 && hit.BLASTx_Cover >= 70
 );
 
-// Show or hide the "no known viruses" message
+// show or hide the "no known viruses" message
 if (knownViruses.length === 0) {
 noKnownVirusesElement.style.display = 'block';
 return;
@@ -15,12 +15,12 @@ return;
 noKnownVirusesElement.style.display = 'none';
 }
 
-// Create a card for each known virus
+// card for each known virus
 knownViruses.forEach(virus => {
 const card = document.createElement('div');
 card.className = 'known-virus-card';
 
-// Virus icon (you can use the same svg as in your existing cards)
+// Virus icon 
 const virusIcon = `
     <svg viewBox="0 0 24 24" width="24" height="24">
         <circle cx="12" cy="12" r="4" fill="currentColor"/>
@@ -38,7 +38,7 @@ const virusIcon = `
 // Format the organism name for display
 const organismName = virus.BLASTx_Organism_Name || virus.ScientificName || "Unknown virus";
 
-// Create the card content
+// card content
 card.innerHTML = `
     <div class="virus-header">
         <div class="virus-icon">${virusIcon}</div>
@@ -82,7 +82,7 @@ container.appendChild(card);
 function formatEvalue(evalue) {
 if (evalue === null || evalue === undefined) return 'N/A';
 
-// If it's already in scientific notation as a string, return it
+// If in scientific notation as a string, return it
 if (typeof evalue === 'string' && evalue.includes('e')) return evalue;
 
 // Convert to number if it's a string
