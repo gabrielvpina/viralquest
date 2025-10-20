@@ -84,6 +84,8 @@ The RefSeq viral release is a curated collection of viral genome and protein seq
 diamond makedb --in viral.1.protein.faa --db viralDB.dmnd
 ```
 
+The final `viralDB.dmnd` file has a size of **~219 MB**.
+
 ### BLAST nr/nt Databases
 The BLAST nr (non-redundant protein) and nt (nucleotide) databases are essential resources for viral identification. The nt database is useful for identifying viral genomes or transcripts using nucleotide similarity, while nr is especially powerful for detecting and annotating viral proteins, even in divergent or novel viruses, through translated searches like blastx.
 Download the nr/nt databases in fasta format via [this link](https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/)
@@ -99,6 +101,8 @@ wget https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
 diamond makedb --in nr --db nr.dmnd
 ```
 > ⚠️ **Warning:** Check the version of diamond, make sure that is the same version or higher then the used to build the RefSeq Viral Release `.dmnd` file.
+
+The final `nr.dmnd` file has a size of **346 GB**.
 
 ### nt database (optional)
 1) The `nt.gz` file correspond to nt.fasta
