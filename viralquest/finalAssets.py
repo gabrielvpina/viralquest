@@ -108,7 +108,7 @@ def finalTable(vvFolder, args):
     
     #####
     # best viral hits table
-    viralSeqs = inputfile[inputfile['BLASTx_Organism_Name'].str.contains(r'virus[-\s]?|phage|riboviria', case=False, na=False)]
+    viralSeqs = inputfile[inputfile['BLASTx_Organism_Name'].str.contains(r'virus[-\s]?|phage|riboviria|viral|viridae|virales', case=False, na=False)]
 
     # CALCULATE ViralQuest SCORE
     def calculate_vq_score(row):
