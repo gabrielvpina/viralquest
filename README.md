@@ -123,97 +123,40 @@ For this task, three models are available:
 
 At least one of these models is necessary to run the pipeline. However, it's recommended to use all three concurrently.
 
-
-The `Vfam` and `eggNOG` models are spliced in small models, we must join them in unified models.
-
 ### Vfam HMM
 The VFam HMM models are profile Hidden Markov Models (HMMs) specifically designed for the identification of viral proteins. 
-
-**Steps to Install**
-1) Download `vfam.hmm.tar.gz` via [this link](https://fileshare.lisc.univie.ac.at/vog/vog228/vfam.hmm.tar.gz):
-```
-wget https://fileshare.lisc.univie.ac.at/vog/vog228/vfam.hmm.tar.gz
-```
-2) Extract the file:
-```
-tar -xzvf vfam.hmm.tar.gz
-```
-3) Unify all `.hmm` models in one model:
-```
-cat hmm/*.hmm >> vfam228.hmm
-```
-Now it's possible to use the `vfam228.hmm` file in the **ViralQuest** pipeline!
 
 ### eggNOG Viral HMM
 The eggNOG viral OGs HMM models are part of the eggNOG (evolutionary genealogy of genes: Non-supervised Orthologous Groups) resource and are designed to identify and annotate viral genes and proteins based on orthologous groups (OGs).
 
-**Steps to Install**
-1) Download each viral OGs in the eggNOG Database via [this link](http://eggnog45.embl.de/#/app/viruses). The HMM models download are in the last column.
-
-2) Or download the data via this BASH script:
-```
-#!/bin/bash
-
-mkdir eggNOG
-cd eggNOG
-
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/ssRNA/ssRNA.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Retrotranscribing/Retrotranscribing.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/dsDNA/dsDNA.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Viruses/Viruses.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Herpesvirales/Herpesvirales.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/ssDNA/ssDNA.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/ssRNA_positive/ssRNA_positive.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Retroviridae/Retroviridae.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Ligamenvirales/Ligamenvirales.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Caudovirales/Caudovirales.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Mononegavirales/Mononegavirales.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Tymovirales/Tymovirales.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Nidovirales/Nidovirales.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/Picornavirales/Picornavirales.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/dsRNA/dsRNA.hmm.tar.gz
-wget http://eggnogdb.embl.de/download/eggnog_4.5/data/viruses/ssRNA_negative/ssRNA_negative.hmm.tar.gz
-
-for i in *.tar.gz; do tar -zxvf "$i" ;done
-```
-Save as `download_eggNOG.sh`. Now let's execute:
-```
-chmod +x download_eggNOG.sh && ./download_eggNOG.sh
-```
-3) Now join all result files:
-```
-cat eggNOG/hmm_files/*.hmm >> eggNOG.hmm
-```
-
-Now it's possible to use the `eggNOG.hmm` file in the **ViralQuest** pipeline!
-
 ### RVDB Viral HMM
 The Reference Viral Database (RVDB) is a curated collection of viral sequences, and its protein HMM models—RVDB-prot and RVDB-prot-HMM—are designed to enhance the detection and annotation of viral proteins.
 
-**Download RVDB hmm model**
-1) Visit the RVDB Protein database via [this link](https://rvdb-prot.pasteur.fr/) and download the hmm model version 29.0.
-2) Or download directly via linux termnial:
-```
-wget https://rvdb-prot.pasteur.fr/files/U-RVDBv29.0-prot.hmm.xz
-```
-3) Decompress the model:
-```
-unxz -v U-RVDBv29.0-prot.hmm.xz
-```
-Now it's possible to use the `U-RVDBv29.0-prot.hmm` file in the **ViralQuest** pipeline!
-
-## Install Pfam Model
+### Pfam Model
 Pfam is a widely used database of protein families, each represented by a profile Hidden Markov Model (HMM). These models are built from curated multiple sequence alignments and represent conserved domains or full-length protein families. Download the **version 37.2**.
-1) Download the `Pfam-A.hmm.gz` via [this link](https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam37.2/). 
-- Or download via Terminal:
+
+## Download all models
+
+It's possible to download all models via this script:
+
 ```
-wget https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam37.2/Pfam-A.hmm.gz
+#!/bin/bash
+
+# create new dir
+mkdir vq-hmms
+cd vq-hmms
+
+# download models
+wget -O EggNOG-4.5.hmm.xz https://zenodo.org/records/18715455/files/EggNOG-4.5.hmm.xz?download=1
+wget -O U-RVDBv29.0-prot.hmm.xz https://zenodo.org/records/18715455/files/U-RVDBv29.0-prot.hmm.xz?download=1
+wget -O Vfam-228.hmm.xz https://zenodo.org/records/18715455/files/Vfam-228.hmm.xz?download=1
+wget -O Pfam-A.hmm.xz https://zenodo.org/records/18715455/files/Pfam-A.hmm.xz?download=1
+
+# decompress models
+unxz -v *xz
 ```
-2) Decompress the file:
-```
-gunzip Pfam-A.hmm.gz
-``` 
-Now it's possible to use the `Pfam-A.hmm` file in the **ViralQuest** pipeline!
+
+Save the script as `getModels.sh` and execute the command `chmod +x getModels.sh`. This script will create a new directory called `vq-hmms` with all hmms required. 
 
 ## AI Summary
 You can use either a local LLM (via Ollama) or an API key to process and integrate viral data — such as BLAST results and HMM characterizations — with the internal ViralQuest database, which includes viral family information from ICTV (International Committee on Taxonomy of Viruses) and ViralZone. This database contains information on over 200 viral families, including details such as host range, geographic distribution, viral vectors, and more. The LLM can summarize this information to provide a broader and more insightful perspective on the viral data.
