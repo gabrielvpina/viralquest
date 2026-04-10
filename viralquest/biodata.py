@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
 
-@dataclass
+
+
+@dataclass(slots=True)
 class NucSequence:
-    """Valid biological sequences."""
+    """Valid biological sequences. Mutable fields."""
     id: str
     sequence: str
     

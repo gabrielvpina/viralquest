@@ -1,4 +1,3 @@
-
 import os
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
@@ -52,9 +51,6 @@ class FastaParser:
         logger.success(f"Found {len(self.sequences)} valid sequences in {self.file_path}")
 
 
-    # some extra informations of the sequences to send to Biosequence
-    # Length and GC
-    # def get_info_seqs(self):
 
     
 
