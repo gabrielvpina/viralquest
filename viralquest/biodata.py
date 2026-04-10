@@ -1,17 +1,26 @@
 import uuid
 from dataclasses import dataclass, field
 
+@dataclass(slots=True)
+class Orf:
+    """Stores a single Open Reading Frame metadata"""
+    start_codon: str
+    stop_codon: str
+    start_position: int
+    stop_position: int
+    length_aa: int
+    length_nt: int
+    bigger_than_50: bool
 
 @dataclass(slots=True)
 class BlastnResult:
-    """Stores metadata from a BLASTn align"""
+    """Stores metadata from a single BLASTn hit"""
     hit_id: str
     hit_order: int
     e_value: float
     query_coverage: float
     identity_perc: float
     hsp: float
-
 
 
 @dataclass(slots=True)
@@ -24,7 +33,10 @@ class NucSequence:
     uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
     
     # blastn metadata
-    blastn_info: BlastnResult | None = field(default=None, init=False)
+    blast_hits: list[BlastnResult] = field(default_factory=list, init=False)
+
+    # orfs metadata
+    orfs: list[Orf] = field(default_factory=list, init=False)
 
     # other parameters
     length: int = field(init=False)

@@ -52,7 +52,7 @@ class FastaParser:
                     sequence=sequence_string,
                 )
 
-                self.sequences.append(new_sequence)
+                self.sequences.append(new_sequence) # sequences stores all information from fasta
 
             if not self.sequences:
                 logger.warning(f"No valid FASTA sequences found in {self.file_path}. Is the file empty or in the wrong format?")
