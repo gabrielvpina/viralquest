@@ -1,6 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
 
+
 @dataclass(slots=True)
 class Orf:
     """Stores a single Open Reading Frame metadata"""
@@ -11,16 +12,26 @@ class Orf:
     length_aa: int
     length_nt: int
     bigger_than_50: bool
+    aa_sequence: str
+    nuc_sequence: str
+
+
 
 @dataclass(slots=True)
 class BlastnResult:
     """Stores metadata from a single BLASTn hit"""
     hit_id: str
-    hit_order: int
+    hit_sequence: str
+    hit_length: int
     e_value: float
-    query_coverage: float
-    identity_perc: float
     hsp: float
+    
+    # ---- values that are derived from previous results
+    query_coverage: float = field(init=False)
+    percent_identity: float = field(init=False)
+    # ----
+
+
 
 
 @dataclass(slots=True)
@@ -59,6 +70,3 @@ class NucSequence:
         else:
             self.gc_content = 0.0
 
-    def to_fasta_format(self) -> str:
-        """returns sequence in fasta"""
-        return f">{self.id}\n{self.sequence}"
