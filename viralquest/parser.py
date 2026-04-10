@@ -45,7 +45,7 @@ class FastaParser:
                     logger.error(f"The sequence {record.id} contains invalid characters.")
                     raise ValueError("The file contains sequences that are invalid to the analysis.")
                 
-                # save sequence info to Biosequence dataclass
+                # save sequence info to NucSequence dataclass
                 sequence_string = str(record.seq).upper()
                 new_sequence = NucSequence(
                     id=record.id,

@@ -9,6 +9,8 @@ class Orf:
     stop_codon: str
     start_position: int
     stop_position: int
+    strand: str
+    frame: int
     length_aa: int
     length_nt: int
     bigger_than_50: bool
