@@ -29,6 +29,7 @@ for seq in Parser.sequences:
         print(f"# ===================================\n")
 
     else:
+        print(f"-> ORF INFO")
         print(f"No valid ORFs :(\n")
 
 print(f"\n\nTotal sequences processed: {len(Parser.sequences)}\n")
