@@ -23,6 +23,7 @@ for seq in Parser.sequences:
 
     if biggest_orf is not None:
         print(f"-> ORF INFO")
+        print(f"ORF type: {biggest_orf.orf_type}")
         print(f"Length: {biggest_orf.length_aa} AA")
         print(f"Frame: {biggest_orf.frame} | Strand: {biggest_orf.strand}")
         print(f"Sequence (AA): {biggest_orf.aa_sequence}")

@@ -16,6 +16,8 @@ class Orf:
     bigger_than_50: bool
     aa_sequence: str
     nuc_sequence: str
+    orf_type: str
+
 
 
 

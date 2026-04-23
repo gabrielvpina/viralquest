@@ -61,6 +61,7 @@ class OrfAnalyzer:
             nova_orf = Orf(
                 start_codon=metadata.get('Start', ''),
                 stop_codon=metadata.get('Stop', ''),
+                orf_type=metadata.get('ORF_type', ''),
                 start_position=start,
                 stop_position=stop,
                 strand=strand,
