@@ -17,6 +17,9 @@ class Orf:
     aa_sequence: str
     nuc_sequence: str
     orf_type: str
+    # ids
+    id: str
+    uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
 
 
 
