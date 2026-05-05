@@ -2,7 +2,7 @@ import time
 from viralquest.parser import FastaParser
 from viralquest.orfs import OrfAnalyzer
 
-Parser = FastaParser("data/COV.fasta")
+Parser = FastaParser("data/test.fasta")
 Parser.read_input_file()
 
 orf_anlyzer = OrfAnalyzer(min_len_nt=150)

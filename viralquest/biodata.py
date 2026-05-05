@@ -18,9 +18,26 @@ class Orf:
     nuc_sequence: str
     orf_type: str
     # ids
-    id: str
+    # id: str
     uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
 
+    # hmm domains
+    domains: list['HmmDomain'] = field(default_factory=list, init=False)
+
+
+
+@dataclass(slots=True)
+class HmmDomain:
+    """Saves hmmsearch hits"""
+    database: str
+    target: str
+    score: float
+    e_value: float
+    start: int
+    stop: int
+    length: int
+    description: str
+    details: str
 
 
 
@@ -47,7 +64,6 @@ class NucSequence:
     id: str
     sequence: str
 
-    # unique code id 
     uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
     
     # blastn metadata
@@ -63,17 +79,13 @@ class NucSequence:
 
     def __post_init__(self):
 
-        # length
         self.length = len(self.sequence)
-        
-        # count N bases 
-        self.n_count = self.sequence.count('N')
-       
+        self.n_count = self.sequence.count('N')  
         # gc_content
         if self.length > 0:
             g_count = self.sequence.count('G')
             c_count = self.sequence.count('C')
             self.gc_content = ((g_count + c_count) / self.length) * 100
-        else:
+        else:1
             self.gc_content = 0.0
 
