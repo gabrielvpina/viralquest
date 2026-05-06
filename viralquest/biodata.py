@@ -18,7 +18,7 @@ class Orf:
     nuc_sequence: str
     orf_type: str
     # ids
-    # id: str
+    id: str
     uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
 
     # hmm domains
@@ -37,6 +37,7 @@ class HmmDomain:
     stop: int
     length: int
     description: str
+    type: str
     details: str
 
 
@@ -86,6 +87,6 @@ class NucSequence:
             g_count = self.sequence.count('G')
             c_count = self.sequence.count('C')
             self.gc_content = ((g_count + c_count) / self.length) * 100
-        else:1
+        else:
             self.gc_content = 0.0
 

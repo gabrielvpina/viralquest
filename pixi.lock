@@ -64,6 +64,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pyahocorasick-2.3.0-py312h4c3975b_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/pyfastx-2.3.0-py312h71493bf_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pygments-2.20.0-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/pyhmmer-0.12.0-py312h247cb63_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pysocks-1.7.1-pyha55dd90_7.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pytest-9.0.3-pyhc364b38_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/python-3.12.13-hd63d673_0_cpython.conda
@@ -868,6 +869,20 @@ packages:
   - pkg:pypi/pygments?source=compressed-mapping
   size: 893031
   timestamp: 1774796815820
+- conda: https://conda.anaconda.org/bioconda/linux-64/pyhmmer-0.12.0-py312h247cb63_1.conda
+  sha256: e61eab73994426c6ca82e7b55f661e38d0cc69f7f157344fc0e045de1a9b8d01
+  md5: 76696b26b67fb9d5f0f0887e220e7f99
+  depends:
+  - libgcc >=14
+  - psutil >=6.0,<8.0
+  - python >=3.12,<3.13.0a0
+  - python_abi 3.12.* *_cp312
+  license: MIT
+  license_family: MIT
+  purls:
+  - pkg:pypi/pyhmmer?source=hash-mapping
+  size: 3233222
+  timestamp: 1772010875198
 - conda: https://conda.anaconda.org/conda-forge/noarch/pysocks-1.7.1-pyha55dd90_7.conda
   sha256: ba3b032fa52709ce0d9fd388f63d330a026754587a2f461117cac9ab73d8d0d8
   md5: 461219d1a5bd61342293efa2c0c90eac
