@@ -3,6 +3,29 @@ from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
+class BlastxResult:
+    """One Diamond BLASTx hit (6-column tsv format 6)."""
+    query_id: str
+    subject_id: str
+    pct_identity: float
+    aln_length: int
+    mismatches: int
+    gap_opens: int
+    query_start: int
+    query_end: int
+    subject_start: int
+    subject_end: int
+    e_value: float
+    bit_score: float
+    # derived
+    query_coverage: float = field(init=False, default=0.0)
+
+    def compute_coverage(self, query_length: int) -> None:
+        if query_length > 0:
+            self.query_coverage = (self.aln_length / query_length) * 100
+
+
+@dataclass(slots=True)
 class Orf:
     """Stores a single Open Reading Frame metadata"""
     start_codon: str
@@ -18,7 +41,7 @@ class Orf:
     nuc_sequence: str
     orf_type: str
     # ids
-    id: str
+    name: str
     uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
 
     # hmm domains

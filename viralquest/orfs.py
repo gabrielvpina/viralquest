@@ -70,7 +70,8 @@ class OrfAnalyzer:
                 length_aa=len(aa_sequence),
                 bigger_than_50=len(aa_sequence) > 50,
                 aa_sequence=aa_sequence,
-                nuc_sequence=nuc_sequence
+                nuc_sequence=nuc_sequence,
+                name=f"{nuc_seq.id}_ORF_{start}_{stop}{strand}"
             )
             
 
