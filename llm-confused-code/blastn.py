@@ -1,101 +1,28 @@
 import csv
-import glob
-import lzma
-import os
 import subprocess
 import tempfile
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
 from pathlib import Path
 
-from Bio import SeqIO, BiopythonWarning
+from Bio import BiopythonWarning
 from loguru import logger
 
-from .biodata import NucSequence
+from .biodata import NucSequence, BlastnResult
 
 
 # ---------------------------------------------------------------------------
-# Result dataclass
-# ---------------------------------------------------------------------------
-
-@dataclass(slots=True)
-class BlastnResult:
-    """One BLASTn hit — compatible with both local and online search."""
-    query_id: str
-    query_length: int
-    subject_length: int
-    query_coverage: float
-    pct_identity: float
-    e_value: float
-    subject_title: str
-
-
-# ---------------------------------------------------------------------------
-# Binary resolver (extracted from the original runBlastn.py logic)
-# ---------------------------------------------------------------------------
-
-class BlastnBinaryResolver:
-    """
-    Finds or extracts the blastn binary.
-
-    Search order:
-      1. An explicit path passed by the caller.
-      2. The bundled binary at viralquest/bin/blastn.
-      3. The compressed fallback at viralquest/bin/blastn.xz.
-    """
-
-    def __init__(self, explicit_path: str | None = None):
-        self.explicit_path = explicit_path
-        self._resolved: Path | None = None
-
-    def resolve(self) -> Path:
-        if self._resolved is not None:
-            return self._resolved
-
-        if self.explicit_path:
-            path = Path(self.explicit_path)
-            if not path.exists():
-                raise FileNotFoundError(f"BLASTn binary not found at: {path}")
-            self._make_executable(path)
-            self._resolved = path
-            return self._resolved
-
-        # locate relative to this file → project_root/viralquest/bin/
-        bin_dir = Path(__file__).resolve().parent / "bin"
-        binary  = bin_dir / "blastn"
-        compressed = bin_dir / "blastn.xz"
-
-        if not binary.exists() and compressed.exists():
-            logger.info(f"Extracting {compressed} …")
-            try:
-                with lzma.open(compressed, "rb") as src, open(binary, "wb") as dst:
-                    dst.write(src.read())
-            except Exception as exc:
-                raise RuntimeError(f"Failed to extract {compressed}: {exc}") from exc
-
-        if not binary.exists():
-            raise FileNotFoundError(
-                f"BLASTn binary not found. Expected: {binary} (or {compressed})"
-            )
-
-        self._make_executable(binary)
-        self._resolved = binary
-        return self._resolved
-
-    @staticmethod
-    def _make_executable(path: Path) -> None:
-        if not os.access(path, os.X_OK):
-            path.chmod(0o755)
-
-
-# ---------------------------------------------------------------------------
-# Output parser (shared between local and online results)
+# Output parser  (shared between local and online — same TSV schema)
 # ---------------------------------------------------------------------------
 
 class BlastnOutputParser:
-    """Parses a BLASTn TSV (outfmt 6 variant) into BlastnResult objects."""
+    """
+    Parses BLASTn TSV output into BlastnResult objects.
+
+    Expected columns (outfmt 6 custom):
+        qseqid  qlen  slen  qcovs  pident  evalue  stitle
+    """
 
     @staticmethod
     def parse(tsv_path: Path) -> list[BlastnResult]:
@@ -113,7 +40,7 @@ class BlastnOutputParser:
                         query_id=row[0],
                         query_length=int(row[1]),
                         subject_length=int(row[2]),
-                        query_coverage=float(row[3]),
+                        query_coverage=int(float(row[3])),  # qcovs is integer; float() guards "99.0"
                         pct_identity=float(row[4]),
                         e_value=float(row[5]),
                         subject_title=row[6],
@@ -128,18 +55,20 @@ class BlastnOutputParser:
 # ---------------------------------------------------------------------------
 
 class BlastnResultAttacher:
-    """Attaches parsed BlastnResult hits to the matching NucSequence objects."""
+    """Attaches BlastnResult hits to matching NucSequence objects."""
 
     @staticmethod
     def attach(hits: list[BlastnResult], nuc_seqs: list[NucSequence]) -> None:
         seq_map = {seq.id: seq for seq in nuc_seqs}
+        attached = 0
         for hit in hits:
             seq = seq_map.get(hit.query_id)
             if seq is None:
-                logger.warning(f"No NucSequence found for query '{hit.query_id}' — skipping.")
+                logger.warning(f"No NucSequence for query '{hit.query_id}' — skipping.")
                 continue
-            seq.blast_hits.append(hit)
-        logger.debug(f"{len(hits)} BLASTn hits attached.")
+            seq.blastn_hits.append(hit)
+            attached += 1
+        logger.debug(f"blastn: {attached} hits attached.")
 
 
 # ---------------------------------------------------------------------------
@@ -148,13 +77,9 @@ class BlastnResultAttacher:
 
 class BlastnRunner:
     """
-    Runs the local blastn binary against batches of NucSequence objects.
+    Runs the system blastn binary (expected on PATH via pixi) in batches.
 
-    Batching strategy mirrors DiamondRunner: up to `batch_size` sequences
-    are written into one temporary FASTA, then a single subprocess is
-    launched per batch. Batches run in parallel via ThreadPoolExecutor.
-
-    Columns written (outfmt 6 custom):
+    outfmt columns:
         qseqid  qlen  slen  qcovs  pident  evalue  stitle
     """
 
@@ -163,7 +88,6 @@ class BlastnRunner:
     def __init__(
         self,
         database: str,
-        blastn_path: str | None = None,
         threads: int = 4,
         e_value: float = 1e-5,
         max_target_seqs: int = 1,
@@ -171,17 +95,12 @@ class BlastnRunner:
         batch_size: int = 1000,
     ):
         self.database = database
-        self.resolver = BlastnBinaryResolver(blastn_path)
         self.threads = threads
         self.e_value = e_value
         self.max_target_seqs = max_target_seqs
         self.outdir = Path(outdir) if outdir else Path(tempfile.gettempdir())
         self.outdir.mkdir(parents=True, exist_ok=True)
         self.batch_size = batch_size
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _chunk(seqs: list[NucSequence], size: int) -> list[list[NucSequence]]:
@@ -193,15 +112,12 @@ class BlastnRunner:
                 fh.write(f">{seq.id}\n{seq.sequence}\n")
 
     def _run_batch(self, batch: list[NucSequence], batch_index: int) -> Path:
-        """Runs blastn for one batch. Returns path to the TSV output."""
-        binary    = self.resolver.resolve()
-        fasta_path = self.outdir / f"blastn_batch_{batch_index}.fa"
-        out_path   = self.outdir / f"blastn_batch_{batch_index}.tsv"
-
+        fasta_path = self.outdir / f"blastn_batch{batch_index}.fa"
+        out_path   = self.outdir / f"blastn_batch{batch_index}.tsv"
         self._write_batch_fasta(batch, fasta_path)
 
         cmd = [
-            str(binary),
+            "blastn",
             "-query",           str(fasta_path),
             "-db",              self.database,
             "-out",             str(out_path),
@@ -211,31 +127,27 @@ class BlastnRunner:
             "-max_target_seqs", str(self.max_target_seqs),
         ]
 
-        logger.debug(f"blastn — batch {batch_index} ({len(batch)} sequences)")
+        logger.debug(f"blastn batch {batch_index} — {len(batch)} sequences")
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode != 0:
-            logger.error(f"blastn failed on batch {batch_index}: {result.stderr.strip()}")
+            logger.error(f"blastn failed batch {batch_index}: {result.stderr.strip()}")
             raise RuntimeError(result.stderr.strip())
 
         fasta_path.unlink(missing_ok=True)
         return out_path
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def run_all(
-        self, nuc_seqs: list[NucSequence], max_workers: int = 4
+        self, nuc_seqs: list[NucSequence], max_workers: int = 1
     ) -> list[Path]:
-        """
-        Chunks sequences, dispatches batches in parallel, returns ordered
-        list of TSV paths. Pass results to BlastnOutputParser.parse().
-        """
+        if not nuc_seqs:
+            logger.warning("blastn: no sequences to search.")
+            return []
+
         batches = self._chunk(nuc_seqs, self.batch_size)
         logger.info(
-            f"blastn: {len(nuc_seqs)} sequences → {len(batches)} batch(es) "
-            f"(batch_size={self.batch_size}, workers={max_workers})"
+            f"blastn: {len(nuc_seqs)} sequences → "
+            f"{len(batches)} batch(es), workers={max_workers}"
         )
 
         tsv_paths: list[Path | None] = [None] * len(batches)
@@ -257,15 +169,14 @@ class BlastnRunner:
 
 
 # ---------------------------------------------------------------------------
-# Online BLASTn runner (NCBI qblast)
+# Online BLASTn runner  (NCBI qblast — always sequential)
 # ---------------------------------------------------------------------------
 
 class BlastnOnlineRunner:
     """
     Submits sequences to NCBI qblast one at a time (NCBI rate-limit policy).
-
-    Results are written in the same TSV format as BlastnRunner so that
-    BlastnOutputParser.parse() works identically for both backends.
+    Writes the same 7-column TSV as BlastnRunner so BlastnOutputParser works
+    for both backends.
     """
 
     def __init__(
@@ -273,7 +184,7 @@ class BlastnOnlineRunner:
         database: str = "nt",
         email: str = "",
         hitlist_size: int = 1,
-        sleep_interval: float = 1.0,
+        sleep_interval: float = 1.5,
         outdir: str | None = None,
     ):
         if not email:
@@ -285,12 +196,7 @@ class BlastnOnlineRunner:
         self.outdir = Path(outdir) if outdir else Path(tempfile.gettempdir())
         self.outdir.mkdir(parents=True, exist_ok=True)
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _query_one(self, seq: NucSequence) -> BlastnResult | None:
-        """Runs qblast for a single sequence. Returns a result or None."""
         from Bio.Blast import NCBIXML, NCBIWWW
 
         NCBIWWW.email = self.email
@@ -310,12 +216,12 @@ class BlastnOnlineRunner:
             handle.close()
 
             if not record.alignments:
-                logger.debug(f"No hits for {seq.id}")
+                logger.debug(f"blastn online: no hits for {seq.id}")
                 return BlastnResult(
                     query_id=seq.id,
                     query_length=seq.length,
                     subject_length=0,
-                    query_coverage=0.0,
+                    query_coverage=0,
                     pct_identity=0.0,
                     e_value=float("nan"),
                     subject_title="no_hit",
@@ -323,15 +229,15 @@ class BlastnOnlineRunner:
 
             alignment = record.alignments[0]
             hsp = alignment.hsps[0]
-            coverage = (hsp.align_length / record.query_length) * 100
-            identity = (hsp.identities / hsp.align_length) * 100
+            coverage = int((hsp.align_length / record.query_length) * 100)
+            identity = round((hsp.identities / hsp.align_length) * 100, 2)
 
             return BlastnResult(
                 query_id=seq.id,
                 query_length=record.query_length,
                 subject_length=alignment.length,
-                query_coverage=round(coverage, 2),
-                pct_identity=round(identity, 2),
+                query_coverage=coverage,
+                pct_identity=identity,
                 e_value=hsp.expect,
                 subject_title=alignment.title,
             )
@@ -349,27 +255,30 @@ class BlastnOnlineRunner:
                     f"{r.subject_title}\n"
                 )
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def run_all(self, nuc_seqs: list[NucSequence]) -> Path:
-        """
-        Queries NCBI sequentially (rate-limit safe). Returns path to TSV.
-        Note: no parallelism here — NCBI enforces per-IP request limits.
-        """
+        """Queries NCBI one sequence at a time. Returns path to TSV."""
+        if not nuc_seqs:
+            logger.warning("blastn online: no sequences to search.")
+            out_path = self.outdir / "blastn_online.tsv"
+            out_path.write_text("")
+            return out_path
+
         out_path = self.outdir / "blastn_online.tsv"
         results: list[BlastnResult] = []
 
-        logger.info(f"Online BLASTn: {len(nuc_seqs)} sequences → NCBI '{self.database}'")
+        logger.info(
+            f"blastn online: {len(nuc_seqs)} sequences → NCBI '{self.database}'"
+        )
 
         for i, seq in enumerate(nuc_seqs):
-            logger.debug(f"  [{i+1}/{len(nuc_seqs)}] querying {seq.id} …")
+            logger.debug(f"  [{i+1}/{len(nuc_seqs)}] {seq.id}")
             result = self._query_one(seq)
             if result is not None:
                 results.append(result)
-            time.sleep(self.sleep_interval)
+            time.sleep(self.sleep_interval)   # respect NCBI rate limits
 
         self._write_tsv(results, out_path)
-        logger.success(f"Online BLASTn done — {len(results)} results → {out_path.name}")
+        logger.success(
+            f"blastn online done — {len(results)} results → {out_path.name}"
+        )
         return out_path

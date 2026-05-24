@@ -2,56 +2,13 @@ import uuid
 from dataclasses import dataclass, field
 
 
-@dataclass(slots=True)
-class BlastxResult:
-    """One Diamond BLASTx hit (6-column tsv format 6)."""
-    query_id: str
-    subject_id: str
-    pct_identity: float
-    aln_length: int
-    mismatches: int
-    gap_opens: int
-    query_start: int
-    query_end: int
-    subject_start: int
-    subject_end: int
-    e_value: float
-    bit_score: float
-    # derived
-    query_coverage: float = field(init=False, default=0.0)
-
-    def compute_coverage(self, query_length: int) -> None:
-        if query_length > 0:
-            self.query_coverage = (self.aln_length / query_length) * 100
-
-
-@dataclass(slots=True)
-class Orf:
-    """Stores a single Open Reading Frame metadata"""
-    start_codon: str
-    stop_codon: str
-    start_position: int
-    stop_position: int
-    strand: str
-    frame: int
-    length_aa: int
-    length_nt: int
-    bigger_than_50: bool
-    aa_sequence: str
-    nuc_sequence: str
-    orf_type: str
-    # ids
-    name: str
-    uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
-
-    # hmm domains
-    domains: list['HmmDomain'] = field(default_factory=list, init=False)
-
-
+# ---------------------------------------------------------------------------
+# HMM domain hit
+# ---------------------------------------------------------------------------
 
 @dataclass(slots=True)
 class HmmDomain:
-    """Saves hmmsearch hits"""
+    """One pyhmmer domain hit attached to an ORF."""
     database: str
     target: str
     score: float
@@ -64,52 +21,109 @@ class HmmDomain:
     details: str
 
 
+# ---------------------------------------------------------------------------
+# Open Reading Frame
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class Orf:
+    """Stores a single Open Reading Frame and its annotation results."""
+    start_codon: str
+    stop_codon: str
+    start_position: int
+    stop_position: int
+    strand: str
+    frame: int
+    length_aa: int
+    length_nt: int
+    bigger_than_50: bool
+    aa_sequence: str
+    nuc_sequence: str
+    orf_type: str
+    name: str
+    uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
+    domains: list[HmmDomain] = field(default_factory=list, init=False)
+
+
+# ---------------------------------------------------------------------------
+# BLASTx result  (Diamond)
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class BlastxResult:
+    """One Diamond BLASTx hit."""
+    qseqid: str
+    qlen: int
+    slen: int
+    qcovhsp: float
+    pident: float
+    evalue: float
+    stitle: str
+
+# ---------------------------------------------------------------------------
+# BLASTn result  (local binary or NCBI qblast)
+# ---------------------------------------------------------------------------
 
 @dataclass(slots=True)
 class BlastnResult:
-    """Stores metadata from a single BLASTn hit"""
-    hit_id: str
-    hit_sequence: str
-    hit_length: int
-    e_value: float
-    hsp: float
-    
-    # ---- values that are derived from previous results
-    query_coverage: float = field(init=False)
-    percent_identity: float = field(init=False)
-    # ----
+    """One BLASTn hit — compatible with both local and online search."""
+    qseqid: str
+    qlen: int
+    slen: int     # slen — may be 0 on dbs not indexed with -parse_seqids
+    qcovhsp: int     # qcovs — blastn reports integer percentage (0-100)
+    pident: float
+    evalue: float
+    stitle: str
 
 
-
+# ---------------------------------------------------------------------------
+# Nucleotide sequence  (central object)
+# ---------------------------------------------------------------------------
 
 @dataclass(slots=True)
 class NucSequence:
-    """Valid biological sequences. Mutable fields."""
+    """A parsed nucleotide sequence with all downstream annotation results."""
     id: str
     sequence: str
+    sample_name: str = ""           # set by the pipeline from the input filename
 
     uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
-    
-    # blastn metadata
-    blast_hits: list[BlastnResult] = field(default_factory=list, init=False)
 
-    # orfs metadata
-    orfs: list[Orf] = field(default_factory=list, init=False)
+    # annotation results
+    orfs:          list[Orf]         = field(default_factory=list, init=False)
+    blastx_hits:   list[BlastxResult] = field(default_factory=list, init=False)  # phase-1 refseq hits
+    blastx_nr_hits: list[BlastxResult] = field(default_factory=list, init=False) # phase-2 NR hits
+    blastn_hits:   list[BlastnResult] = field(default_factory=list, init=False)
 
-    # other parameters
-    length: int = field(init=False)
-    n_count: int = field(init=False)
+    # viral selection flag — set to True after phase-1 filter
+    is_viral: bool = field(default=False, init=False)
+
+    # computed
+    length:    int   = field(init=False)
+    n_count:   int   = field(init=False)
     gc_content: float = field(init=False)
 
     def __post_init__(self):
-
         self.length = len(self.sequence)
-        self.n_count = self.sequence.count('N')  
-        # gc_content
+        self.n_count = self.sequence.count('N')
         if self.length > 0:
-            g_count = self.sequence.count('G')
-            c_count = self.sequence.count('C')
-            self.gc_content = ((g_count + c_count) / self.length) * 100
+            g = self.sequence.count('G')
+            c = self.sequence.count('C')
+            self.gc_content = round(((g + c) / self.length) * 100, 2)
         else:
             self.gc_content = 0.0
 
+    @property
+    def best_blastx(self) -> BlastxResult | None:
+        """Top NR BLASTx hit (highest bit_score), or refseq hit as fallback."""
+        pool = self.blastx_nr_hits or self.blastx_hits
+        return max(pool, key=lambda h: h.bit_score) if pool else None
+
+    @property
+    def best_blastn(self) -> BlastnResult | None:
+        return self.blastn_hits[0] if self.blastn_hits else None
+
+    @property
+    def hmm_domains(self) -> list[HmmDomain]:
+        """Flat list of all domains across all ORFs."""
+        return [d for orf in self.orfs for d in orf.domains]
