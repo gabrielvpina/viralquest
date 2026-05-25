@@ -211,6 +211,20 @@ class Taxonomy:
 
 
 # ---------------------------------------------------------------------------
+# Viral family / order / genus descriptive info
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class ViralFamilyInfo:
+    """Merged descriptive record from viral-family-info JSON files."""
+    source: str          # "ViralZone" or "ICTV"
+    type: str            # "Family", "Order", or "Genus"
+    name: str            # taxon name, e.g. "Orthomyxoviridae"
+    info_high: str       # full-text / high-token description
+    info_low: str        # standardized / low-token description
+
+
+# ---------------------------------------------------------------------------
 # Nucleotide sequence  (central object)
 # ---------------------------------------------------------------------------
 
@@ -234,6 +248,9 @@ class NucSequence:
 
     # taxonomy resolved from best BLASTx species
     taxonomy: Taxonomy | None = field(default=None, init=False)
+
+    # viral family / order / genus annotation
+    viral_family_info: ViralFamilyInfo | None = field(default=None, init=False)
 
     # computed
     length:    int   = field(init=False)

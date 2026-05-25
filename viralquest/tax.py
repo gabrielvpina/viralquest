@@ -3,7 +3,98 @@ import lzma
 
 from loguru import logger
 
-from viralquest.biodata import NucSequence, Taxonomy
+from viralquest.biodata import NucSequence, Taxonomy, ViralFamilyInfo
+
+
+class ViralFamilyLoader:
+    """
+    Loads the highToken and lowToken JSON files and merges them into
+    ViralFamilyInfo objects, joined on the unique (type, name) key.
+    Records present in only one file receive an empty string for the
+    missing side.
+    """
+
+    @staticmethod
+    def _read(path: str) -> dict[tuple[str, str], dict]:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception as exc:
+            logger.error(f"Cannot read {path}: {exc}")
+            return {}
+        return {(r["type"], r["name"]): r for r in data if r.get("type") and r.get("name")}
+
+    @classmethod
+    def load(cls, high_path: str, low_path: str) -> list[ViralFamilyInfo]:
+        high = cls._read(high_path)
+        low  = cls._read(low_path)
+        all_keys = high.keys() | low.keys()
+        records: list[ViralFamilyInfo] = []
+        for key in all_keys:
+            h = high.get(key, {})
+            l = low.get(key, {})
+            base = h or l
+            records.append(ViralFamilyInfo(
+                source    = base.get("source", ""),
+                type      = base.get("type",   ""),
+                name      = base.get("name",   ""),
+                info_high = h.get("info", ""),
+                info_low  = l.get("info", ""),
+            ))
+        logger.success(
+            f"ViralFamilyLoader: {len(records)} entries merged "
+            f"({len(high)} high-token, {len(low)} low-token)."
+        )
+        return records
+
+
+class ViralFamilyAnnotator:
+    """
+    Attaches ViralFamilyInfo to NucSequence objects.
+
+    Lookup priority (most-specific first) uses the taxonomy already
+    resolved on each sequence:
+        1. taxonomy.family  → type "Family"
+        2. taxonomy.genus   → type "Genus"
+        3. taxonomy.order   → type "Order"
+    """
+
+    def __init__(self, high_path: str, low_path: str):
+        records = ViralFamilyLoader.load(high_path, low_path)
+        self._idx: dict[tuple[str, str], ViralFamilyInfo] = {
+            (r.type.lower(), r.name.lower()): r for r in records
+        }
+
+    def _lookup(self, type_: str, name: str | None) -> ViralFamilyInfo | None:
+        if not name:
+            return None
+        return self._idx.get((type_, name.lower()))
+
+    def annotate(self, nuc_seqs: list[NucSequence]) -> int:
+        """
+        Sets seq.viral_family_info for each sequence that has a resolved
+        taxonomy. Returns the count of sequences annotated.
+        """
+        annotated = 0
+        for seq in nuc_seqs:
+            tax = seq.taxonomy
+            if not tax:
+                continue
+            info = (
+                self._lookup("family", tax.family)
+                or self._lookup("genus",  tax.genus)
+                or self._lookup("order",  tax.order)
+            )
+            if info:
+                seq.viral_family_info = info
+                annotated += 1
+            else:
+                logger.debug(
+                    f"No ViralFamilyInfo for seq '{seq.id}' "
+                    f"(family={tax.family}, genus={tax.genus}, order={tax.order})"
+                )
+        logger.success(f"ViralFamilyInfo annotated {annotated}/{len(nuc_seqs)} sequences.")
+        return annotated
 
 
 class TaxonomyLoader:
