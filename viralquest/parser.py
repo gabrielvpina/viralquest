@@ -15,7 +15,7 @@ class FastaParser:
 
     def __init__(self, file_path: str):
 
-        self.file_path: Path = file_path
+        self.file_path: Path = Path(file_path)
         self.sequences: list[NucSequence] = []
         self.allowed_nucleotides: set[str] = set("ATCGUN-")
 
@@ -93,8 +93,8 @@ class Cap3Runner:
         self.original_fasta = Path(file_path).resolve()
         self.cap3_bin = cap3_bin
 
-        self.pident = pident
-        self.overlap = overlap
+        self.pident = str(pident)
+        self.overlap = str(overlap)
 
         self.outdir = Path(outdir).resolve() if outdir else Path(tempfile.gettempdir()) / "cap3_run"
         self.outdir.mkdir(parents=True, exist_ok=True)
@@ -103,7 +103,7 @@ class Cap3Runner:
 
 
 
-    def _cp_files(self):
+    def _setup_files(self):
         shutil.copy(self.original_fasta, self.working_fasta)
 
 
