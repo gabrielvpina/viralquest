@@ -237,7 +237,37 @@ class LlmOutput:
     vq_score:       int        # 0–100
     classification: str        # "viral-known" | "viral-unknown" | "non-viral"
     analysis:       str        # plain-text summary (max ~200 words)
+    blastn_species: str        = field(default="")
     error:          str | None = field(default=None)
+
+
+# ---------------------------------------------------------------------------
+# Sequence clustering
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class ClusterMember:
+    """Alignment record for one sequence within a ViralCluster."""
+    seq_id:            str
+    length:            int
+    is_representative: bool
+    identity:          float   # % identity vs representative (100.0 for rep itself)
+    query_coverage:    float   # % of this sequence covered by the alignment
+    aln_start:         int     # 1-based start on representative (0 = no alignment)
+    aln_end:           int     # 1-based end on representative   (0 = no alignment)
+
+
+@dataclass(slots=True)
+class ViralCluster:
+    """Group of NucSequences sharing the same best BLASTx species hit."""
+    cluster_id:        str
+    species:           str
+    representative_id: str
+    members:           list[ClusterMember]
+
+    @property
+    def size(self) -> int:
+        return len(self.members)
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +300,9 @@ class NucSequence:
 
     # LLM scoring result
     llm_output: LlmOutput | None = field(default=None, init=False)
+
+    # cluster membership
+    cluster_id: str | None = field(default=None, init=False)
 
     # computed
     length:    int   = field(init=False)

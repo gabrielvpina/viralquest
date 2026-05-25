@@ -20,6 +20,9 @@
     "viral-unknown": "viral evidence present (HMM hits or BLAST) but insufficient for species-level assignment",
     "non-viral":     "no convincing viral evidence"
   },
+  "field_extraction": {
+    "blastn_species": "From the blastn_hits subject field, extract the virus species name only — omit strain designations, accession numbers, gene names, and segment info. Examples: 'Influenza A virus (A/PR/8/34(H1N1)) segment 1 PB2 gene' → 'Influenza A virus'; 'Tomato spotted wilt orthotospovirus isolate BR-DF-6 segment S' → 'Tomato spotted wilt orthotospovirus'. Return an empty string if blastn_hits is absent or empty."
+  },
   "analysis": {
     "max_words": 200,
     "format": "plain text, no markdown",
@@ -39,6 +42,7 @@
     "schema": {
       "vq_score":       "integer 0-100",
       "classification": "viral-known | viral-unknown | non-viral",
+      "blastn_species": "string — virus species name extracted from blastn subject title, or empty string if no blastn hits",
       "analysis":       "string, max 200 words"
     }
   }

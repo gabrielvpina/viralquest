@@ -117,8 +117,18 @@ def make_vfi(high: str = "Full ICTV text", low: str = "Compact text") -> ViralFa
     )
 
 
-def good_response(vq: int = 85, cls: str = "viral-known", analysis: str = "Strong hit.") -> str:
-    return json.dumps({"vq_score": vq, "classification": cls, "analysis": analysis})
+def good_response(
+    vq: int = 85,
+    cls: str = "viral-known",
+    analysis: str = "Strong hit.",
+    blastn_species: str = "Influenza A virus",
+) -> str:
+    return json.dumps({
+        "vq_score": vq,
+        "classification": cls,
+        "analysis": analysis,
+        "blastn_species": blastn_species,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -204,10 +214,15 @@ class TestPromptBuilderSystemPrompt:
         data = json.loads(PromptBuilder.system_prompt())
         assert {"role", "task", "scoring", "classification", "output"}.issubset(data)
 
-    def test_output_schema_has_three_fields(self):
+    def test_output_schema_has_four_fields(self):
         data = json.loads(PromptBuilder.system_prompt())
         schema = data["output"]["schema"]
-        assert set(schema) == {"vq_score", "classification", "analysis"}
+        assert set(schema) == {"vq_score", "classification", "blastn_species", "analysis"}
+
+    def test_field_extraction_blastn_species_defined(self):
+        data = json.loads(PromptBuilder.system_prompt())
+        assert "field_extraction" in data
+        assert "blastn_species" in data["field_extraction"]
 
     def test_all_three_classifications_defined(self):
         data = json.loads(PromptBuilder.system_prompt())
@@ -360,10 +375,11 @@ class TestResponseParser:
         return ResponseParser.parse(raw, seq_id, model, mode)
 
     def test_valid_json_parsed_correctly(self):
-        r = self._parse(good_response(85, "viral-known", "Good evidence."))
-        assert r.vq_score       == 85
-        assert r.classification == "viral-known"
-        assert r.analysis       == "Good evidence."
+        r = self._parse(good_response(85, "viral-known", "Good evidence.", "Influenza A virus"))
+        assert r.vq_score        == 85
+        assert r.classification  == "viral-known"
+        assert r.analysis        == "Good evidence."
+        assert r.blastn_species  == "Influenza A virus"
         assert r.error is None
 
     def test_all_three_classifications_accepted(self):
@@ -413,6 +429,25 @@ class TestResponseParser:
         raw = json.dumps({"classification": "non-viral", "analysis": "x"})
         r = self._parse(raw)
         assert r.vq_score == 0
+
+    def test_blastn_species_extracted(self):
+        raw = json.dumps({"vq_score": 85, "classification": "viral-known",
+                          "analysis": "x", "blastn_species": "Tobacco mosaic virus"})
+        assert self._parse(raw).blastn_species == "Tobacco mosaic virus"
+
+    def test_blastn_species_missing_defaults_to_empty(self):
+        raw = json.dumps({"vq_score": 85, "classification": "viral-known", "analysis": "x"})
+        assert self._parse(raw).blastn_species == ""
+
+    def test_blastn_species_whitespace_stripped(self):
+        raw = json.dumps({"vq_score": 85, "classification": "viral-known",
+                          "analysis": "x", "blastn_species": "  Tomato spotted wilt virus  "})
+        assert self._parse(raw).blastn_species == "Tomato spotted wilt virus"
+
+    def test_error_path_blastn_species_empty(self):
+        r = self._parse("not json at all")
+        assert r.blastn_species == ""
+        assert r.error is not None
 
     def test_metadata_fields_set(self):
         r = ResponseParser.parse(good_response(), "myseq", "gpt-4o", "high")

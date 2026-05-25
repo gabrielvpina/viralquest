@@ -299,7 +299,8 @@ class ResponseParser:
                 )
                 classification = "non-viral"
 
-            analysis = str(data.get("analysis", "")).strip()
+            analysis        = str(data.get("analysis",        "")).strip()
+            blastn_species  = str(data.get("blastn_species",  "")).strip()
 
             return LlmOutput(
                 seq_id=seq_id,
@@ -308,6 +309,7 @@ class ResponseParser:
                 vq_score=vq_score,
                 classification=classification,
                 analysis=analysis,
+                blastn_species=blastn_species,
             )
 
         except Exception as exc:
