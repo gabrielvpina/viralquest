@@ -1,3 +1,4 @@
+import re
 import uuid
 import pathlib as Path
 from dataclasses import dataclass, field
@@ -110,6 +111,11 @@ class BlastxResult:
     e_value: float
     bit_score: float
     query_coverage: float = field(init=False, default=0.0)
+    species: str = field(init=False, default="")
+
+    def __post_init__(self):
+        m = re.search(r'\[([^\[\]]+)\]\s*$', self.subject_title.strip())
+        self.species = m.group(1) if m else ""
 
     def compute_coverage(self, query_length: int) -> None:
         """
@@ -183,6 +189,28 @@ class BlastnResult:
 
 
 # ---------------------------------------------------------------------------
+# Taxonomy
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class Taxonomy:
+    """NCBI taxonomy record resolved from a BLASTx species name."""
+    tax_id: int
+    scientific_name: str
+    no_rank: str | None
+    clade: str | None
+    kingdom: str | None
+    phylum: str | None
+    class_: str | None          # 'class' is a Python keyword
+    order: str | None
+    family: str | None
+    subfamily: str | None
+    genus: str | None
+    species: str | None
+    genome: str | None
+
+
+# ---------------------------------------------------------------------------
 # Nucleotide sequence  (central object)
 # ---------------------------------------------------------------------------
 
@@ -203,6 +231,9 @@ class NucSequence:
 
     # viral selection flag — set to True after phase-1 filter
     is_viral: bool = field(default=False, init=False)
+
+    # taxonomy resolved from best BLASTx species
+    taxonomy: Taxonomy | None = field(default=None, init=False)
 
     # computed
     length:    int   = field(init=False)

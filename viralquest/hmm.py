@@ -207,7 +207,7 @@ class HmmViralFlagSetter:
 
     @classmethod
     def flag(cls, nuc_seqs: list[NucSequence]) -> int:
-        """Returns count of newly flagged sequences."""
+        """Returns count of newly flagged sequences"""
         newly_flagged = 0
         for seq in nuc_seqs:
             if seq.is_viral:
