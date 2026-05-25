@@ -5,7 +5,7 @@ from enum import Enum
 import pyhmmer
 from loguru import logger
 
-from .biodata import NucSequence, Orf, HmmDomain
+from viralquest.biodata import NucSequence, Orf, HmmDomain
 
 
 class HmmRole(Enum):

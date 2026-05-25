@@ -96,13 +96,75 @@ class Orf:
 @dataclass(slots=True)
 class BlastxResult:
     """One Diamond BLASTx hit."""
-    qseqid: str
-    qlen: int
-    slen: int
-    qcovhsp: float
-    pident: float
-    evalue: float
-    stitle: str
+    query_id: str
+    subject_id: str
+    subject_title: str          # fetched separately or from --outfmt stitle
+    pct_identity: float
+    aln_length: int
+    mismatches: int
+    gap_opens: int
+    query_start: int
+    query_end: int
+    subject_start: int
+    subject_end: int
+    e_value: float
+    bit_score: float
+    query_coverage: float = field(init=False, default=0.0)
+
+    def compute_coverage(self, query_length: int) -> None:
+        """
+        Single-HSP coverage from this hit's query coordinates.
+        For multi-HSP merged coverage use merge_query_intervals().
+        """
+        if query_length > 0:
+            aligned = abs(self.query_end - self.query_start)
+            self.query_coverage = round((aligned / query_length) * 100, 2)
+ 
+
+
+
+
+# ---------------------------------------------------------------------------
+# Multi-HSP coverage helper
+# ---------------------------------------------------------------------------
+ 
+def merge_query_intervals(hits: list['BlastxResult']) -> int:
+    """
+    Merges all query-coordinate intervals across multiple HSPs and returns
+    the total number of non-overlapping aligned bases.
+ 
+    Example:
+        hits covering query [10-50], [30-80], [200-300]
+        merged → [10-80] + [200-300] = 70 + 100 = 170 bases
+ 
+    Intervals are normalised (start < end) to handle hits on the minus strand
+    where Diamond may report query_end < query_start.
+    """
+    if not hits:
+        return 0
+ 
+    intervals = sorted(
+        (min(h.query_start, h.query_end), max(h.query_start, h.query_end))
+        for h in hits
+    )
+ 
+    merged_bases = 0
+    cur_start, cur_end = intervals[0]
+ 
+    for start, end in intervals[1:]:
+        if start <= cur_end:          # overlapping or adjacent — extend
+            cur_end = max(cur_end, end)
+        else:                         # gap — commit and start new interval
+            merged_bases += cur_end - cur_start
+            cur_start, cur_end = start, end
+ 
+    merged_bases += cur_end - cur_start   # commit last interval
+    return merged_bases
+
+
+
+
+
 
 # ---------------------------------------------------------------------------
 # BLASTn result  (local binary or NCBI qblast)
