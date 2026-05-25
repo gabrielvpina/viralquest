@@ -1,5 +1,47 @@
 import uuid
+import pathlib as Path
 from dataclasses import dataclass, field
+
+
+# ---------------------------------------------------------------------------
+# Input FASTA file
+# ---------------------------------------------------------------------------
+@dataclass(slots=True)
+class InputFasta:
+    """FASTA file used in input"""
+    name: str
+    num_seqs: int
+    path: str
+    size: int # bytes
+
+
+
+# ---------------------------------------------------------------------------
+# CAP3 DATA
+# ---------------------------------------------------------------------------
+@dataclass(slots=True)
+class Cap3:
+    input_fasta: Path
+    contigs: Path
+    singlets: Path
+    info: Path
+    ace: Path
+    log: Path
+    
+    @property
+    def is_successful(self) -> bool:
+        """verify all files"""
+        return self.contigs.exists() and self.singlets.exists()
+
+    def get_combined_fasta(self, output_path: Path) -> Path:
+        """combines the contigs and singlets files"""
+        with open(output_path, 'w') as outfile:
+            if self.contigs.exists():
+                outfile.write(self.contigs.read_text())
+            if self.singlets.exists():
+                outfile.write(self.singlets.read_text())
+        return output_path
+
 
 
 # ---------------------------------------------------------------------------
@@ -40,8 +82,10 @@ class Orf:
     aa_sequence: str
     nuc_sequence: str
     orf_type: str
+    # ids
     name: str
     uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
+    # hmm data - composition
     domains: list[HmmDomain] = field(default_factory=list, init=False)
 
 

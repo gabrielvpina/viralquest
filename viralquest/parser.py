@@ -1,8 +1,12 @@
 import os
+import shutil
+import tempfile
+import subprocess
+from pathlib import Path
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 from loguru import logger
-from .biodata import NucSequence
+from .biodata import NucSequence, InputFasta, Cap3
 
 # This script will handle all data input and parsing of fasta files.
 # I'm still learning some concepts about OOP, but my plan is aplly some of this concepts here.
@@ -11,7 +15,7 @@ class FastaParser:
 
     def __init__(self, file_path: str):
 
-        self.file_path: str = file_path
+        self.file_path: Path = file_path
         self.sequences: list[NucSequence] = []
         self.allowed_nucleotides: set[str] = set("ATCGUN-")
 
@@ -59,6 +63,13 @@ class FastaParser:
             else:
                 logger.success(f"Found {len(self.sequences)} valid sequences in {self.file_path}")
 
+            InputFasta( # save objects into dataclass
+                name=self.file_path.name,
+                num_seqs=len(self.sequences),
+                path=self.file_path,
+                size=os.path.getsize(self.file_path)
+            )
+
         except Exception as e:
             logger.exception(f"An unexpected error occurred while reading the file: {e}")
             raise
@@ -67,6 +78,93 @@ class FastaParser:
 # ========================================================================
 # USING CAP3 to improve some sequence length
 # ========================================================================
+
+class Cap3Runner:
+    """RECOMMENDED QUERY: cap3 file.fasta -p 98 -o 100"""
+
+    def __init__(
+        self,
+        file_path: str | Path,
+        cap3_bin: str = "cap3",
+        pident: int = 98,
+        overlap: int = 100,
+        outdir: str | None = None,
+    ):
+        self.original_fasta = Path(file_path).resolve()
+        self.cap3_bin = cap3_bin
+
+        self.pident = pident
+        self.overlap = overlap
+
+        self.outdir = Path(outdir).resolve() if outdir else Path(tempfile.gettempdir()) / "cap3_run"
+        self.outdir.mkdir(parents=True, exist_ok=True)
+
+        self.working_fasta = self.outdir / self.original_fasta.name
+
+
+
+    def _cp_files(self):
+        shutil.copy(self.original_fasta, self.working_fasta)
+
+
+
+    def _run_cap3(self) -> Path:
+        """execute and return log file"""
+        cmd = [
+            self.cap3_bin,
+            str(self.working_fasta),
+            "-p", self.pident,
+            "-o", self.overlap
+        ]
+        log_path = self.working_fasta.with_suffix(".cap3.log")
+
+        try:
+            logger.info(f"Running CAP3 on {self.original_fasta} file.")
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                check=True
+            )
+            log_path.write_text(result.stdout)
+            return log_path
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Fatal error to execute CAP3: {e.stderr}")
+            raise e        
+
+
+
+    def _process_cap3_out(self, log_path: Path) -> Cap3:
+        """map result data to cap3 dataclass"""
+        base_name = str(self.working_fasta)
+        
+        return Cap3(
+            input_fasta=self.working_fasta,
+            contigs=Path(f"{base_name}.cap.contigs"),
+            singlets=Path(f"{base_name}.cap.singlets"),
+            info=Path(f"{base_name}.cap.info"),
+            ace=Path(f"{base_name}.cap.ace"),
+            log=log_path
+        )
+
+
+    def cap3_runner(self) -> Cap3:
+        """main method to invoke cap3"""
+        self._setup_files()
+        log_path = self._run_cap3()
+        return self._process_cap3_out(log_path)
+
+
+
+
+
+
+
+
+
+
+
     
 
 
