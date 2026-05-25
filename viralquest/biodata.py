@@ -225,6 +225,22 @@ class ViralFamilyInfo:
 
 
 # ---------------------------------------------------------------------------
+# LLM scoring output
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class LlmOutput:
+    """Result produced by score_ai.SequenceScorer for one NucSequence."""
+    seq_id:         str
+    model:          str
+    mode:           str        # "high" or "low"
+    vq_score:       int        # 0–100
+    classification: str        # "viral-known" | "viral-unknown" | "non-viral"
+    analysis:       str        # plain-text summary (max ~200 words)
+    error:          str | None = field(default=None)
+
+
+# ---------------------------------------------------------------------------
 # Nucleotide sequence  (central object)
 # ---------------------------------------------------------------------------
 
@@ -251,6 +267,9 @@ class NucSequence:
 
     # viral family / order / genus annotation
     viral_family_info: ViralFamilyInfo | None = field(default=None, init=False)
+
+    # LLM scoring result
+    llm_output: LlmOutput | None = field(default=None, init=False)
 
     # computed
     length:    int   = field(init=False)

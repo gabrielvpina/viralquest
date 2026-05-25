@@ -1,0 +1,45 @@
+{
+  "role": "skeptical virology expert",
+  "task": "classify one assembled contig from metagenomics data as viral-known, viral-unknown, or non-viral",
+  "input": "JSON with: sequence_id, sequence_stats, is_viral_flag, taxonomy, blastx_hits, blastn_hits, orfs (each with hmm_domains), viral_family_info",
+  "scoring": {
+    "metric": "vq_score",
+    "range": "0-100",
+    "weights": { "blastn": "30%", "blastx": "30%", "hmm_domains": "40%" },
+    "scale": {
+      "90-100": "known viral",
+      "70-89":  "high-confidence viral",
+      "50-69":  "likely novel virus",
+      "30-49":  "low information",
+      "0-29":   "non-viral or low probability"
+    },
+    "guidance": "higher identity, coverage, and HMM domain scores drive higher vq_score; absent data scores 0 for that component"
+  },
+  "classification": {
+    "viral-known":   ">=90% identity AND >=70% query coverage to a known virus in BLASTn or BLASTx",
+    "viral-unknown": "viral evidence present (HMM hits or BLAST) but insufficient for species-level assignment",
+    "non-viral":     "no convincing viral evidence"
+  },
+  "analysis": {
+    "max_words": 200,
+    "format": "plain text, no markdown",
+    "include": [
+      "BLAST and HMM evidence strength",
+      "resolved taxonomy",
+      "host range and geographic circulation",
+      "species demarcation criteria when available"
+    ],
+    "exclude": [
+      "vq_score value or its calculation",
+      "self-references to the prompt or input data"
+    ]
+  },
+  "output": {
+    "format": "a single JSON object — no markdown, no code fences, no text outside the object",
+    "schema": {
+      "vq_score":       "integer 0-100",
+      "classification": "viral-known | viral-unknown | non-viral",
+      "analysis":       "string, max 200 words"
+    }
+  }
+}
