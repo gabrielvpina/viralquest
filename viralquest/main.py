@@ -1,6 +1,8 @@
 # ==================================================================
 # USING CAP3
 # ==================================================================
+import pathlib as Path
+from viralquest.parser import Cap3Runner
 # 1. Instancia o runner
 runner = Cap3Runner(file_path="./meus_dados/contigs.fasta", outdir="./resultados_cap3")
 # 2. Executa e recebe a dataclass preenchida

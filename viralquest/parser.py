@@ -119,7 +119,11 @@ class Cap3Runner:
         log_path = self.working_fasta.with_suffix(".cap3.log")
 
         try:
-            logger.info(f"Running CAP3 on {self.original_fasta} file.")
+            logger.info(f"Running CAP3 on raw file: '{self.original_fasta.name}'")
+            logger.debug(f"Working directory copy: '{self.working_fasta}'")
+            logger.debug(f"Full command executed: {' '.join(cmd)}")
+
+
             result = subprocess.run(
                 cmd, 
                 capture_output=True, 
@@ -127,11 +131,24 @@ class Cap3Runner:
                 check=True
             )
             log_path.write_text(result.stdout)
+
+            logger.info(f"CAP3 executed successfully for '{self.original_fasta.name}'.")
+            logger.info(f"Internal CAP3 execution log saved to: '{log_path}'")
+            if "warning" in result.stdout.lower():
+                logger.warning("CAP3 finished with internal warnings. Check the log file for details.")
+
             return log_path
             
         except subprocess.CalledProcessError as e:
-            logger.error(f"Fatal error to execute CAP3: {e.stderr}")
+            logger.error(f"Fatal error executing CAP3 on '{self.original_fasta.name}'.")
+            logger.error(f"Command line exit code: {e.returncode}")            
+            if e.stderr:
+                logger.error(f"CAP3 Stderr: {e.stderr.strip()}")
+            if e.stdout:
+                logger.debug(f"CAP3 Stdout before crash: {e.stdout.strip()}")
             raise e        
+
+
 
 
 
@@ -147,6 +164,8 @@ class Cap3Runner:
             ace=Path(f"{base_name}.cap.ace"),
             log=log_path
         )
+
+
 
 
     def cap3_runner(self) -> Cap3:
