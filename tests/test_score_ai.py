@@ -57,6 +57,7 @@ def make_blastn(stitle: str = "Influenza A virus genome") -> BlastnResult:
     return BlastnResult(
         qseqid="seq1", qlen=1200, slen=13600,
         qcovhsp=80, pident=92.5, evalue=1e-60,
+        bit_score=200.0,
         stitle=stitle,
     )
 

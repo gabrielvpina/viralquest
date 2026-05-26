@@ -18,6 +18,7 @@ class FastaParser:
         self.file_path: Path = Path(file_path)
         self.sequences: list[NucSequence] = []
         self.allowed_nucleotides: set[str] = set("ATCGUN-")
+        self.input_fasta: InputFasta | None = None
 
         logger.info("Starting fasta parser")
 
@@ -63,7 +64,7 @@ class FastaParser:
             else:
                 logger.success(f"Found {len(self.sequences)} valid sequences in {self.file_path}")
 
-            InputFasta( # save objects into dataclass
+            self.input_fasta = InputFasta(
                 name=self.file_path.name,
                 num_seqs=len(self.sequences),
                 path=self.file_path,

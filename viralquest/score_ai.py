@@ -39,10 +39,10 @@ def _blastx_dict(h: BlastxResult) -> dict:
 
 def _blastn_dict(h: BlastnResult) -> dict:
     return {
-        "subject":       h.stitle,
-        "pct_identity":  h.pident,
+        "subject":        h.stitle,
+        "pct_identity":   h.pident,
         "query_coverage": h.qcovhsp,
-        "e_value":       h.evalue,
+        "e_value":        h.evalue,
     }
 
 

@@ -9,7 +9,7 @@ class OrfAnalyzer:
 
     def __init__(self, min_len_nt: int = 150):
         self.min_len_nt = min_len_nt
-        logger.info(f"Starting ORF serch (Minimal length: {self.min_len_nt} nt)")
+        logger.info(f"Starting ORF search (Minimal length: {self.min_len_nt} nt)")
 
 
 

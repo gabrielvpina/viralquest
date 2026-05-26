@@ -1,6 +1,6 @@
 import re
 import uuid
-import pathlib as Path
+from pathlib import Path
 from dataclasses import dataclass, field
 
 
@@ -181,10 +181,11 @@ class BlastnResult:
     """One BLASTn hit — compatible with both local and online search."""
     qseqid: str
     qlen: int
-    slen: int     # slen — may be 0 on dbs not indexed with -parse_seqids
-    qcovhsp: int     # qcovs — blastn reports integer percentage (0-100)
+    slen: int       # may be 0 on DBs not indexed with -parse_seqids
+    qcovhsp: int    # query coverage per HSP, integer percentage 0-100
     pident: float
     evalue: float
+    bit_score: float
     stitle: str
 
 
