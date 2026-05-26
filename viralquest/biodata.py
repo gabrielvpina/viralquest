@@ -272,6 +272,51 @@ class ViralCluster:
 
 
 # ---------------------------------------------------------------------------
+# Salmon quantification
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class SalmonEntry:
+    """One row from quant.sf, tagged by sequence origin."""
+    name:       str
+    length:     int
+    eff_length: float
+    tpm:        float
+    num_reads:  float
+    seq_type:   str    # "viral" | "host" | "conserved"
+    kingdom:    str    # e.g. "MAMMALS" — empty string for viral / host entries
+
+
+@dataclass(slots=True)
+class HostViralHit:
+    """BLASTn alignment from one host transcript to one viralquest viral sequence."""
+    host_transcript_id: str
+    viral_seq_id:       str
+    pident:             float
+    qcovhsp:            int
+    evalue:             float
+    bit_score:          float
+
+
+@dataclass(slots=True)
+class HostViralRecord:
+    """Host transcript with its Salmon quant data and all viral BLASTn hits."""
+    transcript: SalmonEntry
+    blast_hits: list[HostViralHit]
+
+
+@dataclass(slots=True)
+class SalmonQuantReport:
+    """Full Salmon quantification result, attached as an optional pipeline section."""
+    reads:           list[str]             # read file(s) passed to salmon quant
+    mapping_rate:    float                 # overall mapping rate (%)
+    total_reads:     int                   # total reads counted across all entries
+    viral_quant:     list[SalmonEntry]     # TPM for each viralquest viral sequence
+    conserved_quant: list[SalmonEntry]     # TPM for housekeeping genes (all kingdoms)
+    host_viral_hits: list[HostViralRecord] # host transcripts with similarity to viral seqs
+
+
+# ---------------------------------------------------------------------------
 # Nucleotide sequence  (central object)
 # ---------------------------------------------------------------------------
 

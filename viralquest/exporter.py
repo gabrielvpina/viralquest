@@ -7,7 +7,13 @@ from typing import Any
 
 from loguru import logger
 
-from viralquest.biodata import InputFasta, NucSequence, Taxonomy, ViralCluster
+from viralquest.biodata import (
+    InputFasta,
+    NucSequence,
+    SalmonQuantReport,
+    Taxonomy,
+    ViralCluster,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -84,11 +90,12 @@ class ReportExporter:
 
     def export(
         self,
-        nuc_seqs: list[NucSequence],
-        clusters: list[ViralCluster],
-        input_fasta: InputFasta | None = None,
-        output_path: str | Path | None = None,
-        version: str = "unknown",
+        nuc_seqs:      list[NucSequence],
+        clusters:      list[ViralCluster],
+        input_fasta:   InputFasta | None        = None,
+        output_path:   str | Path | None        = None,
+        version:       str                      = "unknown",
+        salmon_report: SalmonQuantReport | None = None,
     ) -> dict:
         """
         Build the report dictionary, optionally write it to *output_path*,
@@ -96,11 +103,12 @@ class ReportExporter:
 
         Parameters
         ----------
-        nuc_seqs     : sequences produced by the pipeline
-        clusters     : ViralCluster objects from SequenceTracker
-        input_fasta  : InputFasta from FastaParser (None if not available)
-        output_path  : if given, the report is written as indented JSON here
-        version      : viralquest version string embedded in meta
+        nuc_seqs      : sequences produced by the pipeline
+        clusters      : ViralCluster objects from SequenceTracker
+        input_fasta   : InputFasta from FastaParser (None if not available)
+        output_path   : if given, the report is written as indented JSON here
+        version       : viralquest version string embedded in meta
+        salmon_report : if given, a ``salmon_quant`` key is added to the JSON
         """
         if self.force:
             confirmed          = nuc_seqs
@@ -127,6 +135,9 @@ class ReportExporter:
             "sequences": [self._seq_to_dict(s) for s in confirmed],
             "clusters":  [self._cluster_to_dict(c) for c in confirmed_clusters],
         }
+
+        if salmon_report is not None:
+            report["salmon_quant"] = _to_serializable(salmon_report)
 
         if output_path is not None:
             path = Path(output_path)
