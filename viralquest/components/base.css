@@ -1,0 +1,639 @@
+/* ============================================================
+   ViralQuest Report — Design System
+   All visual values live here as custom properties.
+   To retheme or repair the report, only edit this file.
+   ============================================================ */
+
+:root {
+  /* --- Brand colours --- */
+  --vq-primary:        #1a3a5c;
+  --vq-primary-light:  #2a5080;
+  --vq-accent:         #3b9eff;
+  --vq-accent-dark:    #1a7fd4;
+  --vq-success:        #27ae60;
+  --vq-warning:        #f39c12;
+  --vq-danger:         #e74c3c;
+  --vq-muted:          #7f8c8d;
+
+  /* --- Taxonomy family colours (consistent across sections) --- */
+  --vq-tax-flaviviridae:   #e67e22;
+  --vq-tax-parvoviridae:   #8e44ad;
+  --vq-tax-phenuiviridae:  #16a085;
+  --vq-tax-nodaviridae:    #2980b9;
+  --vq-tax-rhabdoviridae:  #c0392b;
+  --vq-tax-tombusviridae:  #27ae60;
+  --vq-tax-other:          #7f8c8d;
+
+  /* --- ORF domain colours (Pfam palette) --- */
+  --vq-dom-1: #e74c3c;
+  --vq-dom-2: #3498db;
+  --vq-dom-3: #2ecc71;
+  --vq-dom-4: #f39c12;
+  --vq-dom-5: #9b59b6;
+  --vq-dom-6: #1abc9c;
+  --vq-dom-7: #e67e22;
+  --vq-dom-8: #34495e;
+
+  /* --- Surfaces --- */
+  --vq-bg:          #f0f4f8;
+  --vq-surface:     #ffffff;
+  --vq-surface-2:   #f8fafc;
+  --vq-border:      #dde3ec;
+  --vq-border-dark: #b0bec5;
+
+  /* --- Text --- */
+  --vq-text:        #1e293b;
+  --vq-text-2:      #475569;
+  --vq-text-3:      #94a3b8;
+
+  /* --- Typography --- */
+  --vq-font:        'Inter', 'Segoe UI', system-ui, sans-serif;
+  --vq-font-mono:   'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --vq-text-xs:     0.72rem;
+  --vq-text-sm:     0.85rem;
+  --vq-text-base:   1rem;
+  --vq-text-lg:     1.15rem;
+  --vq-text-xl:     1.35rem;
+  --vq-text-2xl:    1.7rem;
+
+  /* --- Spacing --- */
+  --vq-space-1:  0.25rem;
+  --vq-space-2:  0.5rem;
+  --vq-space-3:  0.75rem;
+  --vq-space-4:  1rem;
+  --vq-space-6:  1.5rem;
+  --vq-space-8:  2rem;
+  --vq-space-12: 3rem;
+
+  /* --- Shape --- */
+  --vq-radius-sm: 4px;
+  --vq-radius:    8px;
+  --vq-radius-lg: 14px;
+  --vq-shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+  --vq-shadow:    0 4px 12px rgba(0,0,0,.10), 0 2px 4px rgba(0,0,0,.06);
+  --vq-shadow-lg: 0 10px 30px rgba(0,0,0,.12), 0 4px 10px rgba(0,0,0,.08);
+
+  /* --- Nav --- */
+  --vq-nav-h:     56px;
+  --vq-nav-bg:    var(--vq-primary);
+
+  /* --- Transitions --- */
+  --vq-ease:      cubic-bezier(.4,0,.2,1);
+  --vq-dur:       200ms;
+}
+
+/* ============================================================
+   Reset & base
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--vq-font);
+  font-size:   var(--vq-text-base);
+  color:       var(--vq-text);
+  background:  var(--vq-bg);
+  line-height: 1.6;
+  min-height:  100vh;
+}
+
+/* ============================================================
+   Navigation
+   ============================================================ */
+
+.vq-nav {
+  position:   fixed;
+  top: 0; left: 0; right: 0;
+  height:     var(--vq-nav-h);
+  background: var(--vq-nav-bg);
+  display:    flex;
+  align-items: center;
+  padding:    0 var(--vq-space-6);
+  gap:        var(--vq-space-8);
+  z-index:    1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+
+.vq-nav__logo {
+  font-size:   var(--vq-text-lg);
+  font-weight: 700;
+  color:       #fff;
+  letter-spacing: .04em;
+  flex-shrink: 0;
+  display:     flex;
+  align-items: center;
+  gap:         var(--vq-space-2);
+}
+
+.vq-nav__logo span { color: var(--vq-accent); }
+
+.vq-nav__tabs {
+  display:    flex;
+  gap:        var(--vq-space-1);
+  flex:       1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.vq-nav__tabs::-webkit-scrollbar { display: none; }
+
+.vq-nav__tab {
+  padding:         var(--vq-space-2) var(--vq-space-4);
+  border:          none;
+  background:      transparent;
+  color:           rgba(255,255,255,.7);
+  font:            inherit;
+  font-size:       var(--vq-text-sm);
+  font-weight:     500;
+  cursor:          pointer;
+  border-radius:   var(--vq-radius-sm);
+  white-space:     nowrap;
+  transition:      background var(--vq-dur) var(--vq-ease),
+                   color      var(--vq-dur) var(--vq-ease);
+}
+
+.vq-nav__tab:hover  { background: rgba(255,255,255,.10); color: #fff; }
+.vq-nav__tab.active { background: var(--vq-accent);      color: #fff; }
+
+.vq-nav__meta {
+  font-size:  var(--vq-text-xs);
+  color:      rgba(255,255,255,.45);
+  flex-shrink: 0;
+  display:    flex;
+  align-items: center;
+  gap:        var(--vq-space-2);
+}
+
+/* ============================================================
+   Main layout
+   ============================================================ */
+
+.vq-main {
+  padding-top: var(--vq-nav-h);
+  min-height:  100vh;
+}
+
+.vq-section {
+  display:    none;
+  padding:    var(--vq-space-8) var(--vq-space-6);
+  max-width:  1600px;
+  margin:     0 auto;
+  animation:  vq-fadein var(--vq-dur) var(--vq-ease);
+}
+
+.vq-section.active { display: block; }
+
+@keyframes vq-fadein {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* ============================================================
+   Cards
+   ============================================================ */
+
+.vq-card {
+  background:    var(--vq-surface);
+  border:        1px solid var(--vq-border);
+  border-radius: var(--vq-radius);
+  box-shadow:    var(--vq-shadow-sm);
+  overflow:      hidden;
+}
+
+.vq-card__header {
+  padding:     var(--vq-space-4) var(--vq-space-6);
+  border-bottom: 1px solid var(--vq-border);
+  display:     flex;
+  align-items: center;
+  justify-content: space-between;
+  gap:         var(--vq-space-4);
+  background:  var(--vq-surface-2);
+}
+
+.vq-card__title {
+  font-size:   var(--vq-text-base);
+  font-weight: 600;
+  color:       var(--vq-primary);
+  display:     flex;
+  align-items: center;
+  gap:         var(--vq-space-2);
+}
+
+.vq-card__body {
+  padding: var(--vq-space-6);
+}
+
+/* ============================================================
+   Stats grid (for section 1)
+   ============================================================ */
+
+.vq-stats-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap:                   var(--vq-space-4);
+}
+
+.vq-stat-chip {
+  background:    var(--vq-surface-2);
+  border:        1px solid var(--vq-border);
+  border-radius: var(--vq-radius);
+  padding:       var(--vq-space-4);
+  display:       flex;
+  flex-direction: column;
+  gap:           var(--vq-space-1);
+}
+
+.vq-stat-chip__label {
+  font-size:   var(--vq-text-xs);
+  font-weight: 600;
+  color:       var(--vq-text-3);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.vq-stat-chip__value {
+  font-size:   var(--vq-text-2xl);
+  font-weight: 700;
+  color:       var(--vq-primary);
+  line-height: 1.1;
+}
+
+.vq-stat-chip__sub {
+  font-size:  var(--vq-text-xs);
+  color:      var(--vq-text-3);
+}
+
+.vq-stat-chip--accent .vq-stat-chip__value { color: var(--vq-accent); }
+.vq-stat-chip--success .vq-stat-chip__value { color: var(--vq-success); }
+.vq-stat-chip--warn    .vq-stat-chip__value { color: var(--vq-warning); }
+
+/* ============================================================
+   Section headers
+   ============================================================ */
+
+.vq-section-header {
+  display:       flex;
+  align-items:   center;
+  justify-content: space-between;
+  margin-bottom: var(--vq-space-6);
+  flex-wrap:     wrap;
+  gap:           var(--vq-space-4);
+}
+
+.vq-section-title {
+  font-size:   var(--vq-text-xl);
+  font-weight: 700;
+  color:       var(--vq-primary);
+}
+
+.vq-section-sub {
+  font-size:  var(--vq-text-sm);
+  color:      var(--vq-text-3);
+  margin-top: var(--vq-space-1);
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+
+.vq-btn {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--vq-space-2);
+  padding:       var(--vq-space-2) var(--vq-space-4);
+  border:        1px solid transparent;
+  border-radius: var(--vq-radius-sm);
+  font:          inherit;
+  font-size:     var(--vq-text-sm);
+  font-weight:   500;
+  cursor:        pointer;
+  transition:    background var(--vq-dur) var(--vq-ease),
+                 color      var(--vq-dur) var(--vq-ease),
+                 box-shadow var(--vq-dur) var(--vq-ease);
+  white-space:   nowrap;
+  text-decoration: none;
+}
+
+.vq-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.vq-btn--primary {
+  background: var(--vq-accent);
+  color:      #fff;
+}
+.vq-btn--primary:hover:not(:disabled) { background: var(--vq-accent-dark); }
+
+.vq-btn--ghost {
+  background: transparent;
+  color:      var(--vq-text-2);
+  border-color: var(--vq-border-dark);
+}
+.vq-btn--ghost:hover:not(:disabled) {
+  background: var(--vq-surface-2);
+  border-color: var(--vq-accent);
+  color:      var(--vq-accent);
+}
+
+.vq-btn--sm {
+  padding:    var(--vq-space-1) var(--vq-space-3);
+  font-size:  var(--vq-text-xs);
+}
+
+/* ============================================================
+   Form controls
+   ============================================================ */
+
+.vq-input, .vq-select {
+  padding:       var(--vq-space-2) var(--vq-space-3);
+  border:        1px solid var(--vq-border-dark);
+  border-radius: var(--vq-radius-sm);
+  font:          inherit;
+  font-size:     var(--vq-text-sm);
+  color:         var(--vq-text);
+  background:    var(--vq-surface);
+  outline:       none;
+  transition:    border-color var(--vq-dur) var(--vq-ease),
+                 box-shadow   var(--vq-dur) var(--vq-ease);
+  width:         100%;
+}
+
+.vq-input:focus, .vq-select:focus {
+  border-color: var(--vq-accent);
+  box-shadow:   0 0 0 3px rgba(59,158,255,.15);
+}
+
+.vq-search-wrap {
+  position: relative;
+  max-width: 340px;
+}
+.vq-search-wrap svg {
+  position: absolute;
+  left: var(--vq-space-3);
+  top: 50%; transform: translateY(-50%);
+  color: var(--vq-text-3);
+  pointer-events: none;
+}
+.vq-search-wrap .vq-input { padding-left: 2.2rem; }
+
+/* ============================================================
+   Toolbar (filters + actions row)
+   ============================================================ */
+
+.vq-toolbar {
+  display:    flex;
+  align-items: center;
+  flex-wrap:  wrap;
+  gap:        var(--vq-space-3);
+  margin-bottom: var(--vq-space-4);
+}
+
+.vq-toolbar__filters {
+  display: flex;
+  gap:     var(--vq-space-2);
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.vq-select { width: auto; min-width: 130px; }
+
+/* ============================================================
+   Toggle (TPM / NumReads)
+   ============================================================ */
+
+.vq-toggle {
+  display:       inline-flex;
+  border:        1px solid var(--vq-border-dark);
+  border-radius: var(--vq-radius-sm);
+  overflow:      hidden;
+}
+
+.vq-toggle__btn {
+  padding:    var(--vq-space-1) var(--vq-space-3);
+  border:     none;
+  background: transparent;
+  font:       inherit;
+  font-size:  var(--vq-text-sm);
+  cursor:     pointer;
+  color:      var(--vq-text-2);
+  transition: background var(--vq-dur) var(--vq-ease);
+}
+
+.vq-toggle__btn.active {
+  background: var(--vq-primary);
+  color:      #fff;
+}
+
+/* ============================================================
+   Badge / tag
+   ============================================================ */
+
+.vq-badge {
+  display:       inline-flex;
+  align-items:   center;
+  padding:       2px 8px;
+  border-radius: 999px;
+  font-size:     var(--vq-text-xs);
+  font-weight:   600;
+  white-space:   nowrap;
+}
+
+.vq-badge--viral-known    { background: #e8f5e9; color: #2e7d32; }
+.vq-badge--viral-unknown  { background: #fff8e1; color: #f57f17; }
+.vq-badge--non-viral      { background: #fce4ec; color: #c62828; }
+.vq-badge--cluster        { background: #e3f2fd; color: #1565c0; }
+
+/* ============================================================
+   Genome viewer — sequence card
+   ============================================================ */
+
+.vq-seq-card {
+  border:        1px solid var(--vq-border);
+  border-radius: var(--vq-radius);
+  overflow:      hidden;
+  transition:    box-shadow var(--vq-dur) var(--vq-ease);
+}
+
+.vq-seq-card:hover { box-shadow: var(--vq-shadow); }
+
+.vq-seq-card__head {
+  display:     flex;
+  align-items: center;
+  gap:         var(--vq-space-3);
+  padding:     var(--vq-space-3) var(--vq-space-4);
+  background:  var(--vq-surface-2);
+  cursor:      pointer;
+  user-select: none;
+  border-bottom: 1px solid transparent;
+  transition:  border-color var(--vq-dur) var(--vq-ease);
+}
+
+.vq-seq-card.open .vq-seq-card__head {
+  border-bottom-color: var(--vq-border);
+}
+
+.vq-seq-card__id {
+  font-family: var(--vq-font-mono);
+  font-size:   var(--vq-text-sm);
+  font-weight: 600;
+  color:       var(--vq-primary);
+  flex-shrink: 0;
+}
+
+.vq-seq-card__meta {
+  display:   flex;
+  gap:       var(--vq-space-3);
+  flex-wrap: wrap;
+  flex:      1;
+  font-size: var(--vq-text-xs);
+  color:     var(--vq-text-2);
+}
+
+.vq-seq-card__chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color:       var(--vq-text-3);
+  transition:  transform var(--vq-dur) var(--vq-ease);
+}
+
+.vq-seq-card.open .vq-seq-card__chevron { transform: rotate(90deg); }
+
+.vq-seq-card__body {
+  display:    none;
+  padding:    var(--vq-space-4);
+}
+
+.vq-seq-card.open .vq-seq-card__body { display: block; }
+
+/* Genome SVG wrapper — horizontal scroll within card */
+.vq-genome-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--vq-space-2);
+}
+
+.vq-genome-svg { display: block; min-width: 600px; }
+
+/* ============================================================
+   Legend
+   ============================================================ */
+
+.vq-legend {
+  display:    flex;
+  flex-wrap:  wrap;
+  gap:        var(--vq-space-3);
+  font-size:  var(--vq-text-xs);
+  color:      var(--vq-text-2);
+  margin-top: var(--vq-space-3);
+}
+
+.vq-legend__item {
+  display:    flex;
+  align-items: center;
+  gap:        var(--vq-space-1);
+}
+
+.vq-legend__swatch {
+  width:         12px;
+  height:        12px;
+  border-radius: 2px;
+  flex-shrink:   0;
+}
+
+/* ============================================================
+   Tooltip (shared)
+   ============================================================ */
+
+.vq-tooltip {
+  position:      fixed;
+  background:    rgba(15,23,42,.9);
+  color:         #fff;
+  border-radius: var(--vq-radius-sm);
+  padding:       var(--vq-space-2) var(--vq-space-3);
+  font-size:     var(--vq-text-xs);
+  line-height:   1.5;
+  pointer-events: none;
+  z-index:       9000;
+  max-width:     260px;
+  box-shadow:    var(--vq-shadow-lg);
+  opacity:       0;
+  transition:    opacity 100ms;
+}
+
+.vq-tooltip.visible { opacity: 1; }
+
+.vq-tooltip__title {
+  font-weight:   600;
+  margin-bottom: 4px;
+  font-size:     var(--vq-text-xs);
+}
+
+.vq-tooltip__row {
+  display:         grid;
+  grid-template-columns: auto 1fr;
+  gap:             2px 8px;
+  color:           rgba(255,255,255,.8);
+}
+
+.vq-tooltip__key { color: rgba(255,255,255,.5); }
+
+/* ============================================================
+   Checkbox selection
+   ============================================================ */
+
+.vq-checkbox {
+  width:  16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--vq-accent);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Empty state
+   ============================================================ */
+
+.vq-empty {
+  text-align: center;
+  padding:    var(--vq-space-12) var(--vq-space-8);
+  color:      var(--vq-text-3);
+  font-size:  var(--vq-text-sm);
+}
+
+/* ============================================================
+   Scrollbar (webkit)
+   ============================================================ */
+
+::-webkit-scrollbar         { width: 6px; height: 6px; }
+::-webkit-scrollbar-track   { background: transparent; }
+::-webkit-scrollbar-thumb   { background: var(--vq-border-dark); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--vq-muted); }
+
+/* ============================================================
+   Print / PDF export styles
+   ============================================================ */
+
+@media print {
+  .vq-nav, .vq-toolbar, .vq-btn, .vq-checkbox { display: none !important; }
+  .vq-section { display: block !important; padding: 1cm; }
+  .vq-card { box-shadow: none !important; border: 1px solid #ccc; }
+  body { background: #fff; }
+  .vq-genome-wrap { overflow: visible; }
+}
+
+/* ============================================================
+   Responsive breakpoints
+   ============================================================ */
+
+@media (max-width: 900px) {
+  .vq-nav { padding: 0 var(--vq-space-4); gap: var(--vq-space-4); }
+  .vq-section { padding: var(--vq-space-6) var(--vq-space-4); }
+  .vq-card__body { padding: var(--vq-space-4); }
+  .vq-stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 540px) {
+  .vq-nav__meta { display: none; }
+  .vq-stats-grid { grid-template-columns: 1fr; }
+  .vq-section-header { flex-direction: column; align-items: flex-start; }
+}

@@ -1,0 +1,43 @@
+{
+  "reads": ["sample_R1.fastq.gz", "sample_R2.fastq.gz"],
+  "mapping_rate": 61.7,
+  "total_reads": 8245120,
+  "viral_quant": [
+    { "name": "VQ_VIRAL_contig_007", "length": 3840, "eff_length": 3724.1, "tpm": 482.3,  "num_reads": 1842.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_012", "length": 2910, "eff_length": 2791.2, "tpm": 213.8,  "num_reads":  812.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_031", "length": 1540, "eff_length": 1421.8, "tpm":  98.4,  "num_reads":  374.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_044", "length":  980, "eff_length":  861.5, "tpm":  31.2,  "num_reads":  119.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_003", "length": 10236,"eff_length": 10117.3,"tpm": 1248.7, "num_reads": 4759.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_018", "length": 4820, "eff_length": 4701.2, "tpm":  341.1, "num_reads": 1302.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_029", "length": 2340, "eff_length": 2221.3, "tpm":   87.6, "num_reads":  334.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_021", "length": 6780, "eff_length": 6661.4, "tpm":  612.4, "num_reads": 2334.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_036", "length": 3210, "eff_length": 3091.2, "tpm":  198.3, "num_reads":  756.0, "seq_type": "viral", "kingdom": "" },
+    { "name": "VQ_VIRAL_contig_002", "length": 8920, "eff_length": 8801.3, "tpm":   74.1, "num_reads":  283.0, "seq_type": "viral", "kingdom": "" }
+  ],
+  "conserved_quant": [
+    { "name": "VQ_CONS_ARTHROPODS_PP516864.1",  "length": 1134, "eff_length": 1015.2, "tpm": 9842.1, "num_reads": 37521.0, "seq_type": "conserved", "kingdom": "ARTHROPODS" },
+    { "name": "VQ_CONS_ARTHROPODS_OR187519.1",  "length": 1089, "eff_length":  970.4, "tpm": 8134.7, "num_reads": 31014.0, "seq_type": "conserved", "kingdom": "ARTHROPODS" },
+    { "name": "VQ_CONS_ARTHROPODS_NM_206765.3", "length": 2341, "eff_length": 2222.3, "tpm": 4218.3, "num_reads": 16082.0, "seq_type": "conserved", "kingdom": "ARTHROPODS" },
+    { "name": "VQ_CONS_MAMMALS_NM_001101.5",    "length": 1812, "eff_length": 1693.4, "tpm":   42.3, "num_reads":   161.0, "seq_type": "conserved", "kingdom": "MAMMALS"    },
+    { "name": "VQ_CONS_MAMMALS_NM_007393.5",    "length": 1790, "eff_length": 1671.2, "tpm":   38.1, "num_reads":   145.0, "seq_type": "conserved", "kingdom": "MAMMALS"    },
+    { "name": "VQ_CONS_PLANTS_NM_001423082.1",  "length": 1482, "eff_length": 1363.1, "tpm":    2.1, "num_reads":     8.0, "seq_type": "conserved", "kingdom": "PLANTS"     },
+    { "name": "VQ_CONS_BACTERIA_AF188265.1",    "length":  921, "eff_length":  802.3, "tpm":    0.4, "num_reads":     2.0, "seq_type": "conserved", "kingdom": "BACTERIA"   },
+    { "name": "VQ_CONS_FISH_NM_131031.2",       "length": 1620, "eff_length": 1501.2, "tpm":    0.0, "num_reads":     0.0, "seq_type": "conserved", "kingdom": "FISH"       },
+    { "name": "VQ_CONS_FUNGI_NM_001182.4",      "length": 1240, "eff_length": 1121.3, "tpm":    0.0, "num_reads":     0.0, "seq_type": "conserved", "kingdom": "FUNGI"      },
+    { "name": "VQ_CONS_NEMATODES_NM_059992.1",  "length":  980, "eff_length":  861.4, "tpm":    0.0, "num_reads":     0.0, "seq_type": "conserved", "kingdom": "NEMATODES"  }
+  ],
+  "host_viral_hits": [
+    {
+      "transcript": { "name": "ENST00000412167.3", "length": 1840, "eff_length": 1721.2, "tpm": 14.3, "num_reads": 54.0, "seq_type": "host", "kingdom": "" },
+      "blast_hits": [
+        { "host_transcript_id": "ENST00000412167.3", "viral_seq_id": "contig_007", "pident": 74.2, "qcovhsp": 31, "evalue": 2.1e-18, "bit_score": 98.4 }
+      ]
+    },
+    {
+      "transcript": { "name": "ENST00000398844.5", "length": 2310, "eff_length": 2191.3, "tpm": 8.7, "num_reads": 33.0, "seq_type": "host", "kingdom": "" },
+      "blast_hits": [
+        { "host_transcript_id": "ENST00000398844.5", "viral_seq_id": "contig_003", "pident": 71.8, "qcovhsp": 24, "evalue": 4.8e-14, "bit_score": 76.2 }
+      ]
+    }
+  ]
+}

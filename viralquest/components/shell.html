@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ViralQuest Report — {{SAMPLE_NAME}}</title>
+
+  <!-- All styles are inlined by html_report.py — placeholder below -->
+  <style>{{VQ_STYLES}}</style>
+</head>
+<body>
+
+  <!-- ── Navigation ─────────────────────────────────────────── -->
+  <nav class="vq-nav" role="navigation" aria-label="Report sections">
+    <div class="vq-nav__logo">Viral<span>Quest</span></div>
+
+    <div class="vq-nav__tabs" role="tablist">
+      <button class="vq-nav__tab active" data-section="stats"    role="tab">General Stats</button>
+      <button class="vq-nav__tab"        data-section="clusters" role="tab">Cluster Viruses</button>
+      <button class="vq-nav__tab"        data-section="viewer"   role="tab">All Viruses</button>
+      <button class="vq-nav__tab"        data-section="taxonomy" role="tab">Taxonomy</button>
+      <button class="vq-nav__tab"        data-section="salmon"   role="tab" id="tab-salmon">Salmon Quant</button>
+    </div>
+
+    <div class="vq-nav__meta">
+      <span id="nav-version"></span>
+      <span>·</span>
+      <span id="nav-timestamp"></span>
+    </div>
+  </nav>
+
+  <!-- ── Sections ───────────────────────────────────────────── -->
+  <main class="vq-main" role="main">
+
+    <section class="vq-section active" id="section-stats"    role="tabpanel" aria-label="General Statistics"></section>
+    <section class="vq-section"        id="section-clusters" role="tabpanel" aria-label="Cluster Viruses"></section>
+    <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-label="All Viruses Viewer"></section>
+    <section class="vq-section"        id="section-taxonomy" role="tabpanel" aria-label="Taxonomy Visualisation"></section>
+    <section class="vq-section"        id="section-salmon"   role="tabpanel" aria-label="Salmon Quantification"></section>
+
+  </main>
+
+  <!-- ── Shared tooltip ─────────────────────────────────────── -->
+  <div class="vq-tooltip" id="vq-tooltip" role="tooltip" aria-live="polite"></div>
+
+  <!-- ── Report data (injected by html_report.py) ───────────── -->
+  <script>const VQ_REPORT = {{VQ_DATA}};</script>
+
+  <!-- ── D3 v7 (inlined by html_report.py) ─────────────────── -->
+  <script>{{VQ_D3}}</script>
+
+  <!-- ── Component scripts (inlined by html_report.py) ──────── -->
+  <script>{{VQ_EXPORT}}</script>
+  <script>{{VQ_STATS}}</script>
+  <script>{{VQ_CLUSTERS}}</script>
+  <script>{{VQ_VIEWER}}</script>
+  <script>{{VQ_TAXONOMY}}</script>
+  <script>{{VQ_SALMON}}</script>
+
+  <!-- ── Shell controller ───────────────────────────────────── -->
+  <script>
+  (function () {
+    'use strict';
+
+    // --- Nav tab switching -------------------------------------------
+    const tabs    = document.querySelectorAll('.vq-nav__tab');
+    const sections = document.querySelectorAll('.vq-section');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        sections.forEach(s => s.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('section-' + tab.dataset.section).classList.add('active');
+      });
+    });
+
+    // --- Salmon tab visibility --------------------------------------
+    if (!VQ_REPORT.salmon_quant) {
+      document.getElementById('tab-salmon').style.display = 'none';
+    }
+
+    // --- Nav meta ---------------------------------------------------
+    const meta = VQ_REPORT.meta || {};
+    const v    = document.getElementById('nav-version');
+    const ts   = document.getElementById('nav-timestamp');
+    if (v)  v.textContent  = 'v' + (meta.viralquest_version || '?');
+    if (ts) ts.textContent = meta.timestamp
+      ? new Date(meta.timestamp).toLocaleDateString()
+      : '';
+
+    // --- Init all sections ------------------------------------------
+    vqInitStats(VQ_REPORT);
+    vqInitClusters(VQ_REPORT.clusters || []);
+    vqInitViewer(VQ_REPORT.sequences || []);
+    vqInitTaxonomy(VQ_REPORT._taxonomy_tree || null, VQ_REPORT.sequences || []);
+    if (VQ_REPORT.salmon_quant) {
+      vqInitSalmon(VQ_REPORT.salmon_quant, VQ_REPORT.clusters || []);
+    }
+
+  })();
+  </script>
+
+</body>
+</html>

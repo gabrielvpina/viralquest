@@ -1,0 +1,124 @@
+[
+  {
+    "cluster_id": "VQ_CLU_001",
+    "species": "Aedes aegypti densovirus",
+    "representative_id": "contig_007",
+    "size": 4,
+    "members": [
+      {
+        "seq_id": "contig_007",
+        "length": 3840,
+        "is_representative": true,
+        "identity": 100.0,
+        "query_coverage": 100.0,
+        "aln_start": 1,
+        "aln_end": 3840
+      },
+      {
+        "seq_id": "contig_012",
+        "length": 2910,
+        "is_representative": false,
+        "identity": 91.2,
+        "query_coverage": 74.8,
+        "aln_start": 420,
+        "aln_end": 3280
+      },
+      {
+        "seq_id": "contig_031",
+        "length": 1540,
+        "is_representative": false,
+        "identity": 78.5,
+        "query_coverage": 38.1,
+        "aln_start": 1100,
+        "aln_end": 2560
+      },
+      {
+        "seq_id": "contig_044",
+        "length": 980,
+        "is_representative": false,
+        "identity": 65.3,
+        "query_coverage": 22.4,
+        "aln_start": 2800,
+        "aln_end": 3660
+      }
+    ]
+  },
+  {
+    "cluster_id": "VQ_CLU_002",
+    "species": "Culex flavivirus",
+    "representative_id": "contig_003",
+    "size": 3,
+    "members": [
+      {
+        "seq_id": "contig_003",
+        "length": 10236,
+        "is_representative": true,
+        "identity": 100.0,
+        "query_coverage": 100.0,
+        "aln_start": 1,
+        "aln_end": 10236
+      },
+      {
+        "seq_id": "contig_018",
+        "length": 4820,
+        "is_representative": false,
+        "identity": 88.7,
+        "query_coverage": 46.1,
+        "aln_start": 3200,
+        "aln_end": 7900
+      },
+      {
+        "seq_id": "contig_029",
+        "length": 2340,
+        "is_representative": false,
+        "identity": 82.1,
+        "query_coverage": 22.0,
+        "aln_start": 6100,
+        "aln_end": 8350
+      }
+    ]
+  },
+  {
+    "cluster_id": "VQ_CLU_003",
+    "species": "Phasi charoen-like phasivirus",
+    "representative_id": "contig_021",
+    "size": 2,
+    "members": [
+      {
+        "seq_id": "contig_021",
+        "length": 6780,
+        "is_representative": true,
+        "identity": 100.0,
+        "query_coverage": 100.0,
+        "aln_start": 1,
+        "aln_end": 6780
+      },
+      {
+        "seq_id": "contig_036",
+        "length": 3210,
+        "is_representative": false,
+        "identity": 95.4,
+        "query_coverage": 47.3,
+        "aln_start": 1840,
+        "aln_end": 5010
+      }
+    ]
+  },
+  {
+    "cluster_id": "VQ_CLU_004",
+    "species": "Hubei mosquito virus 4",
+    "representative_id": "contig_002",
+    "size": 1,
+    "members": [
+      {
+        "seq_id": "contig_002",
+        "length": 8920,
+        "is_representative": true,
+        "identity": 100.0,
+        "query_coverage": 100.0,
+        "aln_start": 1,
+        "aln_end": 8920
+      }
+    ]
+  }
+]

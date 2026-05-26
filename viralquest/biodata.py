@@ -1,6 +1,6 @@
 import re
 import uuid
-from pathlib import Path
+import pathlib as Path
 from dataclasses import dataclass, field
 
 

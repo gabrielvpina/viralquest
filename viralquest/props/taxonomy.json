@@ -1,0 +1,102 @@
+{
+  "name": "root",
+  "children": [
+    {
+      "name": "Viruses",
+      "children": [
+        {
+          "name": "Parvoviridae",
+          "rank": "phylum",
+          "children": [
+            {
+              "name": "Hamaparvovirales",
+              "rank": "order",
+              "children": [
+                {
+                  "name": "Parvoviridae",
+                  "rank": "family",
+                  "children": [
+                    {
+                      "name": "Ambidensovirus",
+                      "rank": "genus",
+                      "sequences": ["contig_007", "contig_012", "contig_031", "contig_044"]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Kitrinoviricota",
+          "rank": "phylum",
+          "children": [
+            {
+              "name": "Amarillovirales",
+              "rank": "order",
+              "children": [
+                {
+                  "name": "Flaviviridae",
+                  "rank": "family",
+                  "children": [
+                    {
+                      "name": "Flavivirus",
+                      "rank": "genus",
+                      "sequences": ["contig_003", "contig_018", "contig_029"]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Negarnaviricota",
+          "rank": "phylum",
+          "children": [
+            {
+              "name": "Bunyavirales",
+              "rank": "order",
+              "children": [
+                {
+                  "name": "Phenuiviridae",
+                  "rank": "family",
+                  "children": [
+                    {
+                      "name": "Phasivirus",
+                      "rank": "genus",
+                      "sequences": ["contig_021", "contig_036"]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Pisuviricota",
+          "rank": "phylum",
+          "children": [
+            {
+              "name": "Nodamuvirales",
+              "rank": "order",
+              "children": [
+                {
+                  "name": "Nodaviridae",
+                  "rank": "family",
+                  "children": [
+                    {
+                      "name": "Alphanodavirus",
+                      "rank": "genus",
+                      "sequences": ["contig_002"]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

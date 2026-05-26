@@ -1,0 +1,465 @@
+[
+  {
+    "id": "contig_007",
+    "uid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "length": 3840,
+    "gc_content": 38.7,
+    "n_count": 0,
+    "is_viral": true,
+    "cluster_id": "VQ_CLU_001",
+    "sample_name": "mosquito_pool_01",
+    "taxonomy": {
+      "tax_id": 1511235,
+      "scientific_name": "Aedes aegypti densovirus",
+      "kingdom": "Viruses",
+      "phylum": "Parvoviridae",
+      "class": null,
+      "order": "Hamaparvovirales",
+      "family": "Parvoviridae",
+      "genus": "Ambidensovirus",
+      "species": "Aedes aegypti densovirus",
+      "genome": "ssDNA"
+    },
+    "orfs": [
+      {
+        "name": "contig_007_orf_1",
+        "start_position": 112,
+        "stop_position": 1930,
+        "strand": "+",
+        "frame": 1,
+        "length_aa": 605,
+        "length_nt": 1818,
+        "orf_type": "complete",
+        "domains": [
+          {
+            "database": "Pfam",
+            "target": "PF02195",
+            "description": "ParBc domain",
+            "type": "Domain",
+            "score": 132.4,
+            "e_value": 4.2e-38,
+            "start": 40,
+            "stop": 280
+          },
+          {
+            "database": "RVDB",
+            "target": "RVDB_densovirus_NS1",
+            "description": "Densovirus NS1 replication protein",
+            "type": "Family",
+            "score": 289.1,
+            "e_value": 1.1e-82,
+            "start": 10,
+            "stop": 580
+          }
+        ]
+      },
+      {
+        "name": "contig_007_orf_2",
+        "start_position": 1500,
+        "stop_position": 2850,
+        "strand": "+",
+        "frame": 2,
+        "length_aa": 449,
+        "length_nt": 1350,
+        "orf_type": "complete",
+        "domains": [
+          {
+            "database": "Pfam",
+            "target": "PF01289",
+            "description": "Parvovirus NS1",
+            "type": "Domain",
+            "score": 210.8,
+            "e_value": 2.3e-62,
+            "start": 20,
+            "stop": 420
+          }
+        ]
+      },
+      {
+        "name": "contig_007_orf_3",
+        "start_position": 2900,
+        "stop_position": 3780,
+        "strand": "-",
+        "frame": -1,
+        "length_aa": 293,
+        "length_nt": 880,
+        "orf_type": "complete",
+        "domains": [
+          {
+            "database": "Pfam",
+            "target": "PF00740",
+            "description": "Parvovirus coat protein VP1",
+            "type": "Domain",
+            "score": 98.3,
+            "e_value": 7.1e-28,
+            "start": 10,
+            "stop": 260
+          }
+        ]
+      }
+    ],
+    "blastx_hits": [
+      {
+        "subject_title": "NS1 protein [Aedes aegypti densovirus]",
+        "pct_identity": 88.4,
+        "query_coverage": 91.2,
+        "e_value": 1.2e-148,
+        "bit_score": 521.0,
+        "species": "Aedes aegypti densovirus"
+      }
+    ],
+    "blastx_nr_hits": [
+      {
+        "subject_title": "nonstructural protein NS1 [Aedes aegypti densovirus]",
+        "pct_identity": 88.4,
+        "query_coverage": 91.2,
+        "e_value": 1.2e-148,
+        "bit_score": 521.0,
+        "species": "Aedes aegypti densovirus"
+      }
+    ],
+    "blastn_hits": [
+      {
+        "stitle": "Aedes aegypti densovirus isolate AeDNV segment NS1",
+        "pident": 91.7,
+        "qcovhsp": 88,
+        "evalue": 0.0,
+        "bit_score": 4210.0
+      }
+    ],
+    "llm_output": {
+      "vq_score": 94,
+      "classification": "viral-known",
+      "analysis": "High-confidence Ambidensovirus. NS1 helicase and coat protein domains present. ssDNA genome consistent with parvovirus family. Strong BLASTx and BLASTn agreement.",
+      "blastn_species": "Aedes aegypti densovirus"
+    }
+  },
+  {
+    "id": "contig_003",
+    "uid": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    "length": 10236,
+    "gc_content": 51.3,
+    "n_count": 0,
+    "is_viral": true,
+    "cluster_id": "VQ_CLU_002",
+    "sample_name": "mosquito_pool_01",
+    "taxonomy": {
+      "tax_id": 1513226,
+      "scientific_name": "Culex flavivirus",
+      "kingdom": "Viruses",
+      "phylum": "Kitrinoviricota",
+      "class": "Flasuviricetes",
+      "order": "Amarillovirales",
+      "family": "Flaviviridae",
+      "genus": "Flavivirus",
+      "species": "Culex flavivirus",
+      "genome": "ssRNA(+)"
+    },
+    "orfs": [
+      {
+        "name": "contig_003_orf_1",
+        "start_position": 96,
+        "stop_position": 10136,
+        "strand": "+",
+        "frame": 1,
+        "length_aa": 3346,
+        "length_nt": 10040,
+        "orf_type": "complete",
+        "domains": [
+          {
+            "database": "Pfam",
+            "target": "PF00533",
+            "description": "Flavivirus capsid protein C",
+            "type": "Domain",
+            "score": 88.2,
+            "e_value": 3.1e-24,
+            "start": 1,
+            "stop": 120
+          },
+          {
+            "database": "Pfam",
+            "target": "PF01022",
+            "description": "Flavivirus glycoprotein E",
+            "type": "Domain",
+            "score": 312.5,
+            "e_value": 4.8e-92,
+            "start": 480,
+            "stop": 1050
+          },
+          {
+            "database": "Pfam",
+            "target": "PF00680",
+            "description": "Flavivirus NS3 helicase",
+            "type": "Domain",
+            "score": 415.8,
+            "e_value": 2.1e-123,
+            "start": 1800,
+            "stop": 2400
+          },
+          {
+            "database": "Pfam",
+            "target": "PF00602",
+            "description": "Flavivirus RNA-dependent RNA polymerase NS5",
+            "type": "Domain",
+            "score": 520.1,
+            "e_value": 8.7e-156,
+            "start": 2600,
+            "stop": 3346
+          }
+        ]
+      }
+    ],
+    "blastx_hits": [
+      {
+        "subject_title": "polyprotein [Culex flavivirus]",
+        "pct_identity": 72.1,
+        "query_coverage": 98.4,
+        "e_value": 0.0,
+        "bit_score": 8920.0,
+        "species": "Culex flavivirus"
+      }
+    ],
+    "blastx_nr_hits": [
+      {
+        "subject_title": "polyprotein [Culex flavivirus]",
+        "pct_identity": 72.1,
+        "query_coverage": 98.4,
+        "e_value": 0.0,
+        "bit_score": 8920.0,
+        "species": "Culex flavivirus"
+      }
+    ],
+    "blastn_hits": [
+      {
+        "stitle": "Culex flavivirus isolate CxFV-Izabal complete genome",
+        "pident": 74.8,
+        "qcovhsp": 97,
+        "evalue": 0.0,
+        "bit_score": 12400.0
+      }
+    ],
+    "llm_output": {
+      "vq_score": 97,
+      "classification": "viral-known",
+      "analysis": "Near-complete Culex flavivirus genome. Single polyprotein ORF characteristic of Flaviviridae. Structural (C, E) and non-structural (NS3, NS5) domains all detected by Pfam.",
+      "blastn_species": "Culex flavivirus"
+    }
+  },
+  {
+    "id": "contig_021",
+    "uid": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    "length": 6780,
+    "gc_content": 44.1,
+    "n_count": 0,
+    "is_viral": true,
+    "cluster_id": "VQ_CLU_003",
+    "sample_name": "mosquito_pool_01",
+    "taxonomy": {
+      "tax_id": 1982483,
+      "scientific_name": "Phasi charoen-like phasivirus",
+      "kingdom": "Viruses",
+      "phylum": "Negarnaviricota",
+      "class": "Ellioviricetes",
+      "order": "Bunyavirales",
+      "family": "Phenuiviridae",
+      "genus": "Phasivirus",
+      "species": "Phasi charoen-like phasivirus",
+      "genome": "ssRNA(-)"
+    },
+    "orfs": [
+      {
+        "name": "contig_021_orf_1",
+        "start_position": 50,
+        "stop_position": 4100,
+        "strand": "+",
+        "frame": 1,
+        "length_aa": 1349,
+        "length_nt": 4050,
+        "orf_type": "complete",
+        "domains": [
+          {
+            "database": "Pfam",
+            "target": "PF04196",
+            "description": "Bunyavirus RNA-dependent RNA polymerase",
+            "type": "Domain",
+            "score": 380.2,
+            "e_value": 1.4e-112,
+            "start": 100,
+            "stop": 1200
+          }
+        ]
+      },
+      {
+        "name": "contig_021_orf_2",
+        "start_position": 4200,
+        "stop_position": 6700,
+        "strand": "-",
+        "frame": -2,
+        "length_aa": 832,
+        "length_nt": 2500,
+        "orf_type": "complete",
+        "domains": [
+          {
+            "database": "Vfam",
+            "target": "Vfam_phlebovirus_NP",
+            "description": "Phlebovirus nucleoprotein",
+            "type": "Family",
+            "score": 245.7,
+            "e_value": 3.2e-72,
+            "start": 10,
+            "stop": 800
+          }
+        ]
+      }
+    ],
+    "blastx_hits": [
+      {
+        "subject_title": "RdRp [Phasi charoen-like phasivirus]",
+        "pct_identity": 67.3,
+        "query_coverage": 89.1,
+        "e_value": 0.0,
+        "bit_score": 3820.0,
+        "species": "Phasi charoen-like phasivirus"
+      }
+    ],
+    "blastx_nr_hits": [
+      {
+        "subject_title": "RNA-dependent RNA polymerase [Phasi charoen-like phasivirus]",
+        "pct_identity": 67.3,
+        "query_coverage": 89.1,
+        "e_value": 0.0,
+        "bit_score": 3820.0,
+        "species": "Phasi charoen-like phasivirus"
+      }
+    ],
+    "blastn_hits": [
+      {
+        "stitle": "Phasi charoen-like phasivirus segment L",
+        "pident": 69.2,
+        "qcovhsp": 91,
+        "evalue": 0.0,
+        "bit_score": 5100.0
+      }
+    ],
+    "llm_output": {
+      "vq_score": 88,
+      "classification": "viral-known",
+      "analysis": "Phasivirus (Bunyavirales) large segment. RdRp and nucleoprotein domains detected. Negative-sense ssRNA genome.",
+      "blastn_species": "Phasi charoen-like phasivirus"
+    }
+  },
+  {
+    "id": "contig_002",
+    "uid": "d4e5f6a7-b8c9-0123-defa-234567890123",
+    "length": 8920,
+    "gc_content": 48.9,
+    "n_count": 0,
+    "is_viral": true,
+    "cluster_id": "VQ_CLU_004",
+    "sample_name": "mosquito_pool_01",
+    "taxonomy": {
+      "tax_id": 1974261,
+      "scientific_name": "Hubei mosquito virus 4",
+      "kingdom": "Viruses",
+      "phylum": "Pisuviricota",
+      "class": "Stelpaviricetes",
+      "order": "Nodamuvirales",
+      "family": "Nodaviridae",
+      "genus": "Alphanodavirus",
+      "species": "Hubei mosquito virus 4",
+      "genome": "ssRNA(+)"
+    },
+    "orfs": [
+      {
+        "name": "contig_002_orf_1",
+        "start_position": 80,
+        "stop_position": 3200,
+        "strand": "+",
+        "frame": 1,
+        "length_aa": 1039,
+        "length_nt": 3120,
+        "orf_type": "complete",
+        "domains": [
+          {
+            "database": "Pfam",
+            "target": "PF04196",
+            "description": "Nodavirus RNA polymerase",
+            "type": "Domain",
+            "score": 290.4,
+            "e_value": 8.8e-86,
+            "start": 50,
+            "stop": 980
+          }
+        ]
+      },
+      {
+        "name": "contig_002_orf_2",
+        "start_position": 3300,
+        "stop_position": 5800,
+        "strand": "+",
+        "frame": 1,
+        "length_aa": 832,
+        "length_nt": 2500,
+        "orf_type": "complete",
+        "domains": [
+          {
+            "database": "Pfam",
+            "target": "PF00429",
+            "description": "Nodavirus coat protein",
+            "type": "Domain",
+            "score": 176.3,
+            "e_value": 5.4e-51,
+            "start": 20,
+            "stop": 780
+          }
+        ]
+      },
+      {
+        "name": "contig_002_orf_3",
+        "start_position": 2800,
+        "stop_position": 4500,
+        "strand": "-",
+        "frame": -1,
+        "length_aa": 566,
+        "length_nt": 1700,
+        "orf_type": "complete",
+        "domains": []
+      }
+    ],
+    "blastx_hits": [
+      {
+        "subject_title": "RNA-dependent RNA polymerase [Hubei mosquito virus 4]",
+        "pct_identity": 58.2,
+        "query_coverage": 94.7,
+        "e_value": 0.0,
+        "bit_score": 2940.0,
+        "species": "Hubei mosquito virus 4"
+      }
+    ],
+    "blastx_nr_hits": [
+      {
+        "subject_title": "RNA-dependent RNA polymerase [Hubei mosquito virus 4]",
+        "pct_identity": 58.2,
+        "query_coverage": 94.7,
+        "e_value": 0.0,
+        "bit_score": 2940.0,
+        "species": "Hubei mosquito virus 4"
+      }
+    ],
+    "blastn_hits": [
+      {
+        "stitle": "Hubei mosquito virus 4 RNA1 complete sequence",
+        "pident": 61.4,
+        "qcovhsp": 93,
+        "evalue": 0.0,
+        "bit_score": 6800.0
+      }
+    ],
+    "llm_output": {
+      "vq_score": 82,
+      "classification": "viral-known",
+      "analysis": "Alphanodavirus, likely novel isolate. RdRp and coat protein ORFs detected. Overlapping ORF on minus strand of uncertain function.",
+      "blastn_species": "Hubei mosquito virus 4"
+    }
+  }
+]

@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "viralquest_version": "1.0.0",
+    "timestamp": "2025-05-26T10:42:00Z",
+    "input_file": {
+      "name": "mosquito_pool_01.fa",
+      "path": "/data/samples/mosquito_pool_01.fa",
+      "num_seqs": 18432,
+      "size_bytes": 52814920
+    }
+  },
+  "summary": {
+    "total_sequences": 18432,
+    "viral_candidates_refseq": 312,
+    "viral_candidates_hmm": 48,
+    "confirmed_viral": 57,
+    "total_orfs": 214,
+    "total_clusters": 9,
+    "cap3_used": true,
+    "cap3_contigs": 15420,
+    "cap3_singlets": 3012
+  },
+  "blast_stats": {
+    "refseq_hits": 312,
+    "refseq_unique_seqs": 267,
+    "nr_hits": 198,
+    "nr_unique_seqs": 183,
+    "blastn_hits": 57,
+    "blastn_unique_seqs": 57
+  },
+  "hmm_stats": {
+    "rvdb_hits": 62,
+    "vfam_hits": 38,
+    "eggnong_hits": 29,
+    "pfam_hits": 187
+  },
+  "llm_stats": {
+    "present": true,
+    "model": "claude-sonnet-4-6",
+    "mode": "high",
+    "scored": 57,
+    "viral_known": 48,
+    "viral_unknown": 6,
+    "non_viral": 3,
+    "avg_score": 81.4
+  },
+  "salmon_stats": {
+    "present": true,
+    "reads": ["sample_R1.fastq.gz", "sample_R2.fastq.gz"],
+    "mapping_rate": 61.7,
+    "total_reads": 8245120,
+    "host_viral_hits": 14
+  }
+}
