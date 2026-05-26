@@ -1,0 +1,93 @@
+k119_9338	YP_010804552.1	YP_010804552.1 Ser/Thr protein kinase [Acanthamoeba castellanii medusavirus]	33.6	122	79	1	1793	1428	1548	1667	1.52e-10	69.3
+k119_9338	YP_010801788.1	YP_010801788.1 Ser/Thr protein kinase [Acanthamoeba castellanii medusavirus]	32.0	122	81	1	1793	1428	1532	1651	2.61e-10	68.6
+k119_9338	YP_009702008.1	YP_009702008.1 serine-threonine kinase [Paramecium bursaria Chlorella virus CVA-1]	29.8	131	81	4	2929	2555	6	131	1.59e-06	54.3
+k119_9338	YP_001426416.1	YP_001426416.1 serine-threonine kinase [Paramecium bursaria Chlorella virus FR483]	30.1	133	78	4	2929	2555	6	131	1.59e-06	54.3
+k119_18043	YP_002154675.1	YP_002154675.1 serine-threonine kinase [Feldmannia species virus]	39.7	131	79	0	92	484	2	132	1.05e-26	106
+k119_18043	YP_009665657.1	YP_009665657.1 serine-threonine kinase [Feldmannia irregularis virus a]	38.2	131	81	0	92	484	2	132	1.36e-26	106
+k119_18043	YP_010781034.1	YP_010781034.1 putative SNF1-related protein kinase catalytic subunit alpha KIN11-like [Tupanvirus deep ocean]	33.6	128	83	1	101	484	12	137	3.63e-18	83.2
+k119_18043	YP_010782412.1	YP_010782412.1 hypothetical protein QJ857_gp0295 [Tupanvirus soda lake]	33.1	130	80	3	101	484	12	136	4.96e-17	80.1
+k119_18043	YP_010781643.1	YP_010781643.1 putative serine threonine-protein kinase [Tupanvirus soda lake]	31.9	144	80	4	95	481	6	146	7.65e-13	68.2
+k119_9352	YP_009001498.1	YP_009001498.1 ABC transporter [Alphaentomopoxvirus acuprea]	27.5	556	358	10	2908	1262	173	690	8.52e-56	217
+k119_9352	NP_064912.1	NP_064912.1 ABC transporter [Betaentomopoxvirus amoorei]	29.7	232	149	4	1975	1280	407	624	5.77e-24	113
+k119_26827	YP_009482569.1	YP_009482569.1 serine-threonine kinase [Pandoravirus neocaledonia]	29.2	298	164	9	1987	1121	881	1140	2.79e-23	112
+k119_26827	YP_008437707.2	YP_008437707.2 serine-threonine kinase [Pandoravirus salinus]	27.5	298	173	9	1990	1121	829	1091	4.67e-23	111
+k119_26827	YP_009238627.1	YP_009238627.1 serine-threonine kinase [Brazilian marseillevirus]	30.3	290	151	12	1978	1136	755	1002	1.28e-22	110
+k119_26827	YP_008319462.1	YP_008319462.1 serine-threonine kinase [Pandoravirus dulcis]	28.6	301	164	12	1990	1121	825	1085	1.37e-22	110
+k119_26827	YP_003406869.1	YP_003406869.1 serine-threonine kinase [Marseillevirus marseillevirus]	29.9	294	153	13	1990	1136	743	992	1.67e-22	109
+k119_18056	YP_003986982.1	YP_003986982.1 glutamine-dependent asparagine synthetase [Acanthamoeba polyphaga mimivirus]	34.8	115	68	4	497	162	438	548	2.96e-12	69.3
+k119_18056	YP_010777388.1	YP_010777388.1 glutamine-dependent asparagine synthetase [Acanthamoeba polyphaga mimivirus]	34.8	115	68	4	497	162	438	548	5.37e-12	68.6
+k119_18056	YP_010788949.1	YP_010788949.1 glutamine-dependent asparagine synthetase [Megavirus baoshan]	34.5	113	67	4	488	159	437	545	7.22e-12	68.2
+k119_18056	YP_004894460.1	YP_004894460.1 glutamine-dependent asparagine synthetase [Megavirus chiliensis]	34.5	113	67	4	488	159	437	545	2.37e-11	66.6
+k119_18056	YP_010776273.1	YP_010776273.1 glutamine-dependent asparagine synthetase [Powai lake megavirus]	34.5	113	67	4	488	159	437	545	2.37e-11	66.6
+k119_18057	YP_010802169.1	YP_010802169.1 initiation factor eIF1/SUI [Acanthamoeba castellanii medusavirus]	41.0	83	48	1	1285	1037	18	99	3.36e-17	80.1
+k119_18057	YP_010780781.1	YP_010780781.1 mimivirus translation factor SUI1-like 2 [Tupanvirus deep ocean]	34.5	110	67	2	1366	1037	1	105	2.75e-14	72.0
+k119_18057	YP_010782086.1	YP_010782086.1 protein translation factor SUI1-like 2 [Tupanvirus soda lake]	35.5	110	66	2	1366	1037	1	105	5.12e-14	71.2
+k119_18057	YP_010803662.1	YP_010803662.1 translation initiation factor 1 [Fadolivirus algeromassiliense]	41.9	93	41	4	1285	1037	22	111	1.12e-13	70.5
+k119_18057	YP_010841683.1	YP_010841683.1 protein translation factor SUI1-like protein [Cotonvirus japonicus]	30.8	104	67	2	1348	1037	7	105	2.29e-10	60.8
+k119_9373	YP_004063983.1	YP_004063983.1 HAM1-like protein [Ugandan cassava brown streak virus]	72.5	40	10	1	127	8	56	94	1.55e-12	65.9
+k119_9373	YP_007032446.1	YP_007032446.1 HAM1-like protein [Cassava brown streak virus]	69.2	39	12	0	118	2	81	119	4.14e-12	65.1
+k119_9373	YP_004063681.1	YP_004063681.1 polyprotein [Ugandan cassava brown streak virus]	72.5	40	10	1	127	8	2388	2426	8.49e-12	65.9
+k119_9373	YP_007027011.1	YP_007027011.1 polyprotein [Cassava brown streak virus]	69.2	39	12	0	118	2	2389	2427	1.57e-11	65.1
+k119_9373	YP_010803007.1	YP_010803007.1 inosine triphosphate pyrophosphatase [Fadolivirus algeromassiliense]	64.7	34	12	0	109	8	70	103	3.81e-11	62.0
+k119_26838	YP_053113.1	YP_053113.1 serine/threonine protein kinase US3 [Equid alphaherpesvirus 1]	31.7	186	86	5	2457	3014	163	307	2.98e-13	77.0
+k119_26838	YP_010841334.1	YP_010841334.1 putative serine/threonine-protein kinase [Cotonvirus japonicus]	26.6	203	130	4	2463	3059	866	1053	3.45e-13	79.0
+k119_26838	YP_009252293.1	YP_009252293.1 serine/threonine protein kinase US3 [Canid alphaherpesvirus 1]	38.3	133	61	3	2511	2909	191	302	6.07e-13	76.3
+k119_26838	YP_010789881.1	YP_010789881.1 serine/threonine protein kinase [Moumouvirus australiensis]	29.3	181	88	5	2460	2933	83	246	1.90e-12	74.7
+k119_26838	YP_002333550.1	YP_002333550.1 serine/threonine protein kinase US3 [Equid alphaherpesvirus 9]	31.2	186	87	5	2457	3014	164	308	2.24e-12	74.3
+k119_18070	YP_009448992.1	YP_009448992.1 Mitochondrial carrier domain-containing protein [Orpheovirus IHUMI-LCC2]	27.3	176	89	5	1739	1212	96	232	5.03e-09	60.8
+k119_18072	YP_010781341.1	YP_010781341.1 copine [Tupanvirus soda lake]	32.5	240	132	9	1045	1731	52	272	3.08e-24	107
+k119_597	YP_010781341.1	YP_010781341.1 copine [Tupanvirus soda lake]	30.0	260	146	12	1024	287	35	272	2.40e-19	91.7
+k119_9399	YP_003987339.1	YP_003987339.1 probable 7-dehydrocholesterol reductase [Acanthamoeba polyphaga mimivirus]	37.2	376	218	5	2890	1808	75	447	1.93e-67	238
+k119_9399	YP_010777719.1	YP_010777719.1 putative 7-dehydrocholesterol reductase [Acanthamoeba polyphaga mimivirus]	37.0	376	219	5	2890	1808	75	447	3.09e-66	234
+k119_9399	YP_010779913.1	YP_010779913.1 methyltransferase [Moumouvirus goulette]	35.6	388	211	7	2902	1811	67	439	3.53e-62	222
+k119_9399	YP_010841976.1	YP_010841976.1 putative 7-dehydrocholesterol reductase [Cotonvirus japonicus]	36.6	369	215	6	2866	1808	74	439	6.35e-62	221
+k119_9399	YP_010789434.1	YP_010789434.1 phospholipid methyltransferase [Moumouvirus australiensis]	35.2	372	223	5	2881	1811	71	439	3.49e-60	216
+k119_26857	YP_010803578.1	YP_010803578.1 cyclophilin-type peptidyl-prolyl cis-trans isomerase [Fadolivirus algeromassiliense]	61.6	73	28	0	220	2	3	75	1.56e-23	92.0
+k119_603	YP_009243641.1	YP_009243641.1 putative viral DNA polymerase [Bovine retrovirus CH15]	50.0	138	66	2	416	6	556	691	1.43e-36	135
+k119_603	NP_056891.1	NP_056891.1 RT-IN [Mason-Pfizer monkey virus]	45.5	145	70	3	416	6	1480	1623	1.47e-31	121
+k119_603	NP_954565.2	NP_954565.2 RT-IN [Mason-Pfizer monkey virus]	45.5	145	70	3	416	6	1480	1623	1.47e-31	121
+k119_603	NP_955564.1	NP_955564.1 p30DU-p13PR-RT-IN [Mouse mammary tumor virus]	48.9	141	66	4	416	6	681	819	6.64e-31	119
+k119_603	NP_056880.1	NP_056880.1 Pr160 [Mouse mammary tumor virus]	48.9	141	66	4	416	6	1425	1563	6.92e-31	119
+k119_26858	YP_010789585.1	YP_010789585.1 putative procollagen-lysine [Moumouvirus australiensis]	30.5	669	369	22	649	2583	294	890	2.38e-87	302
+k119_26858	YP_010780928.1	YP_010780928.1 putative procollagen-lysine [Tupanvirus deep ocean]	32.2	587	344	21	877	2583	367	917	5.24e-87	301
+k119_26858	YP_010782234.1	YP_010782234.1 putative procollagen-lysine [Tupanvirus soda lake]	33.7	537	322	18	1009	2583	414	928	3.12e-86	300
+k119_26858	YP_007354233.1	YP_007354233.1 Glycosyltransferase family 25 fused to procollagen lysine 2-oxoglutarate 5-dioxygenase [Acanthamoeba polyphaga moumouvirus]	29.2	664	384	22	649	2583	293	889	1.24e-82	289
+k119_26858	YP_010776196.1	YP_010776196.1 putative procollagen-lysine 2-oxoglutarate 5-dioxygenase [Powai lake megavirus]	29.9	658	377	22	658	2583	321	910	2.40e-82	288
+k119_9404	NP_077596.1	NP_077596.1 serine-threonine kinase [Ectocarpus siliculosus virus 1]	32.1	137	79	3	397	2	4	131	2.08e-12	73.2
+k119_9411	YP_004061896.1	YP_004061896.1 hypothetical protein MpV1_013c [Micromonas sp. RCC1109 virus MpV1]	36.5	241	138	6	1192	488	137	368	5.37e-33	137
+k119_9411	YP_004347362.1	YP_004347362.1 AAA-family ATPase [Lausannevirus]	33.5	200	96	7	1168	641	111	297	4.15e-18	92.4
+k119_9411	YP_009345213.1	YP_009345213.1 AAA-family ATPase [Noumeavirus]	34.5	200	94	8	1168	641	111	297	7.22e-18	91.7
+k119_9411	YP_009507087.1	YP_009507087.1 AAA-family ATPase [Tunisvirus fontaine2]	32.5	200	98	6	1168	641	122	308	1.67e-17	90.5
+k119_9411	YP_009238959.1	YP_009238959.1 AAA-family ATPase [Brazilian marseillevirus]	33.5	200	96	7	1168	641	126	312	1.68e-17	90.5
+k119_18091	YP_223871.1	YP_223871.1 protease/polymerase, partial [Reticuloendotheliosis virus]	47.9	48	25	0	62	205	511	558	1.25e-08	58.5
+k119_18091	YP_009665181.1	YP_009665181.1 polymerase, partial [Chick syncytial virus]	57.9	38	16	0	62	175	377	414	5.30e-08	56.2
+k119_26883	YP_010803257.1	YP_010803257.1 serine/threonine-protein kinase [Fadolivirus algeromassiliense]	48.2	272	134	4	867	61	20	287	7.90e-82	254
+k119_26883	YP_010778559.1	YP_010778559.1 casein kinase [Bodo saltans virus]	45.4	269	141	4	867	67	16	280	2.84e-70	224
+k119_26883	YP_008318868.2	YP_008318868.2 Serine/threonine protein kinase [Pandoravirus dulcis]	37.9	280	161	6	873	67	33	310	1.14e-58	196
+k119_26883	YP_009480822.1	YP_009480822.1 Serine/threonine protein kinase [Pandoravirus macleodensis]	38.9	280	158	6	873	67	140	417	3.44e-58	197
+k119_26883	YP_009482876.1	YP_009482876.1 Serine/threonine protein kinase [Pandoravirus quercus]	37.9	280	161	6	873	67	144	421	2.69e-57	195
+k119_9438	YP_919062.1	YP_919062.1 DNA helicase [Halorubrum virus BJ1]	27.8	597	374	19	2291	570	25	587	1.53e-49	189
+k119_9438	YP_010772338.1	YP_010772338.1 hypothetical protein QIT38_gp43 [Methanocaldococcus fervens tailed virus 1]	27.9	570	356	19	2204	522	125	648	1.43e-44	175
+k119_9438	YP_010355938.1	YP_010355938.1 DNA helicase [Haloferax tailed virus 1]	26.2	622	399	20	2312	522	53	639	8.28e-41	164
+k119_26893	YP_003986808.1	YP_003986808.1 putative protein phosphatase 2C [Acanthamoeba polyphaga mimivirus]	23.5	302	158	12	506	1348	43	292	9.86e-08	58.2
+k119_26893	YP_010779442.1	YP_010779442.1 putative protein phosphatase [Moumouvirus goulette]	23.8	298	155	13	506	1333	55	302	1.47e-07	57.8
+k119_26893	YP_007354495.1	YP_007354495.1 Serine/Threonine protein phosphatase [Acanthamoeba polyphaga moumouvirus]	23.7	299	154	14	506	1333	55	302	1.46e-06	54.7
+k119_9447	YP_009362459.1	YP_009362459.1 sulfotransferase-like protein [Ranid herpesvirus 3]	24.5	192	129	4	864	289	8	183	1.83e-13	75.1
+k119_26907	YP_010803170.1	YP_010803170.1 DnaJ chaperone protein [Fadolivirus algeromassiliense]	29.8	369	202	9	3168	2185	14	366	2.61e-32	134
+k119_26907	YP_009173306.1	YP_009173306.1 chaperone protein DnaJ [Chrysochromulina ericina virus]	28.5	337	185	11	3162	2206	13	311	3.39e-26	114
+k119_26907	YP_003969759.1	YP_003969759.1 putative DnaJ/Hsp40 [Cafeteria roenbergensis virus BV-PW1]	28.5	383	197	13	3159	2164	8	364	3.30e-25	112
+k119_26907	NP_077658.1	NP_077658.1 EsV-1-173 [Ectocarpus siliculosus virus 1]	28.8	392	177	13	3174	2185	4	355	3.52e-24	108
+k119_26907	YP_009174434.1	YP_009174434.1 putative heat shock protein 40 [Yellowstone lake phycodnavirus 3]	29.8	362	147	13	3159	2218	2	304	2.37e-23	105
+k119_9456	YP_007003686.1	YP_007003686.1 thymidylate kinase [Cyprinid herpesvirus 1]	56.2	210	90	2	1043	1666	20	229	3.91e-74	241
+k119_9456	YP_001096175.1	YP_001096175.1 unnamed protein product [Cyprinid herpesvirus 3]	59.7	201	77	1	1025	1627	17	213	4.29e-73	238
+k119_9456	YP_009329611.1	YP_009329611.1 thymidylate kinase [BeAn 58058 virus]	54.5	209	92	2	1046	1669	4	210	8.72e-71	231
+k119_9456	NP_955193.1	NP_955193.1 thymidylate kinase [Canarypox virus]	52.4	208	97	2	1046	1666	3	209	1.83e-70	231
+k119_9456	YP_009046356.1	YP_009046356.1 thymidylate kinase [Pigeonpox virus]	52.4	208	97	2	1046	1666	3	209	4.85e-70	229
+k119_656	YP_081612.1	YP_081612.1 envelope protein US28 [Human betaherpesvirus 5]	31.9	285	165	12	635	1459	43	308	1.20e-23	106
+k119_656	YP_010084932.1	YP_010084932.1 membrane protein Mo6 [Beluga whale alphaherpesvirus 1]	26.6	353	207	12	548	1480	19	361	2.75e-21	101
+k119_656	NP_955338.1	NP_955338.1 CNPV315 G protein-coupled receptor-like protein [Canarypox virus]	26.4	307	180	8	566	1426	4	284	6.73e-20	94.7
+k119_656	YP_227537.1	YP_227537.1 CC chemokine receptor-like protein [Deerpox virus W-848-83]	24.5	298	183	7	626	1432	103	387	7.74e-20	96.3
+k119_656	NP_612800.1	NP_612800.1 envelope protein US28 [Panine betaherpesvirus 2]	28.0	300	181	11	590	1453	27	303	1.75e-17	88.2
+k119_657	YP_009146233.1	YP_009146233.1 DNA repair protein [Sulfitobacter phage NYA-2014a]	33.1	145	85	6	191	598	2	143	8.74e-11	65.5
+k119_26916	YP_009552468.1	YP_009552468.1 MHC Class II [Eptesicus fuscus gammaherpesvirus]	35.4	79	49	1	287	51	12	88	7.15e-09	53.5
+k119_26916	YP_004940188.1	YP_004940188.1 membrane protein S9 [Saimiriine betaherpesvirus 4]	35.3	68	43	1	284	81	216	282	2.82e-06	47.8

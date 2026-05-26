@@ -118,12 +118,18 @@ class ReportExporter:
                 f"without viral confirmation filters."
             )
         else:
-            confirmed = [s for s in nuc_seqs if s.is_viral and s.blastx_nr_hits]
-            dropped   = len(nuc_seqs) - len(confirmed)
+            nr_was_run = any(s.blastx_nr_hits for s in nuc_seqs)
+            if nr_was_run:
+                confirmed = [s for s in nuc_seqs if s.is_viral and s.blastx_nr_hits]
+                filter_label = "REFSEQ + NR BLASTx confirmation"
+            else:
+                confirmed = [s for s in nuc_seqs if s.is_viral]
+                filter_label = "REFSEQ / HMM viral confirmation (NR not run)"
+            dropped = len(nuc_seqs) - len(confirmed)
             if dropped:
                 logger.info(
                     f"Exporter: {dropped} sequence(s) excluded — did not pass "
-                    f"REFSEQ + NR BLASTx confirmation."
+                    f"{filter_label}."
                 )
             confirmed_ids      = {s.id for s in confirmed}
             confirmed_clusters = [

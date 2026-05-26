@@ -1,9 +1,9 @@
 [workspace]
 authors = ["gabrielvpina <gvpina.rodrigues@gmail.com>"]
 channels = ["conda-forge", "bioconda"]
-name = "vq-refactor"
+name = "viralquest"
 platforms = ["linux-64"]
-version = "0.1.0"
+version = "3.0.0"
 
 [tasks]
 start = "python3 main.py"
@@ -24,6 +24,7 @@ diamond = ">=2.1.24,<3"
 pyhmmer = ">=0.12.0,<0.13"
 cap3 = ">=10.2011,<11"
 salmon = ">=1.11.4,<2"
+rich = ">=15.0.0,<16"
 
 [pypi-dependencies]
 bio = ">=1.8.1, <2"
