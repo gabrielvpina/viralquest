@@ -761,6 +761,17 @@ def main() -> None:
     except ImportError:
         pass
 
+    # Check bioinformatics binaries before doing anything else.
+    from viralquest.setup_env import missing_tools
+    absent = missing_tools()
+    if absent:
+        print(
+            f"[ERROR] Missing required tools: {', '.join(absent)}\n"
+            "Run:  viralquest-setup\n"
+            "This will install pixi and all bioinformatics dependencies automatically."
+        )
+        sys.exit(1)
+
     from rich.console import Console
     console = Console(stderr=True)
     parser  = _build_parser()

@@ -21,14 +21,15 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
 ]
 
-project.urls]
+[project.urls]
 Homepage = "https://github.com/gabrielvpina/viralquest"
 Repository = "https://github.com/gabrielvpina/viralquest"
 Documentation = "https://github.com/gabrielvpina/viralquest/blob/main/README.md"
 "Bug Reports" = "https://github.com/gabrielvpina/viralquest/issues"
 
 [project.scripts]
-viralquest = "viralquest.main:main"
+viralquest       = "viralquest.cli:main"
+viralquest-setup = "viralquest.setup_env:setup"
 
 [tool.setuptools]
 include-package-data = true
@@ -39,3 +40,6 @@ include = ["viralquest*"]
 
 [tool.setuptools.package-data]
 "viralquest" = ["bin/*", "misc/*"]
+
+# Bundle pixi.toml so viralquest-setup can find it after a pip install.
+"" = ["pixi.toml"]
