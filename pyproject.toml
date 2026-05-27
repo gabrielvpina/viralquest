@@ -5,7 +5,7 @@ pythonpath = [
 
 [project]
 name = "viralquest"
-version = "2.6.22"
+version = "3.0.0"
 description = "A bioinformatics tool for viral genome analysis and characterization."
 readme = "README.md"
 authors = [{name = "Gabriel Rodrigues", email = "gvpina.rodrigues@gmail.com"}]
@@ -41,6 +41,3 @@ include = ["viralquest*"]
 
 [tool.setuptools.package-data]
 "viralquest" = ["bin/*", "misc/*"]
-
-# Bundle pixi.toml so viralquest-setup can find it after a pip install.
-"" = ["pixi.toml"]

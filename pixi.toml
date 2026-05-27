@@ -6,7 +6,11 @@ platforms = ["linux-64"]
 version = "3.0.0"
 
 [tasks]
-start = "python3 main.py"
+start             = "python main.py"
+viralquest        = "python main.py"
+viralquest-setup  = "python -c 'from viralquest.setup_env import setup; setup()'"
+viralquest-download = "python -c 'from viralquest.setup_env import download; download()'"
+install-editable  = "pip install -e ."
 
 [dependencies]
 python = "3.12.*"

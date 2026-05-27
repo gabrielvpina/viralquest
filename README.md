@@ -54,7 +54,7 @@ viralquest-setup
 ```
 
 This command handles:
-- Bioinformatics tools (`diamond`, `blast`, `salmon`, `cap3`, `hmmer`) via pixi/bioconda
+- Bioinformatics tools (`diamond`, `blast`, `salmon`, `cap3`) via pixi/bioconda
 - Reference databases from Zenodo (HMM profiles + viralDB.dmnd)
 
 To re-download or update databases only:

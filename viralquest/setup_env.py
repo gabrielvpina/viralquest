@@ -22,12 +22,12 @@ import sys
 from pathlib import Path
 
 # Binaries provided by conda/bioconda that pip cannot install.
+# Note: HMM searches use pyhmmer (Python binding) — no hmmer binary needed.
 _REQUIRED_TOOLS: list[tuple[str, str]] = [
-    ("diamond",  "diamond  >=2.1.24  (bioconda)"),
-    ("blastn",   "blast    >=2.16    (bioconda)"),
-    ("salmon",   "salmon   >=1.11.4  (bioconda)"),
-    ("cap3",     "cap3     >=10.2011 (bioconda)"),
-    ("hmmbuild", "hmmer    >=3.4     (bioconda)"),
+    ("diamond", "diamond  >=2.1.24  (bioconda)"),
+    ("blastn",  "blast    >=2.16    (bioconda)"),
+    ("salmon",  "salmon   >=1.11.4  (bioconda)"),
+    ("cap3",    "cap3     >=10.2011 (bioconda)"),
 ]
 
 _PIXI_INSTALL_CMD  = "curl -fsSL https://pixi.sh/install.sh | bash"
@@ -74,7 +74,12 @@ def _install_pixi() -> bool:
 
 def _run_pixi_install(pixi_toml: Path) -> bool:
     print(f"  Running: pixi install  (cwd: {pixi_toml.parent})")
-    return subprocess.run(["pixi", "install"], cwd=pixi_toml.parent).returncode == 0
+    ok = subprocess.run(["pixi", "install"], cwd=pixi_toml.parent).returncode == 0
+    if ok:
+        env_bin = pixi_toml.parent / ".pixi" / "envs" / "default" / "bin"
+        if env_bin.exists():
+            os.environ["PATH"] = str(env_bin) + ":" + os.environ.get("PATH", "")
+    return ok
 
 
 def _print_header(text: str) -> None:
