@@ -239,7 +239,7 @@ function _seqCard(seq) {
 
   const orfCount     = (seq.orfs || []).length;
   const blastnCount  = (seq.blastn_hits || []).length;
-  const refseqCount  = (seq.blastx_hits || []).length;
+  const refseqCount  = (seq.blastx_refseq_hits || []).length;
   const nrCount      = (seq.blastx_nr_hits || []).length;
 
   card.innerHTML = `
@@ -310,9 +310,9 @@ function _seqCard(seq) {
           ${esc(llm.analysis)}
         </div>` : ''}
 
-      ${seq.sequence ? `
+      ${seq.sequence_nt ? `
         <div class="vq-body-label">FASTA preview</div>
-        <div class="vq-fasta">${esc(seq.sequence)}</div>` : ''}
+        <div class="vq-fasta">${esc(seq.sequence_nt)}</div>` : ''}
 
     </div>`;
 
@@ -331,9 +331,9 @@ function _seqCard(seq) {
   const blastBody = card.querySelector('#blast-body-' + safe);
   const renderBlast = (kind) => {
     let hits = [];
-    if      (kind === 'blastn') hits = seq.blastn_hits    || [];
-    else if (kind === 'refseq') hits = seq.blastx_hits    || [];
-    else                        hits = seq.blastx_nr_hits || [];
+    if      (kind === 'blastn') hits = seq.blastn_hits        || [];
+    else if (kind === 'refseq') hits = seq.blastx_refseq_hits || [];
+    else                        hits = seq.blastx_nr_hits     || [];
     blastBody.innerHTML = _blastTable(hits, kind);
   };
   subtabs.forEach(t => t.addEventListener('click', () => {
@@ -385,44 +385,17 @@ function _blastTable(hits, kind) {
   if (!hits.length) {
     return `<div class="vq-empty" style="padding:24px 16px">No ${kind} hits.</div>`;
   }
-  const esc     = VQ.esc;
-  const isBlastx = kind === 'refseq' || kind === 'nr';
-
-  const rows = hits.map(h => {
-    if (isBlastx) {
-      const pct = h.pct_identity  != null ? h.pct_identity.toFixed(1)   : '—';
-      const cov = h.query_coverage != null ? h.query_coverage.toFixed(1) : '—';
-      const ev  = h.e_value        != null ? h.e_value.toExponential(1)  : '—';
-      const bs  = h.bit_score      != null ? h.bit_score.toFixed(0)      : '—';
-      const rng = (h.query_start != null && h.query_end != null)
-                    ? `${h.query_start}–${h.query_end}` : '—';
-      return `
-        <tr>
-          <td class="vq-td--mono">${esc(h.subject_id   ?? '—')}</td>
-          <td>${esc(h.subject_title ?? '—')}</td>
-          <td class="vq-td--num">${pct}%</td>
-          <td class="vq-td--num">${cov}%</td>
-          <td class="vq-td--num">${ev}</td>
-          <td class="vq-td--num">${bs}</td>
-          <td class="vq-td--num">${rng}</td>
-        </tr>`;
-    } else {
-      const pct = h.pident  != null ? h.pident.toFixed(1)       : '—';
-      const ev  = h.evalue  != null ? h.evalue.toExponential(1) : '—';
-      const bs  = h.bit_score != null ? h.bit_score.toFixed(0)  : '—';
-      return `
-        <tr>
-          <td class="vq-td--mono">—</td>
-          <td>${esc(h.stitle ?? '—')}</td>
-          <td class="vq-td--num">${pct}%</td>
-          <td class="vq-td--num">${h.qcovhsp ?? '—'}%</td>
-          <td class="vq-td--num">${ev}</td>
-          <td class="vq-td--num">${bs}</td>
-          <td class="vq-td--num">—</td>
-        </tr>`;
-    }
-  }).join('');
-
+  const esc = VQ.esc;
+  const rows = hits.map(h => `
+    <tr>
+      <td class="vq-td--mono">${esc(h.accession)}</td>
+      <td>${esc(h.title)}</td>
+      <td class="vq-td--num">${h.pident.toFixed(1)}%</td>
+      <td class="vq-td--num">${h.qcovhsp}%</td>
+      <td class="vq-td--num">${h.evalue.toExponential(1)}</td>
+      <td class="vq-td--num">${h.bitscore}</td>
+      <td class="vq-td--num">${h.qstart}–${h.qend}</td>
+    </tr>`).join('');
   return `
     <table class="vq-table">
       <thead>
@@ -564,33 +537,20 @@ function _genomeSVG(seq, containerWidth) {
   const SCALE = d3.scaleLinear([0, seqLen], [0, drawW]);
 
   // ── Frame-based lane assignment ─────────────────────────────────────────
-  // orf.frame is serialised as an integer (1,2,3,-1,-2,-3) from Python.
+  const FRAME_INDEX = { '+1': 0, '+2': 1, '+3': 2, '-1': 3, '-2': 4, '-3': 5 };
   const FRAME_LABEL = ['+1','+2','+3','-1','-2','-3'];
 
   function frameLane(orf) {
-    const n = Number(orf.frame);
-    if (Number.isFinite(n) && n !== 0) {
-      return n > 0 ? n - 1 : 3 + (-n - 1);
-    }
-    return orf.strand === '-' ? 3 : 0;
+    const key = (orf.frame || '').replace(/\s+/g, '');
+    return FRAME_INDEX[key] ?? (orf.strand === '-' ? 3 : 0);
   }
   const nLanes = 6;
-
-  // For each ORF keep only the highest-scoring domain per database.
-  function _bestPerDb(domains) {
-    const best = {};
-    for (const d of domains) {
-      const db = d.database || '';
-      if (!best[db] || d.score > best[db].score) best[db] = d;
-    }
-    return Object.values(best);
-  }
 
   // Pack domains into sub-lanes per ORF
   const orfsWithFrame = orfs.map(o => ({
     ...o,
     frameLane:    frameLane(o),
-    _domainLanes: _assignDomainLanes(_bestPerDb(o.domains || [])),
+    _domainLanes: _assignDomainLanes(o.domains || []),
   }));
   orfsWithFrame.forEach(o => {
     o._nDomLanes = Math.max(0, ...o._domainLanes.map(d => d.lane + 1));
