@@ -1,17 +1,22 @@
-/* ============================================================
-   section_salmon.js — Section 5: Salmon Quantification
-   Left panel: viral sequences — boxplot if clustered, dot if singleton.
-   Right panel: housekeeping gene mini-panel per kingdom.
-   Toggle: TPM ↔ NumReads.
-   ============================================================ */
-
+/* This file's private helpers live in an IIFE so they don't collide across sections. */
+// __VQ_WRAPPED__
+(function () {
 'use strict';
 
-// Module state
+/* ============================================================
+   section_salmon.js — Section 5: Salmon Quantification
+   Left card: viral sequences — boxplot if clustered, dot if singleton.
+   Right card: housekeeping genes (sorted, aligned).
+   Toggle: TPM ↔ NumReads.
+   Toggle: overlay housekeeping medians in the main plot.
+   ============================================================ */
+
 const _SQ = {
-  data:    null,   // VQ_REPORT.salmon_quant
-  clusters: null,  // VQ_REPORT.clusters
-  metric:  'tpm',  // 'tpm' | 'num_reads'
+  data:     null,
+  clusters: null,
+  metric:   'tpm',
+  showHK:   false,    // overlay housekeeping medians on the main plot
+  resizeT:  null,
 };
 
 function vqInitSalmon(salmonQuant, clusters) {
@@ -30,136 +35,240 @@ function vqInitSalmon(salmonQuant, clusters) {
           &nbsp;·&nbsp; ${(salmonQuant.total_reads ?? 0).toLocaleString()} total reads
         </div>
       </div>
-      <div style="display:flex;gap:var(--vq-space-2);align-items:center">
-        <button class="vq-btn vq-btn--sm ${_SQ.metric==='tpm'?'vq-btn--primary':'vq-btn--ghost'}"
-          id="sq-btn-tpm" onclick="_sqSetMetric('tpm')">TPM</button>
-        <button class="vq-btn vq-btn--sm ${_SQ.metric==='num_reads'?'vq-btn--primary':'vq-btn--ghost'}"
-          id="sq-btn-reads" onclick="_sqSetMetric('num_reads')">Reads</button>
-        <button class="vq-btn vq-btn--sm vq-btn--ghost"
-          onclick="vqExportSVG(document.querySelector('#sq-viral-wrap svg'),'salmon_viral.svg')">SVG</button>
-        <button class="vq-btn vq-btn--sm vq-btn--ghost"
-          onclick="vqExportPNG(document.querySelector('#sq-viral-wrap svg'),'salmon_viral.png')">PNG</button>
+      <div class="vq-section-actions">
+        <div class="vq-toggle" role="tablist" aria-label="Metric">
+          <button class="vq-toggle__btn ${_SQ.metric==='tpm'?'active':''}"
+                  id="sq-btn-tpm" data-metric="tpm" type="button"
+                  role="tab" aria-selected="${_SQ.metric==='tpm'}">TPM</button>
+          <button class="vq-toggle__btn ${_SQ.metric==='num_reads'?'active':''}"
+                  id="sq-btn-reads" data-metric="num_reads" type="button"
+                  role="tab" aria-selected="${_SQ.metric==='num_reads'}">Reads</button>
+        </div>
+        <label class="vq-checkbox-label" style="display:inline-flex;align-items:center;gap:6px;
+               font-size:12px;color:var(--vq-text-2);cursor:pointer">
+          <input type="checkbox" class="vq-checkbox" id="sq-show-hk">
+          Overlay housekeeping
+        </label>
+        <div class="vq-menu" id="sq-export-menu">
+          <button class="vq-btn vq-btn--sm vq-btn--ghost" data-menu-toggle type="button">
+            Export
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+          <div class="vq-menu__panel" role="menu">
+            <button class="vq-menu__item" data-fmt="png" role="menuitem" type="button">PNG image</button>
+            <button class="vq-menu__item" data-fmt="svg" role="menuitem" type="button">SVG vector</button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 280px;gap:var(--vq-space-4)">
-      <div>
-        <div class="vq-card">
-          <div class="vq-card__header">
-            <div class="vq-card__title">Viral Sequences</div>
-          </div>
-          <div class="vq-card__body">
-            <div id="sq-viral-wrap" class="vq-genome-wrap"></div>
-          </div>
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:var(--vq-space-3);
+                align-items:stretch" id="sq-grid">
+      <div class="vq-card" style="display:flex;flex-direction:column">
+        <div class="vq-card__header">
+          <div class="vq-card__title">Viral Sequences</div>
+          <span class="vq-panel__count" id="sq-viral-count">0</span>
+        </div>
+        <div class="vq-card__body" style="padding:12px 14px;flex:1">
+          <div id="sq-viral-wrap" style="width:100%"></div>
         </div>
       </div>
-      <div>
-        <div class="vq-card" style="height:100%">
-          <div class="vq-card__header">
-            <div class="vq-card__title">Housekeeping Genes</div>
-          </div>
-          <div class="vq-card__body" id="sq-cons-wrap"></div>
+      <div class="vq-card" style="display:flex;flex-direction:column">
+        <div class="vq-card__header">
+          <div class="vq-card__title">Housekeeping Genes</div>
+          <span class="vq-panel__count" id="sq-cons-count">0</span>
         </div>
+        <div class="vq-card__body" id="sq-cons-wrap" style="padding:12px 14px;flex:1"></div>
       </div>
     </div>
 
     ${_renderHostHits(salmonQuant.host_viral_hits || [])}
   `;
 
-  _sqDraw();
+  // Wire metric toggle
+  document.querySelectorAll('[data-metric]').forEach(btn => {
+    btn.addEventListener('click', () => _setMetric(btn.dataset.metric));
+  });
+
+  // Overlay toggle
+  document.getElementById('sq-show-hk')?.addEventListener('change', e => {
+    _SQ.showHK = e.target.checked;
+    _drawViralPanel();
+  });
+
+  // Export menu
+  const exportMenu = document.getElementById('sq-export-menu');
+  const exportTog  = exportMenu?.querySelector('[data-menu-toggle]');
+  exportTog?.addEventListener('click', e => {
+    e.stopPropagation();
+    document.querySelectorAll('.vq-menu.open').forEach(m => {
+      if (m !== exportMenu) m.classList.remove('open');
+    });
+    exportMenu.classList.toggle('open');
+  });
+  exportMenu?.querySelectorAll('[data-fmt]').forEach(item => {
+    item.addEventListener('click', e => {
+      e.stopPropagation();
+      exportMenu.classList.remove('open');
+      const svg = document.querySelector('#sq-viral-wrap svg');
+      if (!svg) return;
+      if (item.dataset.fmt === 'png') VQ.exportPNG(svg, 'salmon_viral.png');
+      else                            VQ.exportSVG(svg, 'salmon_viral.svg');
+    });
+  });
+
+  // Responsive grid
+  const grid  = document.getElementById('sq-grid');
+  const apply = () => {
+    if (window.innerWidth < 980) grid.style.gridTemplateColumns = '1fr';
+    else                         grid.style.gridTemplateColumns = '1fr 320px';
+  };
+  apply();
+  window.addEventListener('resize', () => {
+    apply();
+    clearTimeout(_SQ.resizeT);
+    _SQ.resizeT = setTimeout(_draw, 150);
+  });
+
+  // ResizeObserver — re-draw once the wraps actually have real widths
+  // (they're 0 while the section is still display:none during init).
+  let lastW = 0;
+  const ro = new ResizeObserver(() => {
+    const w = document.getElementById('sq-viral-wrap')?.clientWidth || 0;
+    if (!w || w === lastW) return;
+    lastW = w;
+    clearTimeout(_SQ.resizeT);
+    _SQ.resizeT = setTimeout(_draw, 60);
+  });
+  const viralWrap = document.getElementById('sq-viral-wrap');
+  if (viralWrap) ro.observe(viralWrap);
+
+  _draw();
 }
 
-// ── Metric toggle ────────────────────────────────────────────────────────────
-
-function _sqSetMetric(metric) {
+function _setMetric(metric) {
   _SQ.metric = metric;
-  document.getElementById('sq-btn-tpm')?.classList.toggle('vq-btn--primary',   metric === 'tpm');
-  document.getElementById('sq-btn-tpm')?.classList.toggle('vq-btn--ghost',     metric !== 'tpm');
-  document.getElementById('sq-btn-reads')?.classList.toggle('vq-btn--primary', metric === 'num_reads');
-  document.getElementById('sq-btn-reads')?.classList.toggle('vq-btn--ghost',   metric !== 'num_reads');
-  _sqDraw();
+  document.querySelectorAll('[data-metric]').forEach(btn => {
+    const active = btn.dataset.metric === metric;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+  _draw();
 }
 
-// ── Draw both panels ─────────────────────────────────────────────────────────
+function _draw() { _drawViralPanel(); _drawConsPanel(); }
 
-function _sqDraw() {
-  _drawViralPanel();
-  _drawConsPanel();
+// ── Housekeeping medians per kingdom ───────────────────────────────────────
+
+function _hkMedians() {
+  const cons = (_SQ.data.conserved_quant || []);
+  const metric = _SQ.metric;
+  const byKingdom = {};
+  cons.forEach(c => {
+    const k = c.kingdom || 'Unknown';
+    (byKingdom[k] ??= []).push(c[metric] ?? 0);
+  });
+  return Object.keys(byKingdom).map(k => ({
+    kingdom: k,
+    values:  byKingdom[k],
+    median:  d3.quantile(byKingdom[k].slice().sort(d3.ascending), 0.5) ?? 0,
+  }));
 }
 
-// ── Viral panel: boxplot per cluster, dot per singleton ───────────────────────
+// ── Viral panel ────────────────────────────────────────────────────────────
 
 function _drawViralPanel() {
   const wrap = document.getElementById('sq-viral-wrap');
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  const viral   = (_SQ.data.viral_quant || []);
-  const metric  = _SQ.metric;
-  const label   = metric === 'tpm' ? 'TPM' : 'Reads';
+  const viral  = (_SQ.data.viral_quant || []);
+  const metric = _SQ.metric;
+  const label  = metric === 'tpm' ? 'TPM' : 'Reads';
+
+  const countEl = document.getElementById('sq-viral-count');
+  if (countEl) countEl.textContent = `${viral.length} sequence${viral.length !== 1 ? 's' : ''}`;
 
   if (!viral.length) {
     wrap.innerHTML = '<div class="vq-empty">No viral quantification data.</div>';
     return;
   }
 
-  // Map seq_id → cluster info
+  // Map seq_id → cluster_id
   const seqCluster = {};
   (_SQ.clusters || []).forEach(c => {
     c.members.forEach(m => { seqCluster[m.seq_id] = c.cluster_id; });
   });
 
-  // Group by cluster; singletons get their own group keyed by seq_id
+  // Group
   const groups = {};
   viral.forEach(v => {
-    const key = seqCluster[v.name] != null ? 'cluster_' + seqCluster[v.name] : v.name;
-    if (!groups[key]) groups[key] = { label: key, values: [], seqIds: [] };
-    groups[key].values.push(v[metric] ?? 0);
+    const cid = seqCluster[v.name];
+    const key = cid != null ? 'cluster_' + cid : v.name;
+    (groups[key] ??= { label: key, values: [], seqIds: [] }).values.push(v[metric] ?? 0);
     groups[key].seqIds.push(v.name);
   });
 
-  const keys   = Object.keys(groups);
-  const PAD_L  = 180;
-  const PAD_R  = 30;
-  const PAD_T  = 30;
-  const PAD_B  = 60;
-  const ROW_H  = 44;
-  const W      = Math.max((wrap.clientWidth || 700), 500);
-  const H      = PAD_T + keys.length * ROW_H + PAD_B;
-  const drawW  = W - PAD_L - PAD_R;
+  // Sort by median descending for readability
+  const keys = Object.keys(groups).sort((a, b) => {
+    const ma = d3.quantile(groups[a].values.slice().sort(d3.ascending), 0.5) ?? 0;
+    const mb = d3.quantile(groups[b].values.slice().sort(d3.ascending), 0.5) ?? 0;
+    return mb - ma;
+  });
 
-  const allVals = viral.map(v => v[metric] ?? 0);
-  const maxVal  = d3.max(allVals) || 1;
+  // Geometry
+  const containerW = wrap.clientWidth || 700;
+  const W     = Math.max(containerW, 560);
+  const PAD_L = 200;
+  const PAD_R = 30;
+  const PAD_T = 26;
+  const ROW_H = 30;
+  const drawW = W - PAD_L - PAD_R;
+
+  // Include HK medians in the x-domain if overlay enabled
+  const allVals = viral.map(v => v[metric] ?? 0).slice();
+  if (_SQ.showHK) _hkMedians().forEach(h => allVals.push(h.median));
+  const maxVal = d3.max(allVals) || 1;
 
   const xScale = d3.scaleLinear([0, maxVal], [0, drawW]);
 
+  // Overlay band
+  const HK = _SQ.showHK ? _hkMedians() : [];
+  const overlayH = HK.length ? 24 : 0;
+  const PAD_B  = 60 + overlayH;
+  const H      = PAD_T + keys.length * ROW_H + PAD_B;
+
   const svg = d3.create('svg')
-    .attr('class', 'vq-genome-svg')
+    .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
     .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('width', W)
-    .attr('height', H);
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
 
   // X axis
+  const gridH = H - PAD_T - PAD_B;
   const axG = svg.append('g')
     .attr('transform', `translate(${PAD_L},${PAD_T})`)
-    .call(d3.axisTop(xScale).ticks(5).tickSize(-H + PAD_T + PAD_B));
-
-  axG.select('.domain').remove();
+    .call(d3.axisTop(xScale).ticks(Math.max(4, Math.round(W / 140))).tickSize(0));
   axG.selectAll('.tick line')
+    .attr('y1', 0).attr('y2', gridH)
     .attr('stroke', '#dde3ec').attr('stroke-dasharray', '3,3');
+  axG.select('.domain').remove();
   axG.selectAll('.tick text')
     .style('font-size', '10px').style('fill', '#94a3b8');
 
   // X axis label
   svg.append('text')
     .attr('x', PAD_L + drawW / 2)
-    .attr('y', H - 12)
+    .attr('y', H - 12 - overlayH)
     .attr('text-anchor', 'middle')
     .attr('font-size', 11)
     .attr('fill', 'var(--vq-text-2)')
     .text(label);
 
-  // Draw each group
+  // Rows
   keys.forEach((key, i) => {
     const grp  = groups[key];
     const vals = grp.values.slice().sort(d3.ascending);
@@ -167,94 +276,136 @@ function _drawViralPanel() {
     const isSingleton = vals.length === 1;
     const gEl  = svg.append('g').attr('transform', `translate(${PAD_L},0)`);
 
-    // Label
-    svg.append('text')
-      .attr('x', PAD_L - 8)
-      .attr('y', y + 4)
-      .attr('text-anchor', 'end')
-      .attr('font-size', 10)
-      .attr('fill', 'var(--vq-text-2)')
-      .attr('font-family', 'var(--vq-font-mono)')
-      .text(_sqTruncate(grp.label, 22));
+    const fullLabel = grp.label;
+    const truncated = fullLabel.length > 28 ? fullLabel.slice(0, 27) + '…' : fullLabel;
+    const lbl = svg.append('text')
+      .attr('x', PAD_L - 8).attr('y', y + 4)
+      .attr('text-anchor', 'end').attr('font-size', 10)
+      .attr('fill', 'var(--vq-text-2)').attr('font-family', 'var(--vq-font-mono)')
+      .text(truncated);
+    if (truncated !== fullLabel) {
+      lbl.style('cursor', 'help')
+        .on('mousemove', evt => VQ.tooltipShow(
+          `<div class="vq-tooltip__title">${VQ.esc(fullLabel)}</div>
+           <div class="vq-tooltip__row">
+             <span class="vq-tooltip__key">Members</span><span>${vals.length}</span>
+           </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+    }
 
     if (isSingleton) {
-      // Single dot
       const cx = xScale(vals[0]);
       gEl.append('circle')
-        .attr('cx', cx).attr('cy', y)
-        .attr('r', 5)
+        .attr('cx', cx).attr('cy', y).attr('r', 5)
         .attr('fill', 'var(--vq-accent)')
         .attr('stroke', '#fff').attr('stroke-width', 1)
         .attr('cursor', 'pointer')
-        .on('mousemove', evt => vqTooltipShow(`
-          <div class="vq-tooltip__title">${grp.seqIds[0]}</div>
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${VQ.esc(grp.seqIds[0])}</div>
           <div class="vq-tooltip__row">
             <span class="vq-tooltip__key">${label}</span><span>${vals[0].toFixed(2)}</span>
           </div>`, evt))
-        .on('mouseleave', vqTooltipHide)
-        .on('click', () => _jumpToViewer(grp.seqIds[0]));
+        .on('mouseleave', VQ.tooltipHide)
+        .on('click', () => VQ.jumpToViewer(grp.seqIds[0]));
     } else {
-      // Boxplot
       const q1  = d3.quantile(vals, 0.25);
       const med = d3.quantile(vals, 0.5);
       const q3  = d3.quantile(vals, 0.75);
       const iqr = q3 - q1;
       const lo  = Math.max(d3.min(vals), q1 - 1.5 * iqr);
       const hi  = Math.min(d3.max(vals), q3 + 1.5 * iqr);
+      const bh  = 14;
 
-      const bh = 14;
-
-      // Whiskers
       gEl.append('line')
         .attr('x1', xScale(lo)).attr('x2', xScale(hi))
         .attr('y1', y).attr('y2', y)
         .attr('stroke', 'var(--vq-accent)').attr('stroke-width', 1.5);
-      [[lo, lo], [hi, hi]].forEach(([x]) => {
+      [lo, hi].forEach(x => {
         gEl.append('line')
           .attr('x1', xScale(x)).attr('x2', xScale(x))
           .attr('y1', y - bh / 2).attr('y2', y + bh / 2)
           .attr('stroke', 'var(--vq-accent)').attr('stroke-width', 1.5);
       });
-
-      // Box
       gEl.append('rect')
         .attr('x', xScale(q1)).attr('width', Math.max(xScale(q3) - xScale(q1), 2))
         .attr('y', y - bh / 2).attr('height', bh)
         .attr('rx', 2)
-        .attr('fill', 'var(--vq-accent)')
-        .attr('opacity', 0.25)
+        .attr('fill', 'var(--vq-accent)').attr('opacity', 0.25)
         .attr('stroke', 'var(--vq-accent)').attr('stroke-width', 1.5)
-        .on('mousemove', evt => vqTooltipShow(`
-          <div class="vq-tooltip__title">${grp.label}</div>
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${VQ.esc(grp.label)}</div>
           <div class="vq-tooltip__row">
             <span class="vq-tooltip__key">Median ${label}</span><span>${med.toFixed(2)}</span>
             <span class="vq-tooltip__key">Q1–Q3</span><span>${q1.toFixed(2)}–${q3.toFixed(2)}</span>
             <span class="vq-tooltip__key">Members</span><span>${vals.length}</span>
           </div>`, evt))
-        .on('mouseleave', vqTooltipHide);
-
-      // Median line
+        .on('mouseleave', VQ.tooltipHide);
       gEl.append('line')
         .attr('x1', xScale(med)).attr('x2', xScale(med))
         .attr('y1', y - bh / 2).attr('y2', y + bh / 2)
         .attr('stroke', 'var(--vq-primary)').attr('stroke-width', 2);
 
-      // Outlier dots
-      const outliers = vals.filter(v => v < lo || v > hi);
-      outliers.forEach(v => {
+      vals.filter(v => v < lo || v > hi).forEach(v => {
         gEl.append('circle')
-          .attr('cx', xScale(v)).attr('cy', y)
-          .attr('r', 3)
-          .attr('fill', 'var(--vq-danger)')
-          .attr('opacity', 0.7);
+          .attr('cx', xScale(v)).attr('cy', y).attr('r', 3)
+          .attr('fill', 'var(--vq-danger)').attr('opacity', 0.7);
       });
     }
   });
 
+  // Housekeeping overlay: vertical reference lines + bottom legend chips
+  if (HK.length) {
+    const overlayY = H - PAD_B + 36;
+    HK.forEach((h, i) => {
+      const x = PAD_L + xScale(h.median);
+      svg.append('line')
+        .attr('x1', x).attr('x2', x)
+        .attr('y1', PAD_T).attr('y2', H - PAD_B)
+        .attr('stroke', 'var(--vq-success)')
+        .attr('stroke-dasharray', '4,3')
+        .attr('stroke-width', 1.2)
+        .attr('opacity', 0.7)
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${VQ.esc(h.kingdom)} housekeeping</div>
+          <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">Median ${label}</span><span>${h.median.toFixed(2)}</span>
+            <span class="vq-tooltip__key">Genes</span><span>${h.values.length}</span>
+          </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+
+      svg.append('text')
+        .attr('x', x).attr('y', PAD_T - 8)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 9.5)
+        .attr('fill', 'var(--vq-success)')
+        .text(h.kingdom.slice(0, 3).toUpperCase());
+    });
+
+    // Overlay legend strip
+    svg.append('text')
+      .attr('x', PAD_L).attr('y', overlayY)
+      .attr('font-size', 11).attr('fill', 'var(--vq-text-2)')
+      .text('Housekeeping (median ' + label + '):');
+    let lx = PAD_L + 200;
+    HK.forEach(h => {
+      svg.append('line')
+        .attr('x1', lx).attr('x2', lx + 18)
+        .attr('y1', overlayY - 4).attr('y2', overlayY - 4)
+        .attr('stroke', 'var(--vq-success)')
+        .attr('stroke-dasharray', '4,3').attr('stroke-width', 1.5);
+      svg.append('text')
+        .attr('x', lx + 22).attr('y', overlayY)
+        .attr('font-size', 11)
+        .attr('fill', 'var(--vq-text-3)')
+        .text(`${h.kingdom} (${h.median.toFixed(1)})`);
+      lx += 22 + (h.kingdom.length + 8) * 6.2;
+    });
+  }
+
   wrap.appendChild(svg.node());
 }
 
-// ── Conserved (housekeeping) panel ───────────────────────────────────────────
+// ── Housekeeping panel ─────────────────────────────────────────────────────
 
 function _drawConsPanel() {
   const wrap = document.getElementById('sq-cons-wrap');
@@ -265,107 +416,116 @@ function _drawConsPanel() {
   const metric = _SQ.metric;
   const label  = metric === 'tpm' ? 'TPM' : 'Reads';
 
+  const countEl = document.getElementById('sq-cons-count');
+  if (countEl) countEl.textContent = `${cons.length} gene${cons.length !== 1 ? 's' : ''}`;
+
   if (!cons.length) {
     wrap.innerHTML = '<div class="vq-empty" style="font-size:12px">No housekeeping data.</div>';
     return;
   }
 
-  // Group by kingdom
   const byKingdom = {};
   cons.forEach(c => {
     const k = c.kingdom || 'Unknown';
-    if (!byKingdom[k]) byKingdom[k] = [];
-    byKingdom[k].push(c[metric] ?? 0);
+    (byKingdom[k] ??= []).push(c[metric] ?? 0);
   });
 
-  const kingdoms = Object.keys(byKingdom).sort();
-  const maxVal   = d3.max(cons.map(c => c[metric] ?? 0)) || 1;
+  // Sort kingdoms by median descending
+  const kingdoms = Object.keys(byKingdom).map(k => {
+    const vals = byKingdom[k].slice().sort(d3.ascending);
+    return { k, vals, median: d3.quantile(vals, 0.5) ?? 0 };
+  }).sort((a, b) => b.median - a.median);
 
-  const W     = 260;
-  const PAD_L = 90;
-  const PAD_R = 10;
-  const ROW_H = 28;
-  const BAR_H = 10;
-  const H     = kingdoms.length * ROW_H + 40;
+  const maxVal = d3.max(kingdoms.map(x => x.median)) || 1;
+  const W      = Math.max(wrap.clientWidth || 280, 250);
+  const PAD_L  = 96;
+  const PAD_R  = 44;
+  const ROW_H  = 28;
+  const BAR_H  = 12;
+  const H      = kingdoms.length * ROW_H + 36;
 
   const xScale = d3.scaleLinear([0, maxVal], [0, W - PAD_L - PAD_R]);
 
   const svg = d3.create('svg')
+    .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
     .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('width', W)
-    .attr('height', H);
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
 
   svg.append('text')
-    .attr('x', PAD_L + (W - PAD_L - PAD_R) / 2)
-    .attr('y', 14)
-    .attr('text-anchor', 'middle')
-    .attr('font-size', 10)
-    .attr('fill', 'var(--vq-text-3)')
-    .text(`Median ${label} by kingdom`);
+    .attr('x', PAD_L).attr('y', 14)
+    .attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+    .text(`Median ${label} per kingdom`);
 
-  kingdoms.forEach((k, i) => {
-    const vals   = byKingdom[k].slice().sort(d3.ascending);
-    const median = d3.quantile(vals, 0.5) ?? 0;
-    const y      = 24 + i * ROW_H;
-    const bw     = Math.max(xScale(median), 2);
+  kingdoms.forEach((row, i) => {
+    const y = 26 + i * ROW_H;
 
     svg.append('text')
-      .attr('x', PAD_L - 6).attr('y', y + BAR_H / 2 + 3)
+      .attr('x', PAD_L - 8).attr('y', y + BAR_H / 2 + 3.5)
       .attr('text-anchor', 'end')
-      .attr('font-size', 9)
+      .attr('font-size', 11)
       .attr('fill', 'var(--vq-text-2)')
-      .text(k);
+      .text(row.k);
 
+    // Track
+    svg.append('rect')
+      .attr('x', PAD_L).attr('y', y)
+      .attr('width', W - PAD_L - PAD_R).attr('height', BAR_H)
+      .attr('rx', 2)
+      .attr('fill', 'var(--vq-bg)');
+
+    // Value bar
+    const bw = Math.max(xScale(row.median), 2);
     svg.append('rect')
       .attr('x', PAD_L).attr('y', y)
       .attr('width', bw).attr('height', BAR_H)
       .attr('rx', 2)
-      .attr('fill', 'var(--vq-success)')
-      .attr('opacity', 0.8)
-      .on('mousemove', evt => vqTooltipShow(`
-        <div class="vq-tooltip__title">${k}</div>
+      .attr('fill', 'var(--vq-success)').attr('opacity', 0.85)
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${VQ.esc(row.k)}</div>
         <div class="vq-tooltip__row">
-          <span class="vq-tooltip__key">Median ${label}</span><span>${median.toFixed(2)}</span>
-          <span class="vq-tooltip__key">Genes</span><span>${vals.length}</span>
+          <span class="vq-tooltip__key">Median ${label}</span><span>${row.median.toFixed(2)}</span>
+          <span class="vq-tooltip__key">Genes</span><span>${row.vals.length}</span>
         </div>`, evt))
-      .on('mouseleave', vqTooltipHide);
+      .on('mouseleave', VQ.tooltipHide);
 
     svg.append('text')
-      .attr('x', PAD_L + bw + 4).attr('y', y + BAR_H / 2 + 3)
-      .attr('font-size', 9).attr('fill', 'var(--vq-text-3)')
-      .text(median.toFixed(1));
+      .attr('x', PAD_L + bw + 6).attr('y', y + BAR_H / 2 + 3.5)
+      .attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+      .attr('font-variant-numeric', 'tabular-nums')
+      .text(row.median.toFixed(1));
   });
 
   wrap.appendChild(svg.node());
 }
 
-// ── Host–viral hits table ─────────────────────────────────────────────────────
+// ── Host–viral hits table ──────────────────────────────────────────────────
 
 function _renderHostHits(hits) {
   if (!hits.length) return '';
+  const esc = VQ.esc;
 
   const rows = hits.map(h => `
     <tr>
-      <td class="vq-td" style="font-family:var(--vq-font-mono);font-size:11px">${h.transcript?.name ?? '—'}</td>
-      <td class="vq-td" style="font-family:var(--vq-font-mono);font-size:11px">${h.blast_hits?.[0]?.viral_seq_id ?? '—'}</td>
-      <td class="vq-td">${h.blast_hits?.[0]?.pident?.toFixed(1) ?? '—'}%</td>
-      <td class="vq-td">${h.blast_hits?.[0]?.qcovhsp ?? '—'}%</td>
-      <td class="vq-td">${h.transcript?.tpm?.toFixed(2) ?? '—'}</td>
+      <td class="vq-td--mono">${esc(h.transcript?.name ?? '—')}</td>
+      <td class="vq-td--mono">${esc(h.blast_hits?.[0]?.viral_seq_id ?? '—')}</td>
+      <td class="vq-td--num">${h.blast_hits?.[0]?.pident?.toFixed(1) ?? '—'}%</td>
+      <td class="vq-td--num">${h.blast_hits?.[0]?.qcovhsp ?? '—'}%</td>
+      <td class="vq-td--num">${h.transcript?.tpm?.toFixed(2) ?? '—'}</td>
     </tr>`).join('');
 
   return `
-    <div class="vq-card" style="margin-top:var(--vq-space-4)">
+    <div class="vq-card" style="margin-top:var(--vq-space-3)">
       <div class="vq-card__header">
         <div class="vq-card__title">Host–Viral Transcriptome Hits</div>
-        <span style="font-size:var(--vq-text-xs);color:var(--vq-text-3)">${hits.length} transcript${hits.length>1?'s':''} with viral similarity</span>
+        <span class="vq-panel__count">${hits.length}</span>
       </div>
-      <div class="vq-card__body" style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <div class="vq-card__body" style="overflow-x:auto;padding:0">
+        <table class="vq-table">
           <thead>
             <tr>
-              ${['Host Transcript','Viral Match','Identity','Coverage','TPM'].map(
-                h => `<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--vq-border);color:var(--vq-text-3);font-weight:500;font-size:11px">${h}</th>`
-              ).join('')}
+              ${['Host Transcript','Viral Match','Identity','Coverage','TPM']
+                .map(h => `<th>${h}</th>`).join('')}
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -374,20 +534,6 @@ function _renderHostHits(hits) {
     </div>`;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
-function _sqTruncate(str, n) {
-  return str.length > n ? str.slice(0, n - 1) + '…' : str;
-}
-
-function _jumpToViewer(seqId) {
-  document.querySelector('[data-section="viewer"]')?.click();
-  setTimeout(() => {
-    const target = document.getElementById('seq-card-' + seqId);
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      target.classList.add('vq-seq-card--highlight');
-      setTimeout(() => target.classList.remove('vq-seq-card--highlight'), 2000);
-    }
-  }, 150);
-}
+window.vqInitSalmon = vqInitSalmon;
+})();

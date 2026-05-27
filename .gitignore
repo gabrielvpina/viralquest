@@ -11,3 +11,8 @@ wheels/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# results
+testFast/
+devout/
+

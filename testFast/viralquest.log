@@ -1112,3 +1112,334 @@
 2026-05-27 03:54:06 | SUCCESS  |   ✓  HMMsearch  —  RVDB · Vfam · EggNOG  (viral confirmation)  (149.8s)
 2026-05-27 03:54:06 | INFO     | diamond [nr]: 101 seqs → single run, 5 threads
 2026-05-27 03:54:06 | DEBUG    | diamond [nr] batch 0 — 101 seqs
+2026-05-27 05:57:19 | SUCCESS  | diamond [nr] done
+2026-05-27 05:57:19 | DEBUG    | diamond [nr]: 505 hits processed.
+2026-05-27 05:57:19 | INFO     | Diamond NR results → testFast/diamond/nr.tsv
+2026-05-27 05:57:19 | SUCCESS  |   ✓  BLASTn online  —  nt  (7393.0s)
+2026-05-27 05:57:19 | INFO     | BLASTn [online]: searching 9 sequence(s).
+2026-05-27 05:57:19 | INFO     | BLASTn [online] [1/9] querying 'Contig125' ...
+2026-05-27 05:58:26 | SUCCESS  | BLASTn [online] 'Contig125': 5 hit(s)
+2026-05-27 05:58:26 | INFO     | BLASTn [online] [2/9] querying 'Contig224' ...
+2026-05-27 05:58:46 | SUCCESS  | BLASTn [online] 'Contig224': 5 hit(s)
+2026-05-27 05:58:46 | INFO     | BLASTn [online] [3/9] querying 'Contig252' ...
+2026-05-27 06:00:05 | SUCCESS  | BLASTn [online] 'Contig252': 2 hit(s)
+2026-05-27 06:00:06 | INFO     | BLASTn [online] [4/9] querying 'Contig274' ...
+2026-05-27 06:01:26 | SUCCESS  | BLASTn [online] 'Contig274': 5 hit(s)
+2026-05-27 06:01:26 | INFO     | BLASTn [online] [5/9] querying 'Contig337' ...
+2026-05-27 06:01:46 | SUCCESS  | BLASTn [online] 'Contig337': 5 hit(s)
+2026-05-27 06:01:46 | INFO     | BLASTn [online] [6/9] querying 'Contig512' ...
+2026-05-27 06:02:06 | SUCCESS  | BLASTn [online] 'Contig512': 2 hit(s)
+2026-05-27 06:02:06 | INFO     | BLASTn [online] [7/9] querying 'Contig513' ...
+2026-05-27 06:02:26 | SUCCESS  | BLASTn [online] 'Contig513': 2 hit(s)
+2026-05-27 06:02:27 | INFO     | BLASTn [online] [8/9] querying 'Contig514' ...
+2026-05-27 06:02:45 | SUCCESS  | BLASTn [online] 'Contig514': 2 hit(s)
+2026-05-27 06:02:46 | INFO     | BLASTn [online] [9/9] querying 'Contig531' ...
+2026-05-27 06:03:06 | SUCCESS  | BLASTn [online] 'Contig531': 5 hit(s)
+2026-05-27 06:03:06 | DEBUG    | BLASTn: 33 hit(s) attached across 9 sequence(s).
+2026-05-27 06:03:06 | INFO     | BLASTn results (33 hits) → testFast/blastn/blastn.tsv
+2026-05-27 06:03:06 | SUCCESS  |   ✓  Diamond BLASTx NR  —  nr.dmnd  (347.0s)
+2026-05-27 06:03:06 | SUCCESS  | 23794 metadata records loaded for Pfam.
+2026-05-27 06:03:41 | INFO     | HMM Pfam (225 hits) → testFast/hmm/Pfam.tsv
+2026-05-27 06:03:41 | SUCCESS  |   ✓  HMMsearch  —  Pfam  (functional annotation)  (35.2s)
+2026-05-27 06:03:42 | SUCCESS  | TaxonomyLoader: 259993 scientific names, 9692 species names indexed from /home/gabriel/viralquest/data/viralTax.json.xz.
+2026-05-27 06:03:42 | DEBUG    | No taxonomy match for 'Tjuloc virus' (seq: Contig224)
+2026-05-27 06:03:42 | SUCCESS  | Taxonomy resolved for 80/547 sequences.
+2026-05-27 06:03:42 | SUCCESS  | ViralFamilyLoader: 257 entries merged (257 high-token, 257 low-token).
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig73' (family=None, genus=Pandoravirus, order=None)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig205' (family=Schizomimiviridae, genus=Kratosvirus, order=Imitervirales)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig247' (family=Kyanoviridae, genus=Haifavirus, order=None)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig252' (family=None, genus=None, order=None)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig254' (family=None, genus=Pithovirus, order=None)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig256' (family=None, genus=Lambdavirus, order=None)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig335' (family=None, genus=None, order=None)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig427' (family=Fervensviridae, genus=Deepoceanvirus, order=None)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig484' (family=None, genus=Pandoravirus, order=None)
+2026-05-27 06:03:42 | DEBUG    | No ViralFamilyInfo for seq 'Contig502' (family=None, genus=Pandoravirus, order=None)
+2026-05-27 06:03:42 | SUCCESS  | ViralFamilyInfo annotated 70/547 sequences.
+2026-05-27 06:03:42 | SUCCESS  |   ✓  Taxonomy annotation  (1.6s)
+2026-05-27 06:03:42 | WARNING  | ClusterBuilder: 20 sequence(s) skipped — no BLASTx species.
+2026-05-27 06:03:42 | SUCCESS  | ClusterBuilder: 53 cluster(s) from 81 sequence(s).
+2026-05-27 06:03:43 | SUCCESS  | VQ_CLU_0001 | 'Abelson murine leukemia virus' | 2 seq(s) | representative: 'Contig317' (3793 nt)
+2026-05-27 06:03:43 | SUCCESS  | VQ_CLU_0002 | 'Acanthamoeba polyphaga mimivirus' | 1 seq(s) | representative: 'Contig547' (1020 nt)
+2026-05-27 06:03:43 | SUCCESS  | VQ_CLU_0003 | 'Adoxophyes orana granulovirus' | 1 seq(s) | representative: 'Contig523' (669 nt)
+2026-05-27 06:03:43 | SUCCESS  | VQ_CLU_0004 | 'Alphaentomopoxvirus acuprea' | 1 seq(s) | representative: 'Contig319' (1532 nt)
+2026-05-27 06:03:43 | SUCCESS  | VQ_CLU_0005 | 'Apis mellifera filamentous virus' | 1 seq(s) | representative: 'Contig335' (2375 nt)
+2026-05-27 06:03:43 | SUCCESS  | VQ_CLU_0006 | 'Aureococcus anophagefferens virus' | 1 seq(s) | representative: 'Contig205' (824 nt)
+2026-05-27 06:03:44 | SUCCESS  | VQ_CLU_0007 | 'Bathycoccus sp. RCC1105 virus BpV1' | 2 seq(s) | representative: 'Contig237' (4939 nt)
+2026-05-27 06:03:44 | SUCCESS  | VQ_CLU_0008 | 'Big Cypress virus' | 1 seq(s) | representative: 'Contig252' (7591 nt)
+2026-05-27 06:03:44 | SUCCESS  | VQ_CLU_0009 | 'Blacklegged tick chuvirus 2' | 1 seq(s) | representative: 'Contig341' (6109 nt)
+2026-05-27 06:03:45 | SUCCESS  | VQ_CLU_0010 | 'Bodo saltans virus' | 4 seq(s) | representative: 'Contig154' (5776 nt)
+2026-05-27 06:03:45 | SUCCESS  | VQ_CLU_0011 | 'Cafeteria roenbergensis virus BV-PW1' | 2 seq(s) | representative: 'Contig156' (6149 nt)
+2026-05-27 06:03:45 | SUCCESS  | VQ_CLU_0012 | 'Canarypox virus' | 1 seq(s) | representative: 'Contig234' (8901 nt)
+2026-05-27 06:03:45 | SUCCESS  | VQ_CLU_0013 | 'Cassava brown streak virus' | 1 seq(s) | representative: 'Contig444' (739 nt)
+2026-05-27 06:03:46 | SUCCESS  | VQ_CLU_0014 | 'Chrysochromulina ericina virus' | 2 seq(s) | representative: 'Contig511' (3557 nt)
+2026-05-27 06:03:46 | SUCCESS  | VQ_CLU_0015 | 'Cladosporium fulvum T-1 virus' | 1 seq(s) | representative: 'Contig193' (1603 nt)
+2026-05-27 06:03:47 | SUCCESS  | VQ_CLU_0016 | 'Diachasmimorpha longicaudata entomopoxvirus' | 6 seq(s) | representative: 'Contig240' (8375 nt)
+2026-05-27 06:03:47 | SUCCESS  | VQ_CLU_0017 | 'Diadromus pulchellus ascovirus 4a' | 3 seq(s) | representative: 'Contig453' (4121 nt)
+2026-05-27 06:03:47 | SUCCESS  | VQ_CLU_0018 | 'Ectocarpus siliculosus virus 1' | 1 seq(s) | representative: 'Contig253' (19147 nt)
+2026-05-27 06:03:47 | SUCCESS  | VQ_CLU_0019 | 'Escherichia phage DE3' | 1 seq(s) | representative: 'Contig256' (1366 nt)
+2026-05-27 06:03:48 | SUCCESS  | VQ_CLU_0020 | 'Fadolivirus algeromassiliense' | 4 seq(s) | representative: 'Contig450' (3057 nt)
+2026-05-27 06:03:48 | SUCCESS  | VQ_CLU_0021 | 'Feldmannia irregularis virus a' | 1 seq(s) | representative: 'Contig401' (7822 nt)
+2026-05-27 06:03:48 | SUCCESS  | VQ_CLU_0022 | 'Feldmannia species virus' | 1 seq(s) | representative: 'Contig400' (6843 nt)
+2026-05-27 06:03:48 | SUCCESS  | VQ_CLU_0023 | 'Feline sarcoma virus (STRAIN HARDY-ZUCKERMAN 4)' | 1 seq(s) | representative: 'Contig445' (3178 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0024 | 'Flamingopox virus FGPVKD09' | 3 seq(s) | representative: 'Contig79' (910 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0025 | 'Fowlpox virus' | 1 seq(s) | representative: 'Contig493' (1555 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0026 | 'Gibbon ape leukemia virus' | 3 seq(s) | representative: 'Contig530' (7021 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0027 | 'Ichnoviriform fugitivi' | 1 seq(s) | representative: 'Contig269' (3057 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0028 | 'Lausannevirus' | 1 seq(s) | representative: 'Contig301' (4293 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0029 | 'Malacosoma neustria nucleopolyhedrovirus' | 1 seq(s) | representative: 'Contig385' (11460 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0030 | 'Methanocaldococcus fervens tailed virus 1' | 1 seq(s) | representative: 'Contig427' (1285 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0031 | 'Moumouvirus goulette' | 1 seq(s) | representative: 'Contig393' (2575 nt)
+2026-05-27 06:03:49 | SUCCESS  | VQ_CLU_0032 | 'Mus dunni endogenous virus' | 1 seq(s) | representative: 'Contig531' (3189 nt)
+2026-05-27 06:03:50 | SUCCESS  | VQ_CLU_0033 | 'Orpheovirus IHUMI-LCC2' | 3 seq(s) | representative: 'Contig418' (2909 nt)
+2026-05-27 06:03:51 | SUCCESS  | VQ_CLU_0034 | 'Oryctes rhinoceros nudivirus' | 2 seq(s) | representative: 'Contig491' (4009 nt)
+2026-05-27 06:03:51 | SUCCESS  | VQ_CLU_0035 | 'Pandoravirus neocaledonia' | 1 seq(s) | representative: 'Contig502' (4969 nt)
+2026-05-27 06:03:51 | SUCCESS  | VQ_CLU_0036 | 'Pandoravirus quercus' | 1 seq(s) | representative: 'Contig484' (2393 nt)
+2026-05-27 06:03:51 | SUCCESS  | VQ_CLU_0037 | 'Pandoravirus salinus' | 1 seq(s) | representative: 'Contig73' (1748 nt)
+2026-05-27 06:03:51 | SUCCESS  | VQ_CLU_0038 | 'Paramecium bursaria Chlorella virus NY2A' | 1 seq(s) | representative: 'Contig132' (2785 nt)
+2026-05-27 06:03:51 | SUCCESS  | VQ_CLU_0039 | 'Pithovirus sibericum' | 1 seq(s) | representative: 'Contig254' (4957 nt)
+2026-05-27 06:03:51 | SUCCESS  | VQ_CLU_0040 | 'Prochlorococcus phage P-TIM68' | 1 seq(s) | representative: 'Contig247' (1903 nt)
+2026-05-27 06:03:51 | SUCCESS  | VQ_CLU_0041 | 'Robinvale bee virus 2' | 1 seq(s) | representative: 'Contig125' (4976 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0042 | 'Sanya cydistomyia duplonotatay narnavirus 1' | 3 seq(s) | representative: 'Contig513' (2563 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0043 | 'Tjuloc virus' | 1 seq(s) | representative: 'Contig224' (1840 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0044 | 'Trichoplusia ni TED virus' | 1 seq(s) | representative: 'Contig194' (1356 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0045 | 'Trichoplusia ni ascovirus 2c' | 1 seq(s) | representative: 'Contig320' (3169 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0046 | 'Tupanvirus deep ocean' | 1 seq(s) | representative: 'Contig302' (3457 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0047 | 'Tupanvirus soda lake' | 2 seq(s) | representative: 'Contig449' (1911 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0048 | 'Turkeypox virus' | 1 seq(s) | representative: 'Contig113' (2391 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0049 | 'Vespula vulgaris Partiti-like virus 1' | 1 seq(s) | representative: 'Contig337' (2261 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0050 | 'Wiseana iridescent virus' | 1 seq(s) | representative: 'Contig100' (1848 nt)
+2026-05-27 06:03:52 | SUCCESS  | VQ_CLU_0051 | 'Yaba monkey tumor virus' | 1 seq(s) | representative: 'Contig165' (2345 nt)
+2026-05-27 06:03:53 | SUCCESS  | VQ_CLU_0052 | 'Yaba-like disease virus' | 2 seq(s) | representative: 'Contig282' (3515 nt)
+2026-05-27 06:03:53 | SUCCESS  | VQ_CLU_0053 | 'brine shrimp flavi-like virus 1' | 1 seq(s) | representative: 'Contig274' (8713 nt)
+2026-05-27 06:03:53 | SUCCESS  |   ✓  Cluster sequences by species  (10.6s)
+2026-05-27 06:03:53 | INFO     | [1/547] Scoring Contig1 (low-token, model=gemma4:e2b)
+2026-05-27 06:03:53 | ERROR    | Backend call failed for Contig1: No module named 'ollama'
+2026-05-27 06:03:53 | ERROR    |   ✗ Contig1: No module named 'ollama'
+2026-05-27 06:03:53 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:04:23 | INFO     | [2/547] Scoring Contig2 (low-token, model=gemma4:e2b)
+2026-05-27 06:04:23 | ERROR    | Backend call failed for Contig2: No module named 'ollama'
+2026-05-27 06:04:23 | ERROR    |   ✗ Contig2: No module named 'ollama'
+2026-05-27 06:04:23 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:04:53 | INFO     | [3/547] Scoring Contig3 (low-token, model=gemma4:e2b)
+2026-05-27 06:04:53 | ERROR    | Backend call failed for Contig3: No module named 'ollama'
+2026-05-27 06:04:53 | ERROR    |   ✗ Contig3: No module named 'ollama'
+2026-05-27 06:04:53 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:05:23 | INFO     | [4/547] Scoring Contig4 (low-token, model=gemma4:e2b)
+2026-05-27 06:05:23 | ERROR    | Backend call failed for Contig4: No module named 'ollama'
+2026-05-27 06:05:23 | ERROR    |   ✗ Contig4: No module named 'ollama'
+2026-05-27 06:05:23 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:05:53 | INFO     | [5/547] Scoring Contig5 (low-token, model=gemma4:e2b)
+2026-05-27 06:05:53 | ERROR    | Backend call failed for Contig5: No module named 'ollama'
+2026-05-27 06:05:53 | ERROR    |   ✗ Contig5: No module named 'ollama'
+2026-05-27 06:05:53 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:06:23 | INFO     | [6/547] Scoring Contig6 (low-token, model=gemma4:e2b)
+2026-05-27 06:06:23 | ERROR    | Backend call failed for Contig6: No module named 'ollama'
+2026-05-27 06:06:23 | ERROR    |   ✗ Contig6: No module named 'ollama'
+2026-05-27 06:06:23 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:06:53 | INFO     | [7/547] Scoring Contig7 (low-token, model=gemma4:e2b)
+2026-05-27 06:06:53 | ERROR    | Backend call failed for Contig7: No module named 'ollama'
+2026-05-27 06:06:53 | ERROR    |   ✗ Contig7: No module named 'ollama'
+2026-05-27 06:06:53 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:07:23 | INFO     | [8/547] Scoring Contig8 (low-token, model=gemma4:e2b)
+2026-05-27 06:07:23 | ERROR    | Backend call failed for Contig8: No module named 'ollama'
+2026-05-27 06:07:23 | ERROR    |   ✗ Contig8: No module named 'ollama'
+2026-05-27 06:07:23 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:07:53 | INFO     | [9/547] Scoring Contig9 (low-token, model=gemma4:e2b)
+2026-05-27 06:07:53 | ERROR    | Backend call failed for Contig9: No module named 'ollama'
+2026-05-27 06:07:53 | ERROR    |   ✗ Contig9: No module named 'ollama'
+2026-05-27 06:07:53 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:08:23 | INFO     | [10/547] Scoring Contig10 (low-token, model=gemma4:e2b)
+2026-05-27 06:08:23 | ERROR    | Backend call failed for Contig10: No module named 'ollama'
+2026-05-27 06:08:23 | ERROR    |   ✗ Contig10: No module named 'ollama'
+2026-05-27 06:08:23 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:08:53 | INFO     | [11/547] Scoring Contig11 (low-token, model=gemma4:e2b)
+2026-05-27 06:08:53 | ERROR    | Backend call failed for Contig11: No module named 'ollama'
+2026-05-27 06:08:53 | ERROR    |   ✗ Contig11: No module named 'ollama'
+2026-05-27 06:08:53 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:09:23 | INFO     | [12/547] Scoring Contig12 (low-token, model=gemma4:e2b)
+2026-05-27 06:09:38 | SUCCESS  |   ✓ Contig12: score=0, class=non-viral
+2026-05-27 06:09:38 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:10:08 | INFO     | [13/547] Scoring Contig13 (low-token, model=gemma4:e2b)
+2026-05-27 06:10:13 | SUCCESS  |   ✓ Contig13: score=0, class=non-viral
+2026-05-27 06:10:13 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:10:43 | INFO     | [14/547] Scoring Contig14 (low-token, model=gemma4:e2b)
+2026-05-27 06:10:48 | SUCCESS  |   ✓ Contig14: score=0, class=non-viral
+2026-05-27 06:10:48 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:11:18 | INFO     | [15/547] Scoring Contig15 (low-token, model=gemma4:e2b)
+2026-05-27 06:11:23 | SUCCESS  |   ✓ Contig15: score=0, class=non-viral
+2026-05-27 06:11:23 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:11:53 | INFO     | [16/547] Scoring Contig16 (low-token, model=gemma4:e2b)
+2026-05-27 06:11:58 | SUCCESS  |   ✓ Contig16: score=0, class=non-viral
+2026-05-27 06:11:58 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:12:28 | INFO     | [17/547] Scoring Contig17 (low-token, model=gemma4:e2b)
+2026-05-27 06:12:34 | SUCCESS  |   ✓ Contig17: score=0, class=non-viral
+2026-05-27 06:12:34 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:13:04 | INFO     | [18/547] Scoring Contig18 (low-token, model=gemma4:e2b)
+2026-05-27 06:13:09 | SUCCESS  |   ✓ Contig18: score=0, class=non-viral
+2026-05-27 06:13:09 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:13:39 | INFO     | [19/547] Scoring Contig19 (low-token, model=gemma4:e2b)
+2026-05-27 06:13:44 | SUCCESS  |   ✓ Contig19: score=0, class=non-viral
+2026-05-27 06:13:44 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:14:14 | INFO     | [20/547] Scoring Contig20 (low-token, model=gemma4:e2b)
+2026-05-27 06:14:21 | SUCCESS  |   ✓ Contig20: score=0, class=non-viral
+2026-05-27 06:14:21 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:14:51 | INFO     | [21/547] Scoring Contig21 (low-token, model=gemma4:e2b)
+2026-05-27 06:14:56 | SUCCESS  |   ✓ Contig21: score=0, class=non-viral
+2026-05-27 06:14:56 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:15:26 | INFO     | [22/547] Scoring Contig22 (low-token, model=gemma4:e2b)
+2026-05-27 06:15:31 | SUCCESS  |   ✓ Contig22: score=0, class=non-viral
+2026-05-27 06:15:31 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:16:01 | INFO     | [23/547] Scoring Contig23 (low-token, model=gemma4:e2b)
+2026-05-27 06:16:07 | SUCCESS  |   ✓ Contig23: score=0, class=non-viral
+2026-05-27 06:16:07 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:16:37 | INFO     | [24/547] Scoring Contig24 (low-token, model=gemma4:e2b)
+2026-05-27 06:16:42 | SUCCESS  |   ✓ Contig24: score=0, class=non-viral
+2026-05-27 06:16:42 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:17:12 | INFO     | [25/547] Scoring Contig25 (low-token, model=gemma4:e2b)
+2026-05-27 06:17:19 | SUCCESS  |   ✓ Contig25: score=0, class=non-viral
+2026-05-27 06:17:19 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:17:49 | INFO     | [26/547] Scoring Contig26 (low-token, model=gemma4:e2b)
+2026-05-27 06:17:55 | SUCCESS  |   ✓ Contig26: score=0, class=non-viral
+2026-05-27 06:17:55 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:18:25 | INFO     | [27/547] Scoring Contig27 (low-token, model=gemma4:e2b)
+2026-05-27 06:18:31 | SUCCESS  |   ✓ Contig27: score=0, class=non-viral
+2026-05-27 06:18:31 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:19:01 | INFO     | [28/547] Scoring Contig28 (low-token, model=gemma4:e2b)
+2026-05-27 06:19:06 | SUCCESS  |   ✓ Contig28: score=0, class=non-viral
+2026-05-27 06:19:06 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:19:36 | INFO     | [29/547] Scoring Contig29 (low-token, model=gemma4:e2b)
+2026-05-27 06:19:42 | SUCCESS  |   ✓ Contig29: score=0, class=non-viral
+2026-05-27 06:19:42 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:20:12 | INFO     | [30/547] Scoring Contig30 (low-token, model=gemma4:e2b)
+2026-05-27 06:20:32 | SUCCESS  |   ✓ Contig30: score=75, class=viral-unknown
+2026-05-27 06:20:32 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:21:02 | INFO     | [31/547] Scoring Contig31 (low-token, model=gemma4:e2b)
+2026-05-27 06:21:08 | SUCCESS  |   ✓ Contig31: score=0, class=non-viral
+2026-05-27 06:21:08 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:21:38 | INFO     | [32/547] Scoring Contig32 (low-token, model=gemma4:e2b)
+2026-05-27 06:21:43 | SUCCESS  |   ✓ Contig32: score=0, class=non-viral
+2026-05-27 06:21:43 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:22:13 | INFO     | [33/547] Scoring Contig33 (low-token, model=gemma4:e2b)
+2026-05-27 06:22:20 | SUCCESS  |   ✓ Contig33: score=0, class=non-viral
+2026-05-27 06:22:20 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:22:50 | INFO     | [34/547] Scoring Contig34 (low-token, model=gemma4:e2b)
+2026-05-27 06:22:56 | SUCCESS  |   ✓ Contig34: score=0, class=non-viral
+2026-05-27 06:22:56 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:23:26 | INFO     | [35/547] Scoring Contig35 (low-token, model=gemma4:e2b)
+2026-05-27 06:23:31 | SUCCESS  |   ✓ Contig35: score=0, class=non-viral
+2026-05-27 06:23:31 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:24:01 | INFO     | [36/547] Scoring Contig36 (low-token, model=gemma4:e2b)
+2026-05-27 06:24:06 | SUCCESS  |   ✓ Contig36: score=0, class=non-viral
+2026-05-27 06:24:06 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:24:36 | INFO     | [37/547] Scoring Contig37 (low-token, model=gemma4:e2b)
+2026-05-27 06:24:42 | SUCCESS  |   ✓ Contig37: score=0, class=non-viral
+2026-05-27 06:24:42 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:25:12 | INFO     | [38/547] Scoring Contig38 (low-token, model=gemma4:e2b)
+2026-05-27 06:25:17 | SUCCESS  |   ✓ Contig38: score=0, class=non-viral
+2026-05-27 06:25:17 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:25:47 | INFO     | [39/547] Scoring Contig39 (low-token, model=gemma4:e2b)
+2026-05-27 06:25:51 | SUCCESS  |   ✓ Contig39: score=0, class=non-viral
+2026-05-27 06:25:51 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:26:21 | INFO     | [40/547] Scoring Contig40 (low-token, model=gemma4:e2b)
+2026-05-27 06:26:29 | SUCCESS  |   ✓ Contig40: score=0, class=non-viral
+2026-05-27 06:26:29 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:26:59 | INFO     | [41/547] Scoring Contig41 (low-token, model=gemma4:e2b)
+2026-05-27 06:27:04 | SUCCESS  |   ✓ Contig41: score=0, class=non-viral
+2026-05-27 06:27:04 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:27:34 | INFO     | [42/547] Scoring Contig42 (low-token, model=gemma4:e2b)
+2026-05-27 06:27:39 | SUCCESS  |   ✓ Contig42: score=0, class=non-viral
+2026-05-27 06:27:39 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:28:09 | INFO     | [43/547] Scoring Contig43 (low-token, model=gemma4:e2b)
+2026-05-27 06:28:14 | SUCCESS  |   ✓ Contig43: score=0, class=non-viral
+2026-05-27 06:28:14 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:28:44 | INFO     | [44/547] Scoring Contig44 (low-token, model=gemma4:e2b)
+2026-05-27 06:28:49 | SUCCESS  |   ✓ Contig44: score=0, class=non-viral
+2026-05-27 06:28:49 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:29:19 | INFO     | [45/547] Scoring Contig45 (low-token, model=gemma4:e2b)
+2026-05-27 06:29:24 | SUCCESS  |   ✓ Contig45: score=0, class=non-viral
+2026-05-27 06:29:24 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:29:54 | INFO     | [46/547] Scoring Contig46 (low-token, model=gemma4:e2b)
+2026-05-27 06:29:59 | SUCCESS  |   ✓ Contig46: score=0, class=non-viral
+2026-05-27 06:29:59 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:30:29 | INFO     | [47/547] Scoring Contig47 (low-token, model=gemma4:e2b)
+2026-05-27 06:30:35 | SUCCESS  |   ✓ Contig47: score=0, class=non-viral
+2026-05-27 06:30:35 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:31:05 | INFO     | [48/547] Scoring Contig48 (low-token, model=gemma4:e2b)
+2026-05-27 06:31:10 | SUCCESS  |   ✓ Contig48: score=0, class=non-viral
+2026-05-27 06:31:10 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:31:40 | INFO     | [49/547] Scoring Contig49 (low-token, model=gemma4:e2b)
+2026-05-27 06:31:47 | SUCCESS  |   ✓ Contig49: score=0, class=non-viral
+2026-05-27 06:31:47 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:32:17 | INFO     | [50/547] Scoring Contig50 (low-token, model=gemma4:e2b)
+2026-05-27 06:32:24 | SUCCESS  |   ✓ Contig50: score=0, class=non-viral
+2026-05-27 06:32:24 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:32:54 | INFO     | [51/547] Scoring Contig51 (low-token, model=gemma4:e2b)
+2026-05-27 06:33:05 | ERROR    |   ✗ Contig51: ParseError: Expecting value: line 1 column 1 (char 0) | raw[:300]: vq_score:50
+classification:viral-unknown
+blastn_species:
+analysis:The sequence exhibits a positive viral flag but lacks any BLAST hits or HMM domain matches to known viral families. The only identified protein region contains domains related to Semaphorin-like proteins and Plexin, suggesting potenti
+2026-05-27 06:33:05 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:33:35 | INFO     | [52/547] Scoring Contig52 (low-token, model=gemma4:e2b)
+2026-05-27 06:33:41 | SUCCESS  |   ✓ Contig52: score=0, class=non-viral
+2026-05-27 06:33:41 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:34:11 | INFO     | [53/547] Scoring Contig53 (low-token, model=gemma4:e2b)
+2026-05-27 06:34:29 | SUCCESS  |   ✓ Contig53: score=75, class=viral-unknown
+2026-05-27 06:34:29 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:34:59 | INFO     | [54/547] Scoring Contig54 (low-token, model=gemma4:e2b)
+2026-05-27 06:35:04 | SUCCESS  |   ✓ Contig54: score=0, class=non-viral
+2026-05-27 06:35:04 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:35:34 | INFO     | [55/547] Scoring Contig55 (low-token, model=gemma4:e2b)
+2026-05-27 06:35:39 | SUCCESS  |   ✓ Contig55: score=0, class=non-viral
+2026-05-27 06:35:39 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:36:09 | INFO     | [56/547] Scoring Contig56 (low-token, model=gemma4:e2b)
+2026-05-27 06:36:14 | SUCCESS  |   ✓ Contig56: score=0, class=non-viral
+2026-05-27 06:36:14 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:36:44 | INFO     | [57/547] Scoring Contig57 (low-token, model=gemma4:e2b)
+2026-05-27 06:36:49 | SUCCESS  |   ✓ Contig57: score=0, class=non-viral
+2026-05-27 06:36:49 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:37:19 | INFO     | [58/547] Scoring Contig58 (low-token, model=gemma4:e2b)
+2026-05-27 06:37:25 | SUCCESS  |   ✓ Contig58: score=0, class=non-viral
+2026-05-27 06:37:25 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:37:55 | INFO     | [59/547] Scoring Contig59 (low-token, model=gemma4:e2b)
+2026-05-27 06:38:00 | SUCCESS  |   ✓ Contig59: score=0, class=non-viral
+2026-05-27 06:38:00 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:38:30 | INFO     | [60/547] Scoring Contig60 (low-token, model=gemma4:e2b)
+2026-05-27 06:38:34 | SUCCESS  |   ✓ Contig60: score=0, class=non-viral
+2026-05-27 06:38:34 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:39:04 | INFO     | [61/547] Scoring Contig61 (low-token, model=gemma4:e2b)
+2026-05-27 06:39:09 | SUCCESS  |   ✓ Contig61: score=0, class=non-viral
+2026-05-27 06:39:09 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:39:39 | INFO     | [62/547] Scoring Contig62 (low-token, model=gemma4:e2b)
+2026-05-27 06:39:44 | SUCCESS  |   ✓ Contig62: score=0, class=non-viral
+2026-05-27 06:39:44 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:40:14 | INFO     | [63/547] Scoring Contig63 (low-token, model=gemma4:e2b)
+2026-05-27 06:40:20 | SUCCESS  |   ✓ Contig63: score=0, class=non-viral
+2026-05-27 06:40:20 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:40:50 | INFO     | [64/547] Scoring Contig64 (low-token, model=gemma4:e2b)
+2026-05-27 06:40:54 | SUCCESS  |   ✓ Contig64: score=0, class=non-viral
+2026-05-27 06:40:54 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:41:24 | INFO     | [65/547] Scoring Contig65 (low-token, model=gemma4:e2b)
+2026-05-27 06:41:37 | SUCCESS  |   ✓ Contig65: score=55, class=viral-unknown
+2026-05-27 06:41:37 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:42:07 | INFO     | [66/547] Scoring Contig66 (low-token, model=gemma4:e2b)
+2026-05-27 06:42:23 | SUCCESS  |   ✓ Contig66: score=10, class=non-viral
+2026-05-27 06:42:23 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:42:53 | INFO     | [67/547] Scoring Contig67 (low-token, model=gemma4:e2b)
+2026-05-27 06:42:58 | SUCCESS  |   ✓ Contig67: score=0, class=non-viral
+2026-05-27 06:42:58 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:43:28 | INFO     | [68/547] Scoring Contig68 (low-token, model=gemma4:e2b)
+2026-05-27 06:43:33 | SUCCESS  |   ✓ Contig68: score=0, class=non-viral
+2026-05-27 06:43:33 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:44:03 | INFO     | [69/547] Scoring Contig69 (low-token, model=gemma4:e2b)
+2026-05-27 06:44:08 | SUCCESS  |   ✓ Contig69: score=0, class=non-viral
+2026-05-27 06:44:08 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:44:38 | INFO     | [70/547] Scoring Contig70 (low-token, model=gemma4:e2b)
+2026-05-27 06:44:45 | SUCCESS  |   ✓ Contig70: score=0, class=non-viral
+2026-05-27 06:44:45 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:45:15 | INFO     | [71/547] Scoring Contig71 (low-token, model=gemma4:e2b)
+2026-05-27 06:45:20 | SUCCESS  |   ✓ Contig71: score=0, class=non-viral
+2026-05-27 06:45:20 | DEBUG    | Low-token mode: waiting 30.0s before next request...
+2026-05-27 06:45:50 | INFO     | [72/547] Scoring Contig72 (low-token, model=gemma4:e2b)
+2026-05-27 06:45:55 | SUCCESS  |   ✓ Contig72: score=0, class=non-viral
+2026-05-27 06:45:55 | DEBUG    | Low-token mode: waiting 30.0s before next request...

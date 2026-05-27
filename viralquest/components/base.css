@@ -5,41 +5,42 @@
    ============================================================ */
 
 :root {
-  /* --- Brand colours (blue palette, Seqera-inspired clarity) --- */
-  --vq-primary:        #1a3a5c;
-  --vq-primary-light:  #2a5080;
-  --vq-accent:         #3b9eff;
-  --vq-accent-dark:    #1a7fd4;
-  --vq-accent-subtle:  #ebf5ff;   /* Seqera-style tag background */
-  --vq-success:        #27ae60;
-  --vq-warning:        #f59e0b;
-  --vq-danger:         #e74c3c;
+  /* --- Brand colours --- */
+  --vq-primary:        #15314b;
+  --vq-primary-light:  #25527d;
+  --vq-accent:         #2f86d6;
+  --vq-accent-dark:    #1a6cb8;
+  --vq-accent-subtle:  #eaf3fb;
+  --vq-success:        #1f9d6b;
+  --vq-warning:        #e0921c;
+  --vq-danger:         #d24a3d;
   --vq-muted:          #7f8c8d;
 
-  /* --- Taxonomy family colours (consistent across sections) --- */
-  --vq-tax-flaviviridae:   #e67e22;
-  --vq-tax-parvoviridae:   #8e44ad;
-  --vq-tax-phenuiviridae:  #16a085;
-  --vq-tax-nodaviridae:    #2980b9;
-  --vq-tax-rhabdoviridae:  #c0392b;
-  --vq-tax-tombusviridae:  #27ae60;
-  --vq-tax-other:          #7f8c8d;
+  /* --- Taxonomy family colours (calmer categorical palette) --- */
+  --vq-tax-flaviviridae:   #c46a2a;
+  --vq-tax-parvoviridae:   #6b4d99;
+  --vq-tax-phenuiviridae:  #137d6f;
+  --vq-tax-nodaviridae:    #2c5f8d;
+  --vq-tax-rhabdoviridae:  #a8413a;
+  --vq-tax-tombusviridae:  #4a8a4a;
+  --vq-tax-other:          #8493a3;
 
-  /* --- ORF domain colours (Pfam palette) --- */
-  --vq-dom-1: #e74c3c;
-  --vq-dom-2: #3498db;
-  --vq-dom-3: #2ecc71;
-  --vq-dom-4: #f39c12;
-  --vq-dom-5: #9b59b6;
-  --vq-dom-6: #1abc9c;
-  --vq-dom-7: #e67e22;
-  --vq-dom-8: #34495e;
+  /* --- ORF domain colours --- */
+  /* Tuned so none collides with the accent blue (which signals (+) ORFs). */
+  --vq-dom-1: #d4554a;
+  --vq-dom-2: #6a9bd1;   /* shifted from accent so domain bars stay distinguishable */
+  --vq-dom-3: #4a9d6f;
+  --vq-dom-4: #d49a3c;
+  --vq-dom-5: #8e6cb6;
+  --vq-dom-6: #2fa395;
+  --vq-dom-7: #b97842;
+  --vq-dom-8: #3f5366;
 
   /* --- Surfaces --- */
-  --vq-bg:          #f3f6fa;      /* slightly lighter, cleaner */
+  --vq-bg:          #f3f6fa;
   --vq-surface:     #ffffff;
-  --vq-surface-2:   #f8fafc;
-  --vq-border:      #e2e8f0;      /* lighter — Seqera-style */
+  --vq-surface-2:   #f7fafc;
+  --vq-border:      #e2e8f0;
   --vq-border-dark: #c5d0dc;
 
   /* --- Text --- */
@@ -48,8 +49,8 @@
   --vq-text-3:      #94a3b8;
 
   /* --- Typography --- */
-  --vq-font:        'Inter', 'Segoe UI', system-ui, sans-serif;
-  --vq-font-mono:   'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --vq-font:        'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --vq-font-mono:   'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
   --vq-text-xs:     0.72rem;
   --vq-text-sm:     0.85rem;
   --vq-text-base:   1rem;
@@ -66,7 +67,7 @@
   --vq-space-8:  2rem;
   --vq-space-12: 3rem;
 
-  /* --- Shape (more rounded — Seqera feel) --- */
+  /* --- Shape --- */
   --vq-radius-sm: 6px;
   --vq-radius:    10px;
   --vq-radius-lg: 16px;
@@ -98,10 +99,11 @@ body {
   background:  var(--vq-bg);
   line-height: 1.6;
   min-height:  100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ============================================================
-   Navigation  —  Seqera-style: underline active tab
+   Navigation
    ============================================================ */
 
 .vq-nav {
@@ -118,17 +120,21 @@ body {
 }
 
 .vq-nav__logo {
-  font-size:   var(--vq-text-lg);
-  font-weight: 700;
-  color:       #fff;
-  letter-spacing: .04em;
   flex-shrink: 0;
   display:     flex;
   align-items: center;
   gap:         var(--vq-space-2);
+  height:      100%;
 }
 
-.vq-nav__logo span { color: var(--vq-accent); }
+.vq-nav__logo img {
+  height:  30px;
+  width:   auto;
+  display: block;
+  /* Logo art is dark navy/blue on transparent; invert-ish for the dark nav */
+  filter: brightness(0) invert(1);
+  opacity: .96;
+}
 
 .vq-nav__tabs {
   display:    flex;
@@ -159,15 +165,22 @@ body {
 }
 
 .vq-nav__tab:hover  { color: rgba(255,255,255,.88); }
+.vq-nav__tab[aria-selected="true"],
 .vq-nav__tab.active {
-  color:         #fff;
+  color:               #fff;
   border-bottom-color: var(--vq-accent);
-  font-weight:   600;
+  font-weight:         600;
+}
+
+.vq-nav__tab:focus-visible {
+  outline:        2px solid var(--vq-accent);
+  outline-offset: -4px;
+  border-radius:  3px;
 }
 
 .vq-nav__meta {
   font-size:  var(--vq-text-xs);
-  color:      rgba(255,255,255,.4);
+  color:      rgba(255,255,255,.45);
   flex-shrink: 0;
   display:    flex;
   align-items: center;
@@ -185,7 +198,7 @@ body {
 
 .vq-section {
   display:    none;
-  padding:    var(--vq-space-8) var(--vq-space-6);
+  padding:    var(--vq-space-6) var(--vq-space-6);
   max-width:  1600px;
   margin:     0 auto;
   animation:  vq-fadein var(--vq-dur) var(--vq-ease);
@@ -199,7 +212,7 @@ body {
 }
 
 /* ============================================================
-   Cards  —  flatter, border-only (Seqera style)
+   Cards
    ============================================================ */
 
 .vq-card {
@@ -211,7 +224,7 @@ body {
 }
 
 .vq-card__header {
-  padding:     var(--vq-space-4) var(--vq-space-6);
+  padding:     10px var(--vq-space-4);
   border-bottom: 1px solid var(--vq-border);
   display:     flex;
   align-items: center;
@@ -221,16 +234,17 @@ body {
 }
 
 .vq-card__title {
-  font-size:   var(--vq-text-base);
+  font-size:   var(--vq-text-sm);
   font-weight: 600;
   color:       var(--vq-primary);
   display:     flex;
   align-items: center;
   gap:         var(--vq-space-2);
+  letter-spacing: .01em;
 }
 
 .vq-card__body {
-  padding: var(--vq-space-6);
+  padding: var(--vq-space-4) var(--vq-space-4);
 }
 
 /* ============================================================
@@ -239,20 +253,20 @@ body {
 
 .vq-stats-grid {
   display:               grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap:                   var(--vq-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap:                   var(--vq-space-2);
 }
 
-/* Seqera-style stat chip: left accent border on hover */
 .vq-stat-chip {
   background:    var(--vq-surface);
   border:        1px solid var(--vq-border);
   border-left:   3px solid var(--vq-border);
-  border-radius: var(--vq-radius);
-  padding:       var(--vq-space-4);
+  border-radius: var(--vq-radius-sm);
+  padding:       10px 12px;
   display:       flex;
   flex-direction: column;
-  gap:           var(--vq-space-1);
+  gap:           2px;
+  min-width:     0;
   transition:    border-left-color var(--vq-dur) var(--vq-ease),
                  box-shadow        var(--vq-dur) var(--vq-ease);
 }
@@ -263,52 +277,65 @@ body {
 }
 
 .vq-stat-chip__label {
-  font-size:   var(--vq-text-xs);
-  font-weight: 600;
-  color:       var(--vq-text-3);
-  text-transform: uppercase;
-  letter-spacing: .07em;
+  font-size:    11px;
+  font-weight:  500;
+  color:        var(--vq-text-3);
+  letter-spacing: .02em;
 }
 
 .vq-stat-chip__value {
-  font-size:   var(--vq-text-2xl);
-  font-weight: 700;
-  color:       var(--vq-primary);
-  line-height: 1.1;
+  font-size:    1.25rem;
+  font-weight:  600;
+  color:        var(--vq-primary);
+  line-height:  1.2;
+  font-variant-numeric: tabular-nums;
+  white-space:  nowrap;
+  overflow:     hidden;
+  text-overflow: ellipsis;
+}
+
+.vq-stat-chip__value--text {
+  font-size:    var(--vq-text-sm);
+  font-weight:  600;
+  font-family:  var(--vq-font-mono);
+  letter-spacing: -.01em;
 }
 
 .vq-stat-chip__sub {
-  font-size:  var(--vq-text-xs);
+  font-size:  11px;
   color:      var(--vq-text-3);
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
 }
 
-.vq-stat-chip--accent .vq-stat-chip__value { color: var(--vq-accent); }
+.vq-stat-chip--accent .vq-stat-chip__value  { color: var(--vq-accent); }
 .vq-stat-chip--success .vq-stat-chip__value { color: var(--vq-success); }
 .vq-stat-chip--warn    .vq-stat-chip__value { color: var(--vq-warning); }
 
 /* ============================================================
-   Section headers  —  with Seqera-style count label
+   Section headers
    ============================================================ */
 
 .vq-section-header {
   display:       flex;
   align-items:   center;
   justify-content: space-between;
-  margin-bottom: var(--vq-space-6);
+  margin-bottom: var(--vq-space-4);
   flex-wrap:     wrap;
-  gap:           var(--vq-space-4);
+  gap:           var(--vq-space-3);
 }
 
 .vq-section-title {
-  font-size:   var(--vq-text-xl);
-  font-weight: 700;
+  font-size:   var(--vq-text-lg);
+  font-weight: 600;
   color:       var(--vq-primary);
   display:     flex;
   align-items: baseline;
-  gap:         var(--vq-space-3);
+  gap:         var(--vq-space-2);
+  letter-spacing: -.01em;
 }
 
-/* "Showing N results" muted label — like Seqera's "Showing all 81" */
 .vq-count-label {
   font-size:   var(--vq-text-sm);
   font-weight: 400;
@@ -319,6 +346,13 @@ body {
   font-size:  var(--vq-text-sm);
   color:      var(--vq-text-3);
   margin-top: var(--vq-space-1);
+}
+
+.vq-section-actions {
+  display:   flex;
+  gap:       var(--vq-space-2);
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 /* ============================================================
@@ -343,12 +377,16 @@ body {
   text-decoration: none;
 }
 
+.vq-btn:focus-visible {
+  outline: 2px solid var(--vq-accent);
+  outline-offset: 2px;
+}
+
 .vq-btn:disabled { opacity: .5; cursor: not-allowed; }
 
-/* Dark primary — like Seqera's "Launch" button */
 .vq-btn--primary {
-  background: var(--vq-primary);
-  color:      #fff;
+  background:   var(--vq-primary);
+  color:        #fff;
   border-color: var(--vq-primary-light);
 }
 .vq-btn--primary:hover:not(:disabled) {
@@ -356,7 +394,6 @@ body {
   box-shadow: var(--vq-shadow-sm);
 }
 
-/* Accent variant */
 .vq-btn--accent {
   background: var(--vq-accent);
   color:      #fff;
@@ -380,7 +417,50 @@ body {
 }
 
 /* ============================================================
-   Form controls  —  rounder search (Seqera style)
+   Dropdown menu (used by export controls)
+   ============================================================ */
+
+.vq-menu {
+  position: relative;
+  display:  inline-block;
+}
+
+.vq-menu__panel {
+  position:      absolute;
+  top:           calc(100% + 4px);
+  right:         0;
+  min-width:     140px;
+  background:    var(--vq-surface);
+  border:        1px solid var(--vq-border);
+  border-radius: var(--vq-radius-sm);
+  box-shadow:    var(--vq-shadow);
+  padding:       4px;
+  display:       none;
+  z-index:       100;
+}
+
+.vq-menu.open > .vq-menu__panel { display: block; }
+
+.vq-menu__item {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--vq-space-2);
+  width:          100%;
+  padding:        6px 10px;
+  border:         none;
+  background:     transparent;
+  font:           inherit;
+  font-size:      var(--vq-text-xs);
+  color:          var(--vq-text-2);
+  cursor:         pointer;
+  border-radius:  4px;
+  text-align:     left;
+}
+
+.vq-menu__item:hover { background: var(--vq-surface-2); color: var(--vq-accent); }
+
+/* ============================================================
+   Form controls
    ============================================================ */
 
 .vq-input, .vq-select {
@@ -399,10 +479,9 @@ body {
 
 .vq-input:focus, .vq-select:focus {
   border-color: var(--vq-accent);
-  box-shadow:   0 0 0 3px rgba(59,158,255,.12);
+  box-shadow:   0 0 0 3px rgba(47,134,214,.15);
 }
 
-/* Seqera-style: pill-shaped search field */
 .vq-search-wrap {
   position:  relative;
   max-width: 360px;
@@ -428,14 +507,14 @@ body {
 }
 
 /* ============================================================
-   Toolbar (filters + actions row)
+   Toolbar
    ============================================================ */
 
 .vq-toolbar {
-  display:    flex;
-  align-items: center;
-  flex-wrap:  wrap;
-  gap:        var(--vq-space-3);
+  display:       flex;
+  align-items:   center;
+  flex-wrap:     wrap;
+  gap:           var(--vq-space-3);
   margin-bottom: var(--vq-space-4);
 }
 
@@ -449,7 +528,7 @@ body {
 .vq-select { width: auto; min-width: 130px; border-radius: var(--vq-radius-sm); }
 
 /* ============================================================
-   Toggle (TPM / NumReads)
+   Toggle
    ============================================================ */
 
 .vq-toggle {
@@ -477,10 +556,9 @@ body {
 }
 
 /* ============================================================
-   Badges / tags  —  Seqera pill style
+   Badges / tags
    ============================================================ */
 
-/* Original badge (status indicators — kept) */
 .vq-badge {
   display:       inline-flex;
   align-items:   center;
@@ -491,18 +569,17 @@ body {
   white-space:   nowrap;
 }
 
-.vq-badge--viral-known    { background: #e8f5e9; color: #2e7d32; }
-.vq-badge--viral-unknown  { background: #fff8e1; color: #b45309; }
-.vq-badge--non-viral      { background: #fce4ec; color: #c62828; }
+.vq-badge--viral-known    { background: #e6f4ea; color: #1f7a3c; }
+.vq-badge--viral-unknown  { background: #fef3d7; color: #9b6a09; }
+.vq-badge--non-viral      { background: #fbe3e6; color: #a8302b; }
 .vq-badge--cluster        { background: var(--vq-accent-subtle); color: var(--vq-accent-dark); }
 
-/* Seqera-style keyword tags: light blue pill, like "nextflow · pipeline · workflow" */
 .vq-tag {
   display:       inline-flex;
   align-items:   center;
   padding:       3px 10px;
   border-radius: 999px;
-  border:        1px solid #d0e8ff;
+  border:        1px solid #d0e2f3;
   background:    var(--vq-accent-subtle);
   color:         var(--vq-accent-dark);
   font-size:     var(--vq-text-xs);
@@ -512,9 +589,8 @@ body {
   transition:    background var(--vq-dur) var(--vq-ease);
 }
 
-.vq-tag:hover { background: #d6edff; }
+.vq-tag:hover { background: #d6e8f7; }
 
-/* Tag row — flex container matching Seqera's tag strip */
 .vq-tag-row {
   display:    flex;
   flex-wrap:  wrap;
@@ -523,7 +599,7 @@ body {
 }
 
 /* ============================================================
-   Genome viewer — sequence card  (Seqera list-row style)
+   Genome viewer — sequence card
    ============================================================ */
 
 .vq-seq-card {
@@ -533,12 +609,26 @@ body {
   border-radius: var(--vq-radius);
   overflow:      hidden;
   transition:    border-left-color var(--vq-dur) var(--vq-ease),
-                 box-shadow        var(--vq-dur) var(--vq-ease);
+                 box-shadow        var(--vq-dur) var(--vq-ease),
+                 background        var(--vq-dur) var(--vq-ease);
 }
 
 .vq-seq-card:hover {
   border-left-color: var(--vq-accent);
   box-shadow:        var(--vq-shadow);
+}
+
+/* Highlight flash when jumped-to from another section. */
+.vq-seq-card--highlight {
+  border-left-color: var(--vq-accent);
+  box-shadow:        0 0 0 3px rgba(47,134,214,.18), var(--vq-shadow);
+  animation:         vq-flash 2s var(--vq-ease);
+}
+
+@keyframes vq-flash {
+  0%   { background: rgba(47,134,214,.10); }
+  60%  { background: rgba(47,134,214,.04); }
+  100% { background: var(--vq-surface); }
 }
 
 .vq-seq-card__head {
@@ -562,7 +652,7 @@ body {
 
 .vq-seq-card__id {
   font-family: var(--vq-font-mono);
-  font-size:   var(--vq-text-sm);
+  font-size:   12px;
   font-weight: 600;
   color:       var(--vq-primary);
   flex-shrink: 0;
@@ -573,9 +663,22 @@ body {
   gap:       var(--vq-space-3);
   flex-wrap: wrap;
   flex:      1;
-  font-size: var(--vq-text-xs);
+  font-size: 11.5px;
   color:     var(--vq-text-2);
   align-items: center;
+  min-width: 0;
+}
+
+.vq-seq-card__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.vq-seq-card__meta-label {
+  color: var(--vq-text-3);
+  font-weight: 500;
 }
 
 .vq-seq-card__chevron {
@@ -594,7 +697,6 @@ body {
 
 .vq-seq-card.open .vq-seq-card__body { display: block; }
 
-/* Genome SVG wrapper — horizontal scroll within card */
 .vq-genome-wrap {
   overflow-x: auto;
   overflow-y: hidden;
@@ -602,6 +704,7 @@ body {
 }
 
 .vq-genome-svg { display: block; min-width: 600px; }
+.vq-genome-svg--fluid { min-width: 0; width: 100%; }
 
 /* ============================================================
    Legend
@@ -629,13 +732,38 @@ body {
   flex-shrink:   0;
 }
 
+/* Continuous gradient legend (used for % identity). */
+.vq-gradient-legend {
+  display:     inline-flex;
+  align-items: center;
+  gap:         var(--vq-space-2);
+  font-size:   var(--vq-text-xs);
+  color:       var(--vq-text-3);
+}
+
+.vq-gradient-legend__bar {
+  width:         140px;
+  height:        8px;
+  border-radius: 4px;
+  background:    linear-gradient(to right,
+                  #a50026 0%, #d73027 12%, #f46d43 25%, #fdae61 37%,
+                  #fee08b 50%, #d9ef8b 62%, #a6d96a 75%, #66bd63 87%, #1a9850 100%);
+}
+
+.vq-gradient-legend__ticks {
+  display:        flex;
+  justify-content: space-between;
+  width:          140px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ============================================================
-   Tooltip (shared)
+   Tooltip
    ============================================================ */
 
 .vq-tooltip {
   position:      fixed;
-  background:    rgba(15,23,42,.92);
+  background:    rgba(15,23,42,.94);
   color:         #fff;
   border-radius: var(--vq-radius-sm);
   padding:       var(--vq-space-2) var(--vq-space-3);
@@ -643,7 +771,7 @@ body {
   line-height:   1.5;
   pointer-events: none;
   z-index:       9000;
-  max-width:     260px;
+  max-width:     280px;
   box-shadow:    var(--vq-shadow-lg);
   opacity:       0;
   transition:    opacity 100ms;
@@ -661,13 +789,13 @@ body {
   display:         grid;
   grid-template-columns: auto 1fr;
   gap:             2px 8px;
-  color:           rgba(255,255,255,.8);
+  color:           rgba(255,255,255,.85);
 }
 
-.vq-tooltip__key { color: rgba(255,255,255,.5); }
+.vq-tooltip__key { color: rgba(255,255,255,.55); }
 
 /* ============================================================
-   Divider / meta row  —  Seqera "· 198 KB · Updated 2y ago"
+   Meta row
    ============================================================ */
 
 .vq-meta-row {
@@ -682,7 +810,7 @@ body {
 .vq-meta-row__sep { color: var(--vq-border-dark); }
 
 /* ============================================================
-   Checkbox selection
+   Checkbox
    ============================================================ */
 
 .vq-checkbox {
@@ -711,20 +839,164 @@ body {
 }
 
 /* ============================================================
-   Scrollbar (webkit)
+   Inner panel (used inside expanded sequence cards)
    ============================================================ */
 
-::-webkit-scrollbar         { width: 5px; height: 5px; }
+.vq-panel {
+  background:    var(--vq-surface-2);
+  border:        1px solid var(--vq-border);
+  border-radius: var(--vq-radius-sm);
+  overflow:      hidden;
+  margin-top:    var(--vq-space-3);
+}
+
+.vq-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vq-border);
+  background: var(--vq-surface);
+}
+
+.vq-panel__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vq-text);
+  letter-spacing: .01em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vq-panel__count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--vq-text-3);
+  background: var(--vq-bg);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.vq-panel__body {
+  padding: 0;
+  max-height: 320px;
+  overflow: auto;
+}
+
+/* Inline tab strip — used to switch BLAST hit types inside a panel */
+.vq-subtabs {
+  display: flex;
+  gap: 0;
+  background: var(--vq-surface);
+  border-bottom: 1px solid var(--vq-border);
+}
+
+.vq-subtab {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--vq-text-3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color var(--vq-dur), border-color var(--vq-dur);
+}
+
+.vq-subtab:hover { color: var(--vq-text-2); }
+.vq-subtab.active {
+  color: var(--vq-accent-dark);
+  border-bottom-color: var(--vq-accent);
+}
+
+.vq-subtab__count {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--vq-text-3);
+  font-weight: 500;
+}
+
+/* Section label inside expanded sequence body */
+.vq-body-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vq-text-3);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin: var(--vq-space-3) 0 6px;
+}
+
+.vq-body-label:first-child { margin-top: 0; }
+
+/* FASTA / sequence preview block */
+.vq-fasta {
+  font-family: var(--vq-font-mono);
+  font-size: 11px;
+  color: var(--vq-text-2);
+  background: var(--vq-bg);
+  border: 1px solid var(--vq-border);
+  border-radius: var(--vq-radius-sm);
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.4;
+  max-height: 140px;
+  overflow: auto;
+}
+
+/* ============================================================
+   Table
+   ============================================================ */
+
+.vq-table {
+  width:            100%;
+  border-collapse:  collapse;
+  font-size:        12px;
+}
+
+.vq-table th {
+  text-align:    left;
+  padding:       6px 10px;
+  border-bottom: 1px solid var(--vq-border);
+  color:         var(--vq-text-3);
+  font-weight:   500;
+  font-size:     11px;
+  letter-spacing: .02em;
+  background:    var(--vq-surface);
+  position:      sticky;
+  top:           0;
+  z-index:       1;
+}
+
+.vq-table td {
+  padding:       6px 10px;
+  border-bottom: 1px solid var(--vq-border);
+  color:         var(--vq-text-2);
+  font-size:     11.5px;
+}
+
+.vq-table tr:last-child td { border-bottom: none; }
+.vq-table tbody tr:hover td { background: var(--vq-surface-2); }
+.vq-table .vq-td--mono     { font-family: var(--vq-font-mono); font-size: 11px; }
+.vq-table .vq-td--num      { font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+
+::-webkit-scrollbar         { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track   { background: transparent; }
-::-webkit-scrollbar-thumb   { background: var(--vq-border-dark); border-radius: 3px; }
+::-webkit-scrollbar-thumb   { background: var(--vq-border-dark); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--vq-muted); }
 
 /* ============================================================
-   Print / PDF export styles
+   Print
    ============================================================ */
 
 @media print {
-  .vq-nav, .vq-toolbar, .vq-btn, .vq-checkbox { display: none !important; }
+  .vq-nav, .vq-toolbar, .vq-btn, .vq-checkbox, .vq-menu { display: none !important; }
   .vq-section { display: block !important; padding: 1cm; }
   .vq-card { box-shadow: none !important; border: 1px solid #ccc; }
   body { background: #fff; }
@@ -732,7 +1004,7 @@ body {
 }
 
 /* ============================================================
-   Responsive breakpoints
+   Responsive
    ============================================================ */
 
 @media (max-width: 900px) {
@@ -742,8 +1014,17 @@ body {
   .vq-stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
+@media (max-width: 720px) {
+  .vq-nav__tab {
+    padding: 0 var(--vq-space-3);
+    font-size: var(--vq-text-base);
+  }
+  .vq-nav__tabs { gap: 0; }
+}
+
 @media (max-width: 540px) {
   .vq-nav__meta { display: none; }
   .vq-stats-grid { grid-template-columns: 1fr; }
   .vq-section-header { flex-direction: column; align-items: flex-start; }
+  .vq-section-actions { width: 100%; }
 }

@@ -164,7 +164,13 @@ class SalmonIndexBuilder:
         logger.info(f"Salmon index: '{ref_fasta.name}' → '{index_dir.name}' ...")
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(f"salmon index failed:\n{result.stderr.strip()}")
+            # show only the last 20 lines of stderr — the crash is always at the end
+            tail = "\n".join(result.stderr.strip().splitlines()[-20:])
+            raise RuntimeError(
+                f"salmon index failed (exit {result.returncode}):\n{tail}\n\n"
+                "Common causes: insufficient RAM for SSHash (try closing other "
+                "processes), or a corrupted/empty combined reference FASTA."
+            )
         logger.success(f"Salmon index built → '{index_dir}'")
 
 

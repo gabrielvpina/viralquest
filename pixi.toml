@@ -25,6 +25,7 @@ pyhmmer = ">=0.12.0,<0.13"
 cap3 = ">=10.2011,<11"
 salmon = ">=1.11.4,<2"
 rich = ">=15.0.0,<16"
+setproctitle = ">=1.3.7,<2"
 
 [pypi-dependencies]
 bio = ">=1.8.1, <2"
@@ -33,4 +34,8 @@ gprofiler-official = ">=1.0.0, <2"
 mygene = ">=3.2.2, <4"
 loguru = "*"
 orfipy = ">=0.0.4, <0.0.5"
+ollama = ">=0.4.7"
+openai = ">=1.0.0"
+anthropic = ">=0.40.0"
+google-generativeai = ">=0.8.0"
 

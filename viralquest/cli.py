@@ -551,13 +551,14 @@ def _run_pipeline(args):
 
     # ── 10. LLM scoring ───────────────────────────────────────────────────────
     if args.model_type and args.model_name:
-        t = time.time()
+        t          = time.time()
+        viral_seqs = [s for s in seqs if s.is_viral]
         from .score_ai import SequenceScorer, LlmMode
         mode = LlmMode.HIGH if args.llm_tokens == "high" else LlmMode.LOW
         SequenceScorer(model_type=args.model_type,
                        model_name=args.model_name,
                        mode=mode,
-                       api_key=args.api_key).score(seqs)
+                       api_key=args.api_key).score(viral_seqs)
         yield from _tick(t)
 
     # ── 11. Salmon quantification ─────────────────────────────────────────────
@@ -565,12 +566,15 @@ def _run_pipeline(args):
     if args.transcriptome and args.reads:
         t = time.time()
         from .salmon_quant import SalmonQuantPipeline
-        salmon_report = SalmonQuantPipeline().run(
-            user_transcriptome=Path(args.transcriptome),
-            reads=args.reads,
-            viral_seqs=seqs,
-            outdir=outdir / "salmon",
-        )
+        try:
+            salmon_report = SalmonQuantPipeline().run(
+                user_transcriptome=Path(args.transcriptome),
+                reads=args.reads,
+                viral_seqs=seqs,
+                outdir=outdir / "salmon",
+            )
+        except Exception as exc:
+            logger.error(f"Salmon quantification failed — skipping: {exc}")
         yield from _tick(t)
 
     # ── 12. Export: viral FASTA + JSON ────────────────────────────────────────
@@ -751,6 +755,12 @@ def _print_summary(console, args, timings: dict) -> None:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
+    try:
+        import setproctitle
+        setproctitle.setproctitle("viralquest")
+    except ImportError:
+        pass
+
     from rich.console import Console
     console = Console(stderr=True)
     parser  = _build_parser()

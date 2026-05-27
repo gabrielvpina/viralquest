@@ -3,18 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ViralQuest Report — {{SAMPLE_NAME}}</title>
-  <link rel="icon" href="{{VQ_FAVICON}}" type="image/png">
-
-  <!-- All styles are inlined by html_report.py — placeholder below -->
-  <style>{{VQ_STYLES}}</style>
+  <title>ViralQuest Report — demo</title>
+  <link rel="icon" href="assets/favicon.png" type="image/png">
+  <link rel="stylesheet" href="base.css">
 </head>
 <body>
 
-  <!-- ── Navigation ─────────────────────────────────────────── -->
   <nav class="vq-nav" aria-label="Report sections">
     <div class="vq-nav__logo">
-      <img src="{{VQ_LOGO}}" alt="ViralQuest">
+      <img src="assets/logo-text.png" alt="ViralQuest">
     </div>
 
     <div class="vq-nav__tabs" role="tablist" aria-label="Report sections">
@@ -37,35 +34,31 @@
     </div>
   </nav>
 
-  <!-- ── Sections ───────────────────────────────────────────── -->
   <main class="vq-main">
-
     <section class="vq-section active" id="section-stats"    role="tabpanel" aria-labelledby="tab-stats"></section>
     <section class="vq-section"        id="section-clusters" role="tabpanel" aria-labelledby="tab-clusters"    hidden></section>
     <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-labelledby="tab-viewer"      hidden></section>
     <section class="vq-section"        id="section-taxonomy" role="tabpanel" aria-labelledby="tab-taxonomy"    hidden></section>
     <section class="vq-section"        id="section-salmon"   role="tabpanel" aria-labelledby="tab-salmon"      hidden></section>
-
   </main>
 
-  <!-- ── Shared tooltip ─────────────────────────────────────── -->
   <div class="vq-tooltip" id="vq-tooltip" role="tooltip" aria-live="polite"></div>
 
-  <!-- ── Report data (injected by html_report.py) ───────────── -->
-  <script>const VQ_REPORT = {{VQ_DATA}};</script>
+  <!-- Mock data (Python pipeline replaces this) -->
+  <script src="demo-data.js"></script>
 
-  <!-- ── D3 v7 (inlined by html_report.py) ─────────────────── -->
-  <script>{{VQ_D3}}</script>
+  <!-- D3 v7 -->
+  <script src="https://unpkg.com/d3@7.8.5/dist/d3.min.js"></script>
 
-  <!-- ── Component scripts (inlined by html_report.py) ──────── -->
-  <script>{{VQ_EXPORT}}</script>
-  <script>{{VQ_STATS}}</script>
-  <script>{{VQ_CLUSTERS}}</script>
-  <script>{{VQ_VIEWER}}</script>
-  <script>{{VQ_TAXONOMY}}</script>
-  <script>{{VQ_SALMON}}</script>
+  <!-- Component scripts -->
+  <script src="export.js"></script>
+  <script src="section_stats.js"></script>
+  <script src="section_clusters.js"></script>
+  <script src="section_viewer.js"></script>
+  <script src="section_taxonomy.js"></script>
+  <script src="section_salmon.js"></script>
 
-  <!-- ── Shell controller ───────────────────────────────────── -->
+  <!-- Shell controller -->
   <script>
   (function () {
     'use strict';
@@ -94,8 +87,7 @@
       tab.addEventListener('keydown', e => {
         if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
           e.preventDefault();
-          const dir  = e.key === 'ArrowRight' ? 1 : -1;
-          // Skip hidden tabs (e.g. Salmon when no quant data)
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
           let j = i;
           for (let step = 0; step < tabs.length; step++) {
             j = (j + dir + tabs.length) % tabs.length;
@@ -114,12 +106,10 @@
       });
     });
 
-    // --- Salmon tab visibility --------------------------------------
     if (!VQ_REPORT.salmon_quant) {
       document.getElementById('tab-salmon').style.display = 'none';
     }
 
-    // --- Nav meta ---------------------------------------------------
     const meta = VQ_REPORT.meta || {};
     const v    = document.getElementById('nav-version');
     const ts   = document.getElementById('nav-timestamp');
@@ -128,7 +118,6 @@
       ? new Date(meta.timestamp).toLocaleDateString()
       : '';
 
-    // --- Init all sections ------------------------------------------
     vqInitStats(VQ_REPORT);
     vqInitClusters(VQ_REPORT.clusters || []);
     vqInitViewer(VQ_REPORT.sequences || []);
@@ -136,9 +125,7 @@
     if (VQ_REPORT.salmon_quant) {
       vqInitSalmon(VQ_REPORT.salmon_quant, VQ_REPORT.clusters || []);
     }
-
   })();
   </script>
-
 </body>
 </html>

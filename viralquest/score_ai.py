@@ -154,11 +154,14 @@ class PromptBuilder:
 # ---------------------------------------------------------------------------
 
 class _LlmBackend:
+    needs_rate_limit: bool = True
+
     def call(self, system_prompt: str, user_json: dict) -> str:
         raise NotImplementedError
 
 
 class OllamaBackend(_LlmBackend):
+    needs_rate_limit = False  # local process, no API rate limits
     """Direct Ollama backend. Uses think=False to suppress chain-of-thought."""
 
     def __init__(self, model_name: str):
@@ -255,18 +258,34 @@ class GoogleBackend(_LlmBackend):
 def _make_backend(model_type: str, model_name: str, api_key: str | None) -> _LlmBackend:
     model_type = model_type.lower()
     if model_type == "ollama":
+        try:
+            import ollama  # noqa: F401
+        except ImportError:
+            raise ImportError("Package 'ollama' is required. Install: pip install ollama")
         return OllamaBackend(model_name)
     if model_type == "openai":
         if not api_key:
             raise ValueError("api_key required for OpenAI")
+        try:
+            import openai  # noqa: F401
+        except ImportError:
+            raise ImportError("Package 'openai' is required. Install: pip install openai")
         return OpenAIBackend(model_name, api_key)
     if model_type == "anthropic":
         if not api_key:
             raise ValueError("api_key required for Anthropic")
+        try:
+            import anthropic  # noqa: F401
+        except ImportError:
+            raise ImportError("Package 'anthropic' is required. Install: pip install anthropic")
         return AnthropicBackend(model_name, api_key)
     if model_type == "google":
         if not api_key:
             raise ValueError("api_key required for Google")
+        try:
+            import google.generativeai  # noqa: F401
+        except ImportError:
+            raise ImportError("Package 'google-generativeai' is required. Install: pip install google-generativeai")
         return GoogleBackend(model_name, api_key)
     raise ValueError(f"Unknown model_type '{model_type}'. Choose: ollama, openai, anthropic, google")
 
@@ -385,7 +404,9 @@ class SequenceScorer:
                     f"class={result.classification}"
                 )
 
-            if self._mode == LlmMode.LOW and self._low_mode_delay > 0 and i < len(nuc_seqs) - 1:
+            if (self._mode == LlmMode.LOW and self._low_mode_delay > 0
+                    and self._backend.needs_rate_limit
+                    and i < len(nuc_seqs) - 1 and not result.error):
                 logger.debug(f"Low-token mode: waiting {self._low_mode_delay}s before next request...")
                 time.sleep(self._low_mode_delay)
 

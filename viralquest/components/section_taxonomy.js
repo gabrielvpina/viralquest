@@ -1,11 +1,30 @@
+/* This file's private helpers live in an IIFE so they don't collide across sections. */
+// __VQ_WRAPPED__
+(function () {
+'use strict';
+
 /* ============================================================
-   section_taxonomy.js — Section 4: Taxonomy Radial Tree
-   D3 cluster layout; nodes coloured by viral family.
-   Click leaf → jump to Section 3 viewer.
-   Zoom + pan via d3.zoom.
+   section_taxonomy.js — Section 4: Taxonomy (Linear Tree)
+   Horizontal phylogeny: root at left, leaves at right.
+   In-card layout, full width, family filter, PNG/SVG export.
    ============================================================ */
 
-'use strict';
+const _TAX = {
+  tree:    null,
+  family:  '',   // current family filter
+  resizeT: null,
+};
+
+const _TAX_PALETTE = [
+  'var(--vq-tax-flaviviridae)','var(--vq-tax-parvoviridae)',
+  'var(--vq-tax-phenuiviridae)','var(--vq-tax-nodaviridae)',
+  'var(--vq-tax-rhabdoviridae)','var(--vq-tax-tombusviridae)',
+  'var(--vq-tax-other)',
+  '#7c3aed','#0891b2','#b45309','#be185d',
+];
+
+let _familyColorMap = {};
+let _familyIndex    = 0;
 
 function vqInitTaxonomy(tree, sequences) {
   const el = document.getElementById('section-taxonomy');
@@ -16,47 +35,105 @@ function vqInitTaxonomy(tree, sequences) {
     return;
   }
 
-  // Build tree from sequences if no pre-built tree supplied
-  const root = tree || _buildTree(sequences);
+  _TAX.tree = tree || _buildTree(sequences);
+  const families = _allFamilies(_TAX.tree);
 
   el.innerHTML = `
     <div class="vq-section-header">
       <div>
         <div class="vq-section-title">Taxonomy</div>
-        <div class="vq-section-sub">Radial cluster tree · click leaf to inspect sequence</div>
+        <div class="vq-section-sub">
+          Linear phylogeny · click a leaf to inspect the sequence
+        </div>
       </div>
-      <div style="display:flex;gap:var(--vq-space-2);align-items:center">
-        <button class="vq-btn vq-btn--sm vq-btn--ghost" id="tax-reset-zoom">Reset zoom</button>
-        <button class="vq-btn vq-btn--sm vq-btn--ghost"
-          onclick="vqExportSVG(document.querySelector('#section-taxonomy svg'),'taxonomy.svg')">SVG</button>
-        <button class="vq-btn vq-btn--sm vq-btn--ghost"
-          onclick="vqExportPNG(document.querySelector('#section-taxonomy svg'),'taxonomy.png')">PNG</button>
+      <div class="vq-section-actions">
+        <select class="vq-select vq-select--inline" id="tax-family-filter"
+                aria-label="Filter by family" style="min-width:160px">
+          <option value="">All families</option>
+          ${families.map(f => `<option value="${VQ.esc(f)}">${VQ.esc(f)}</option>`).join('')}
+        </select>
+        <div class="vq-menu" id="tax-export-menu">
+          <button class="vq-btn vq-btn--sm vq-btn--ghost" data-menu-toggle type="button">
+            Export
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+          <div class="vq-menu__panel" role="menu">
+            <button class="vq-menu__item" data-fmt="png" role="menuitem" type="button">PNG image</button>
+            <button class="vq-menu__item" data-fmt="svg" role="menuitem" type="button">SVG vector</button>
+          </div>
+        </div>
       </div>
     </div>
-    <div id="tax-legend" class="vq-legend" style="margin-bottom:var(--vq-space-3)"></div>
-    <div id="tax-wrap" class="vq-genome-wrap" style="overflow:hidden;cursor:grab"></div>
+
+    <div class="vq-card">
+      <div class="vq-card__header">
+        <div class="vq-card__title">Phylogeny</div>
+        <div id="tax-legend" class="vq-legend" style="margin:0;flex:1;justify-content:flex-end"></div>
+      </div>
+      <div class="vq-card__body" style="padding:0;min-height:520px;display:flex;">
+        <div id="tax-wrap" style="width:100%;overflow:auto;display:flex;align-items:stretch"></div>
+      </div>
+    </div>
   `;
 
-  _renderRadialTree(root);
-
-  document.getElementById('tax-reset-zoom')?.addEventListener('click', () => {
-    _resetZoom();
+  // Filter
+  document.getElementById('tax-family-filter')?.addEventListener('change', e => {
+    _TAX.family = e.target.value;
+    _draw();
   });
+
+  // Export menu
+  const exportMenu = document.getElementById('tax-export-menu');
+  const exportTog  = exportMenu?.querySelector('[data-menu-toggle]');
+  exportTog?.addEventListener('click', e => {
+    e.stopPropagation();
+    document.querySelectorAll('.vq-menu.open').forEach(m => {
+      if (m !== exportMenu) m.classList.remove('open');
+    });
+    exportMenu.classList.toggle('open');
+  });
+  exportMenu?.querySelectorAll('[data-fmt]').forEach(item => {
+    item.addEventListener('click', e => {
+      e.stopPropagation();
+      exportMenu.classList.remove('open');
+      const svg = document.querySelector('#tax-wrap svg');
+      if (!svg) return;
+      if (item.dataset.fmt === 'png') VQ.exportPNG(svg, 'taxonomy.png');
+      else                            VQ.exportSVG(svg, 'taxonomy.svg');
+    });
+  });
+
+  // Render + resize handling. ResizeObserver covers the 0→real width
+  // transition that happens when the section is first revealed.
+  let lastW = 0;
+  const wrap = document.getElementById('tax-wrap');
+  const ro = new ResizeObserver(() => {
+    const w = wrap.clientWidth;
+    if (!w || w === lastW) return;
+    lastW = w;
+    clearTimeout(_TAX.resizeT);
+    _TAX.resizeT = setTimeout(_draw, 60);
+  });
+  if (wrap) ro.observe(wrap);
+  _draw();
 }
 
-// ── Build tree from sequences[].taxonomy ────────────────────────────────────
+// ── Build the tree from sequences ──────────────────────────────────────────
 
 function _buildTree(sequences) {
   const root = { name: 'Viruses', children: [] };
-  const idx  = {};   // path key → node
+  const idx  = {};
 
   sequences.forEach(seq => {
     const tax = seq.taxonomy || {};
     const parts = [
-      tax.phylum  || 'Unclassified',
-      tax.order   || 'Unclassified',
-      tax.family  || 'Unclassified',
-      tax.genus   || 'Unclassified',
+      tax.phylum || 'Unclassified',
+      tax.order  || 'Unclassified',
+      tax.family || 'Unclassified',
+      tax.genus  || 'Unclassified',
     ];
 
     let parent = root;
@@ -71,32 +148,45 @@ function _buildTree(sequences) {
       parent = idx[key];
     });
 
-    // Leaf = sequence
     parent.children.push({
-      name:     seq.seq_id,
-      seq_id:   seq.seq_id,
-      family:   tax.family || 'Unclassified',
-      is_leaf:  true,
+      name:    seq.id,
+      seq_id:  seq.id,
+      family:  tax.family || 'Unclassified',
+      is_leaf: true,
     });
   });
 
   return root;
 }
 
-// ── Colour by family ─────────────────────────────────────────────────────────
+function _allFamilies(tree) {
+  const set = new Set();
+  function walk(node) {
+    if (node.is_leaf && node.family) set.add(node.family);
+    (node.children || []).forEach(walk);
+  }
+  walk(tree);
+  return [...set].sort();
+}
 
-const _TAX_PALETTE = [
-  'var(--vq-tax-flaviviridae)',
-  'var(--vq-tax-parvoviridae)',
-  'var(--vq-tax-phenuiviridae)',
-  'var(--vq-tax-nodaviridae)',
-  'var(--vq-tax-rhabdoviridae)',
-  'var(--vq-tax-other)',
-  '#7c3aed','#0891b2','#b45309','#be185d',
-];
+// ── Filter ─────────────────────────────────────────────────────────────────
 
-let _familyColorMap = {};
-let _familyIndex    = 0;
+function _filteredTree() {
+  if (!_TAX.family) return _TAX.tree;
+  // Deep-clone with pruning: keep only branches that lead to leaves with this family.
+  function prune(node) {
+    if (node.is_leaf) {
+      return node.family === _TAX.family ? { ...node } : null;
+    }
+    const kids = (node.children || []).map(prune).filter(Boolean);
+    if (!kids.length && node !== _TAX.tree) return null;
+    return { ...node, children: kids };
+  }
+  const pruned = prune(_TAX.tree);
+  return pruned || { name: 'Viruses', children: [] };
+}
+
+// ── Family colour ──────────────────────────────────────────────────────────
 
 function _familyColor(family) {
   if (!family || family === 'Unclassified') return 'var(--vq-text-3)';
@@ -110,154 +200,207 @@ function _familyColor(family) {
   return _familyColorMap[family];
 }
 
-// ── Radial tree rendering ────────────────────────────────────────────────────
+// ── Draw linear tree ───────────────────────────────────────────────────────
 
-let _taxZoom   = null;
-let _taxSvgSel = null;
+function _draw() {
+  try {
+    _drawInner();
+  } catch (e) {
+    console.error('taxonomy draw failed:', e.message, e.stack);
+  }
+}
 
-function _renderRadialTree(treeData) {
+function _drawInner() {
   const wrap = document.getElementById('tax-wrap');
   if (!wrap) return;
+  wrap.innerHTML = '';
 
-  const W   = Math.max(wrap.clientWidth || 900, 700);
-  const H   = W;
-  const R   = W / 2 - 80;
+  const data = _filteredTree();
+  const leaves = _countLeaves(data);
+  if (!leaves) {
+    wrap.innerHTML = '<div class="vq-empty">No leaves match the filter.</div>';
+    _renderLegend([]);
+    return;
+  }
 
-  const hierarchy = d3.hierarchy(treeData)
+  // Geometry — fill BOTH the available width and the card body height
+  const W = Math.max(wrap.clientWidth || 0, 720);
+
+  const PAD_T = 28;
+  const PAD_B = 28;
+  const PAD_L = 90;
+  const RIGHT_LABEL_W = 260;
+  const MIN_ROW = 26;
+  const MAX_ROW = 36;
+
+  // Pick a row height that uses the available vertical space, capped.
+  const availH = Math.max(wrap.clientHeight || 0, 520) - PAD_T - PAD_B;
+  const rowH   = Math.max(MIN_ROW, Math.min(MAX_ROW, Math.floor(availH / leaves)));
+  const treeH  = leaves * rowH;
+  const H      = PAD_T + PAD_B + treeH;
+  const drawW  = W - PAD_L - RIGHT_LABEL_W;
+
+  const hierarchy = d3.hierarchy(data)
     .sort((a, b) => d3.ascending(a.data.name, b.data.name));
-
-  const cluster = d3.cluster().size([2 * Math.PI, R]);
-  cluster(hierarchy);
-
-  // Collect families for legend
-  const families = [...new Set(
-    hierarchy.leaves().map(l => l.data.family).filter(Boolean)
-  )];
-
-  _renderLegend(families);
+  d3.cluster().size([treeH, drawW])(hierarchy);
 
   const svg = d3.create('svg')
-    .attr('class', 'vq-genome-svg')
+    .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
     .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('width', W)
-    .attr('height', H);
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
 
-  const g = svg.append('g')
-    .attr('transform', `translate(${W / 2},${H / 2})`);
+  const g = svg.append('g').attr('transform', `translate(${PAD_L}, ${PAD_T})`);
 
-  // ── Links ─────────────────────────────────────────────────────────────────
+  // Step links (Cartesian elbow connectors)
   g.append('g')
     .attr('fill', 'none')
-    .attr('stroke', 'var(--vq-border)')
-    .attr('stroke-width', 1)
+    .attr('stroke', 'var(--vq-border-dark)')
+    .attr('stroke-width', 1.2)
     .selectAll('path')
     .data(hierarchy.links())
     .join('path')
-    .attr('d', d3.linkRadial()
-      .angle(d  => d.x)
-      .radius(d => d.y));
+    .attr('d', d => {
+      const sx = d.source.y, sy = d.source.x;
+      const tx = d.target.y, ty = d.target.x;
+      return `M${sx},${sy}V${ty}H${tx}`;
+    });
 
-  // ── Nodes ─────────────────────────────────────────────────────────────────
+  // Render nodes — internal nodes get a pill chip with the taxon name inside,
+  // leaves get a coloured circle + monospace sequence id label.
   const node = g.append('g')
     .selectAll('g')
     .data(hierarchy.descendants())
     .join('g')
-    .attr('transform', d => `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y},0)`);
+    .attr('transform', d => `translate(${d.y},${d.x})`);
 
-  node.append('circle')
-    .attr('r', d => d.data.is_leaf ? 4 : 3)
-    .attr('fill', d => {
-      if (d.data.is_leaf) return _familyColor(d.data.family);
-      if (!d.children) return 'var(--vq-text-3)';
-      return d.depth === 0 ? 'var(--vq-primary)' : 'var(--vq-accent)';
-    })
-    .attr('stroke', '#fff')
-    .attr('stroke-width', 1)
-    .attr('cursor', d => d.data.is_leaf ? 'pointer' : 'default')
-    .on('click', (evt, d) => {
-      if (d.data.is_leaf && d.data.seq_id) {
-        _jumpToViewer(d.data.seq_id);
-      }
-    })
-    .on('mousemove', (evt, d) => {
-      const label = d.data.is_leaf
-        ? `<div class="vq-tooltip__title">${d.data.seq_id}</div>
-           <div class="vq-tooltip__row">
-             <span class="vq-tooltip__key">Family</span><span>${d.data.family || '—'}</span>
-           </div>`
-        : `<div class="vq-tooltip__title">${d.data.name}</div>`;
-      vqTooltipShow(label, evt);
-    })
-    .on('mouseleave', vqTooltipHide);
+  // ── Leaves ──────────────────────────────────────────────────────────────
+  const leafSel = node.filter(d => d.data.is_leaf);
 
-  // ── Labels ────────────────────────────────────────────────────────────────
-  node.append('text')
-    .attr('dy', '0.31em')
-    .attr('x', d => d.x < Math.PI === !d.children ? 6 : -6)
-    .attr('text-anchor', d => d.x < Math.PI === !d.children ? 'start' : 'end')
-    .attr('transform', d => d.x >= Math.PI ? 'rotate(180)' : null)
-    .attr('font-size', d => d.data.is_leaf ? 9 : 10)
-    .attr('font-weight', d => d.data.is_leaf ? '400' : '600')
-    .attr('fill', d => d.data.is_leaf
-      ? _familyColor(d.data.family)
-      : d.depth === 0 ? 'var(--vq-primary)' : 'var(--vq-text-2)')
-    .attr('font-family', d => d.data.is_leaf ? 'var(--vq-font-mono)' : 'var(--vq-font)')
-    .attr('cursor', d => d.data.is_leaf ? 'pointer' : 'default')
+  leafSel.append('circle')
+    .attr('r', 4.5)
+    .attr('fill', d => _familyColor(d.data.family))
+    .attr('stroke', '#fff').attr('stroke-width', 1.5)
+    .attr('cursor', 'pointer')
+    .on('click', (evt, d) => { if (d.data.seq_id) VQ.jumpToViewer(d.data.seq_id); })
+    .on('mousemove', (evt, d) => VQ.tooltipShow(
+      `<div class="vq-tooltip__title">${VQ.esc(d.data.seq_id)}</div>
+       <div class="vq-tooltip__row">
+         <span class="vq-tooltip__key">Family</span><span>${VQ.esc(d.data.family || '—')}</span>
+       </div>`, evt))
+    .on('mouseleave', VQ.tooltipHide);
+
+  leafSel.append('text')
+    .attr('x', 9).attr('y', 4)
+    .attr('font-size', 12)
+    .attr('font-family', 'var(--vq-font-mono)')
+    .attr('fill', d => _familyColor(d.data.family))
+    .attr('cursor', 'pointer')
     .text(d => d.data.name)
-    .on('click', (evt, d) => {
-      if (d.data.is_leaf && d.data.seq_id) _jumpToViewer(d.data.seq_id);
-    });
+    .on('click', (evt, d) => { if (d.data.seq_id) VQ.jumpToViewer(d.data.seq_id); });
 
-  // ── Zoom + pan ────────────────────────────────────────────────────────────
-  _taxZoom = d3.zoom()
-    .scaleExtent([0.3, 5])
-    .on('zoom', evt => g.attr('transform', evt.transform.translate(W / 2, H / 2) + ''));
+  // ── Internal nodes — pill chip centered on the horizontal incoming branch.
+  const internalSel = node.filter(d => !d.data.is_leaf && d.depth > 0);
 
-  // Simpler: let zoom manage full transform
-  _taxZoom = d3.zoom()
-    .scaleExtent([0.3, 5])
-    .on('zoom', evt => {
-      g.attr('transform',
-        `translate(${evt.transform.x + W / 2},${evt.transform.y + H / 2}) scale(${evt.transform.k})`
-      );
-    });
+  internalSel.each(function (d) {
+    const sel       = d3.select(this);
+    const text      = d.data.name;
+    // Measure roughly: 6.4px per char @ 12px font, plus padding.
+    const w         = Math.max(24, text.length * 6.6 + 14);
+    const h         = 18;
+    // Center horizontally on the half-branch leading INTO this node.
+    const parentY   = d.parent ? d.parent.y : 0;
+    const segLen    = d.y - parentY;
+    const cx        = -segLen / 2;   // relative to node (which is at d.y)
+    const cy        = -h / 2 - 1;    // sit ABOVE the horizontal link
 
-  _taxSvgSel = svg;
-  svg.call(_taxZoom);
+    sel.append('rect')
+      .attr('x', cx - w / 2).attr('y', cy)
+      .attr('width', w).attr('height', h)
+      .attr('rx', h / 2).attr('ry', h / 2)
+      .attr('fill', 'var(--vq-surface)')
+      .attr('stroke', 'var(--vq-border-dark)')
+      .attr('stroke-width', 1);
+    sel.append('text')
+      .attr('x', cx).attr('y', cy + h / 2 + 4)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', 11)
+      .attr('font-weight', 500)
+      .attr('fill', 'var(--vq-text-2)')
+      .attr('font-family', 'var(--vq-font)')
+      .text(text);
 
-  wrap.innerHTML = '';
+    // Small node dot at the actual branch junction
+    sel.append('circle')
+      .attr('r', 3.5)
+      .attr('fill', d.depth === 1 ? 'var(--vq-accent)' : 'var(--vq-accent-dark)')
+      .attr('stroke', '#fff').attr('stroke-width', 1.5);
+  });
+
+  internalSel
+    .on('mousemove', (evt, d) => VQ.tooltipShow(
+      `<div class="vq-tooltip__title">${VQ.esc(d.data.name)}</div>
+       <div class="vq-tooltip__row">
+         <span class="vq-tooltip__key">Depth</span><span>${d.depth}</span>
+         <span class="vq-tooltip__key">Leaves</span><span>${d.leaves().length}</span>
+       </div>`, evt))
+    .on('mouseleave', VQ.tooltipHide);
+
+  // Root label (depth 0)
+  node.filter(d => d.depth === 0)
+    .append('circle')
+      .attr('r', 5)
+      .attr('fill', 'var(--vq-primary)')
+      .attr('stroke', '#fff').attr('stroke-width', 2);
+  node.filter(d => d.depth === 0)
+    .append('text')
+      .attr('x', -10).attr('y', 4)
+      .attr('text-anchor', 'end')
+      .attr('font-size', 12)
+      .attr('font-weight', 600)
+      .attr('fill', 'var(--vq-primary)')
+      .text(d => d.data.name);
+
   wrap.appendChild(svg.node());
+
+  // Legend
+  const families = [...new Set(
+    hierarchy.leaves().map(l => l.data.family).filter(Boolean)
+  )].sort();
+  _renderLegend(families);
 }
 
-function _resetZoom() {
-  if (_taxSvgSel && _taxZoom) {
-    _taxSvgSel.transition().duration(400).call(_taxZoom.transform, d3.zoomIdentity);
-  }
+function _countLeaves(node) {
+  if (node.is_leaf) return 1;
+  return (node.children || []).reduce((a, c) => a + _countLeaves(c), 0);
 }
-
-// ── Legend ───────────────────────────────────────────────────────────────────
 
 function _renderLegend(families) {
   const el = document.getElementById('tax-legend');
-  if (!el || !families.length) return;
+  if (!el) return;
+  if (!families.length) { el.innerHTML = ''; return; }
   el.innerHTML = families.map(f => `
-    <div class="vq-legend__item">
-      <div class="vq-legend__swatch"
-           style="background:${_familyColor(f)};width:12px;height:12px;border-radius:50%"></div>
-      <span>${f}</span>
-    </div>`).join('');
+    <button class="vq-legend__item" type="button"
+            data-fam="${VQ.esc(f)}"
+            style="border:none;background:transparent;padding:0;cursor:pointer;font:inherit;color:inherit;">
+      <span class="vq-legend__swatch"
+            style="background:${_familyColor(f)};border-radius:50%"></span>
+      <span>${VQ.esc(f)}</span>
+    </button>`).join('');
+
+  // Clicking a legend swatch toggles the filter
+  el.querySelectorAll('[data-fam]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fam = btn.dataset.fam;
+      const sel = document.getElementById('tax-family-filter');
+      if (!sel) return;
+      sel.value = _TAX.family === fam ? '' : fam;
+      _TAX.family = sel.value;
+      _draw();
+    });
+  });
 }
 
-// ── Cross-section navigation ──────────────────────────────────────────────────
 
-function _jumpToViewer(seqId) {
-  document.querySelector('[data-section="viewer"]')?.click();
-  setTimeout(() => {
-    const target = document.getElementById('seq-card-' + seqId);
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      target.classList.add('vq-seq-card--highlight');
-      setTimeout(() => target.classList.remove('vq-seq-card--highlight'), 2000);
-    }
-  }, 150);
-}
+window.vqInitTaxonomy = vqInitTaxonomy;
+})();

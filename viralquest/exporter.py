@@ -121,10 +121,10 @@ class ReportExporter:
             nr_was_run = any(s.blastx_nr_hits for s in nuc_seqs)
             if nr_was_run:
                 confirmed = [s for s in nuc_seqs if s.is_viral and s.blastx_nr_hits]
-                filter_label = "REFSEQ + NR BLASTx confirmation"
+                filter_label = "NR BLASTx viral confirmation"
             else:
                 confirmed = [s for s in nuc_seqs if s.is_viral]
-                filter_label = "REFSEQ / HMM viral confirmation (NR not run)"
+                filter_label = "RefSeq / HMM viral confirmation (NR not run)"
             dropped = len(nuc_seqs) - len(confirmed)
             if dropped:
                 logger.info(

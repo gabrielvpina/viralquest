@@ -1,10 +1,13 @@
+/* This file's private helpers live in an IIFE so they don't collide across sections. */
+// __VQ_WRAPPED__
+(function () {
+'use strict';
+
 /* ============================================================
-   section_clusters.js — Section 2: Cluster Viruses
+   section_clusters.js — Section 2: Cluster Analysis
    Linear alignment view: members drawn relative to representative.
    Colour encodes % identity. Click member → jump to viewer.
    ============================================================ */
-
-'use strict';
 
 function vqInitClusters(clusters) {
   const el = document.getElementById('section-clusters');
@@ -14,15 +17,18 @@ function vqInitClusters(clusters) {
     return;
   }
 
+  const esc = VQ.esc;
+
   el.innerHTML = `
     <div class="vq-section-header">
       <div>
-        <div class="vq-section-title">Cluster Viruses</div>
+        <div class="vq-section-title">Cluster Analysis</div>
         <div class="vq-section-sub">
-          ${clusters.length} cluster${clusters.length > 1 ? 's' : ''} · members shown as alignments to representative sequence
+          ${clusters.length} cluster${clusters.length > 1 ? 's' : ''} ·
+          members shown as alignments to representative sequence
         </div>
       </div>
-      <div style="display:flex;gap:var(--vq-space-2)">
+      <div class="vq-section-actions">
         ${_identityLegend()}
       </div>
     </div>
@@ -33,10 +39,12 @@ function vqInitClusters(clusters) {
   clusters.forEach(c => list.appendChild(_renderCluster(c)));
 }
 
-// ── Render one cluster card ──────────────────────────────────────────────────
+// ── Render one cluster card ────────────────────────────────────────────────
 
 function _renderCluster(cluster) {
-  const card = document.createElement('div');
+  const esc   = VQ.esc;
+  const safe  = VQ.safeId(cluster.cluster_id);
+  const card  = document.createElement('div');
   card.className = 'vq-card';
   card.style.marginBottom = 'var(--vq-space-4)';
 
@@ -46,69 +54,131 @@ function _renderCluster(cluster) {
   card.innerHTML = `
     <div class="vq-card__header">
       <div class="vq-card__title">
-        <span class="vq-badge vq-badge--cluster">${cluster.cluster_id}</span>
-        ${cluster.species}
+        <span class="vq-badge vq-badge--cluster">${esc(cluster.cluster_id)}</span>
+        ${esc(cluster.species)}
       </div>
-      <div style="display:flex;gap:var(--vq-space-2);align-items:center">
+      <div class="vq-section-actions">
         <span style="font-size:var(--vq-text-xs);color:var(--vq-text-3)">
           ${cluster.size} member${cluster.size > 1 ? 's' : ''}
         </span>
-        <button class="vq-btn vq-btn--sm vq-btn--ghost"
-          onclick="vqExportPNG(this.closest('.vq-card').querySelector('svg'),'cluster_${cluster.cluster_id}.png')">
-          PNG
-        </button>
-        <button class="vq-btn vq-btn--sm vq-btn--ghost"
-          onclick="vqExportSVG(this.closest('.vq-card').querySelector('svg'),'cluster_${cluster.cluster_id}.svg')">
-          SVG
-        </button>
+        ${_exportMenu('clu-menu-' + safe)}
       </div>
     </div>
     <div class="vq-card__body">
-      <div class="vq-genome-wrap" id="clu-wrap-${cluster.cluster_id}"></div>
+      <div class="vq-genome-wrap" id="clu-wrap-${safe}"></div>
     </div>`;
 
-  // Render SVG after insert
-  requestAnimationFrame(() => {
-    const wrap = document.getElementById('clu-wrap-' + cluster.cluster_id);
-    if (wrap) wrap.appendChild(_clusterSVG(cluster, repLen));
+  // Render SVG once the wrap actually has a real width (it's 0 while the
+  // section is still display:none on init), and re-render on any width change.
+  let lastW = 0;
+  let rzTimer = null;
+  const wrapEl = card.querySelector('#clu-wrap-' + safe);
+  _wireExportMenu(card, 'clu-menu-' + safe, () => card.querySelector('svg'),
+                  `cluster_${cluster.cluster_id}`);
+
+  const render = () => {
+    const w = wrapEl.clientWidth;
+    if (!w || w === lastW) return;
+    lastW = w;
+    wrapEl.innerHTML = '';
+    wrapEl.appendChild(_clusterSVG(cluster, repLen, w));
+  };
+
+  const ro = new ResizeObserver(() => {
+    clearTimeout(rzTimer);
+    rzTimer = setTimeout(render, 60);
   });
+  ro.observe(wrapEl);
+  // Best-effort first paint (no-op when hidden; ResizeObserver covers reveal)
+  requestAnimationFrame(render);
 
   return card;
 }
 
-// ── Build the cluster SVG ────────────────────────────────────────────────────
+// ── Reusable export dropdown ────────────────────────────────────────────────
 
-function _clusterSVG(cluster, repLen) {
-  const PAD_L  = 160;   // left label area
-  const PAD_R  = 20;
-  const ROW_H  = 28;
-  const GAP    = 6;
-  const TRACK  = 14;    // bar height
+function _exportMenu(id) {
+  return `
+    <div class="vq-menu" id="${id}">
+      <button class="vq-btn vq-btn--sm vq-btn--ghost" data-menu-toggle type="button">
+        Export
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.5">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      <div class="vq-menu__panel" role="menu">
+        <button class="vq-menu__item" data-fmt="png" role="menuitem" type="button">PNG image</button>
+        <button class="vq-menu__item" data-fmt="svg" role="menuitem" type="button">SVG vector</button>
+        <button class="vq-menu__item" data-fmt="pdf" role="menuitem" type="button">PDF (print)</button>
+      </div>
+    </div>`;
+}
+
+function _wireExportMenu(root, menuId, getSvg, baseName) {
+  const menu   = root.querySelector('#' + menuId);
+  if (!menu) return;
+  const toggle = menu.querySelector('[data-menu-toggle]');
+  toggle?.addEventListener('click', e => {
+    e.stopPropagation();
+    // Close any other open menus
+    document.querySelectorAll('.vq-menu.open').forEach(m => {
+      if (m !== menu) m.classList.remove('open');
+    });
+    menu.classList.toggle('open');
+  });
+  menu.querySelectorAll('[data-fmt]').forEach(item => {
+    item.addEventListener('click', e => {
+      e.stopPropagation();
+      menu.classList.remove('open');
+      const svg = getSvg();
+      const fmt = item.dataset.fmt;
+      if (!svg) return;
+      if (fmt === 'png') VQ.exportPNG(svg, baseName + '.png');
+      if (fmt === 'svg') VQ.exportSVG(svg, baseName + '.svg');
+      if (fmt === 'pdf') VQ.exportPDF(svg, baseName);
+    });
+  });
+}
+
+// Global click closes any open menu
+document.addEventListener('click', () => {
+  document.querySelectorAll('.vq-menu.open').forEach(m => m.classList.remove('open'));
+});
+
+// ── Build the cluster SVG ───────────────────────────────────────────────────
+
+function _clusterSVG(cluster, repLen, containerWidth) {
+  const PAD_L = 170;
+  const PAD_R = 20;
+  const ROW_H = 28;
+  const GAP   = 6;
+  const TRACK = 14;
 
   const totalH = cluster.members.length * (ROW_H + GAP) + 40;
-  const W      = 900;
+  const W      = Math.max(containerWidth || 0, 720);
   const drawW  = W - PAD_L - PAD_R;
 
   const svg = d3.create('svg')
-    .attr('class', 'vq-genome-svg')
+    .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
     .attr('viewBox', `0 0 ${W} ${totalH}`)
-    .attr('width',   W)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width',  '100%')
+    .style('height', 'auto')
     .attr('height',  totalH);
 
   const xScale = d3.scaleLinear([0, repLen], [0, drawW]);
 
-  // --- axis ---
+  // --- axis (gridlines extend DOWN into the chart) ---
   const axisG = svg.append('g')
     .attr('transform', `translate(${PAD_L}, 20)`)
-    .call(d3.axisTop(xScale).ticks(8).tickSize(-totalH + 36));
+    .call(d3.axisTop(xScale).ticks(8).tickSize(-(totalH - 30)));
 
   axisG.select('.domain').remove();
   axisG.selectAll('.tick line')
-    .attr('stroke', '#dde3ec')
-    .attr('stroke-dasharray', '3,3');
+    .attr('stroke', '#dde3ec').attr('stroke-dasharray', '3,3');
   axisG.selectAll('.tick text')
-    .style('font-size', '10px')
-    .style('fill', '#94a3b8');
+    .style('font-size', '10px').style('fill', '#94a3b8');
 
   // --- members ---
   cluster.members.forEach((m, i) => {
@@ -116,55 +186,67 @@ function _clusterSVG(cluster, repLen) {
     const col = _identityColor(m.identity);
     const g   = svg.append('g').attr('transform', `translate(${PAD_L}, ${y})`);
 
-    // label
-    svg.append('text')
-      .attr('x', PAD_L - 8)
-      .attr('y', y + TRACK / 2 + 4)
+    // Label — appended to the row group, not the root svg, for consistency.
+    const labelText = m.seq_id;
+    const truncated = labelText.length > 18 ? labelText.slice(0, 17) + '…' : labelText;
+    const label = g.append('text')
+      .attr('x', -8)
+      .attr('y', TRACK / 2 + 4)
       .attr('text-anchor', 'end')
       .attr('font-size', 11)
       .attr('fill', m.is_representative ? 'var(--vq-primary)' : 'var(--vq-text-2)')
       .attr('font-weight', m.is_representative ? '600' : '400')
       .attr('font-family', 'var(--vq-font-mono)')
-      .text(m.seq_id);
+      .text(truncated);
 
-    // backbone (full sequence length context)
+    if (truncated !== labelText) {
+      label.style('cursor', 'help')
+        .on('mousemove', evt => VQ.tooltipShow(
+          `<div class="vq-tooltip__title">${VQ.esc(labelText)}</div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+    }
+
+    // Backbone
     g.append('rect')
-      .attr('x', 0)
-      .attr('width', drawW)
-      .attr('y', TRACK / 2 - 1)
-      .attr('height', 2)
+      .attr('x', 0).attr('y', TRACK / 2 - 1)
+      .attr('width', drawW).attr('height', 2)
       .attr('rx', 1)
       .attr('fill', '#dde3ec');
 
-    // alignment bar
+    // Alignment bar
     const x1 = xScale(m.aln_start - 1);
     const x2 = xScale(m.aln_end);
-    const bw  = Math.max(x2 - x1, 2);
+    const bw = Math.max(x2 - x1, 2);
 
-    const bar = g.append('rect')
-      .attr('x', x1)
-      .attr('width', bw)
-      .attr('y', 0)
-      .attr('height', TRACK)
+    g.append('rect')
+      .attr('x', x1).attr('width', bw)
+      .attr('y', 0).attr('height', TRACK)
       .attr('rx', 3)
       .attr('fill', col)
       .attr('opacity', m.is_representative ? 1 : 0.85)
       .attr('cursor', 'pointer')
-      .on('mousemove', evt => {
-        vqTooltipShow(`
-          <div class="vq-tooltip__title">${m.seq_id}</div>
-          <div class="vq-tooltip__row">
-            <span class="vq-tooltip__key">Identity</span><span>${m.identity.toFixed(1)}%</span>
-            <span class="vq-tooltip__key">Coverage</span><span>${m.query_coverage.toFixed(1)}%</span>
-            <span class="vq-tooltip__key">Length</span><span>${m.length.toLocaleString()} nt</span>
-            <span class="vq-tooltip__key">Aln range</span><span>${m.aln_start}–${m.aln_end}</span>
-          </div>`, evt);
-      })
-      .on('mouseleave', vqTooltipHide)
-      .on('click', () => _jumpToViewer(m.seq_id));
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${VQ.esc(m.seq_id)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Identity</span><span>${m.identity.toFixed(1)}%</span>
+          <span class="vq-tooltip__key">Coverage</span><span>${m.query_coverage.toFixed(1)}%</span>
+          <span class="vq-tooltip__key">Length</span><span>${m.length.toLocaleString()} nt</span>
+          <span class="vq-tooltip__key">Aln range</span><span>${m.aln_start}–${m.aln_end}</span>
+        </div>`, evt))
+      .on('mouseleave', VQ.tooltipHide)
+      .on('click', () => VQ.jumpToViewer(m.seq_id));
 
-    // identity label inside bar if wide enough
-    if (bw > 50 && !m.is_representative) {
+    // In-bar label
+    if (m.is_representative) {
+      g.append('text')
+        .attr('x', x1 + bw / 2)
+        .attr('y', TRACK / 2 + 4)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 10)
+        .attr('fill', 'rgba(255,255,255,.95)')
+        .attr('pointer-events', 'none')
+        .text('representative · ' + m.length.toLocaleString() + ' nt');
+    } else if (bw > 50) {
       g.append('text')
         .attr('x', x1 + bw / 2)
         .attr('y', TRACK / 2 + 4)
@@ -174,54 +256,33 @@ function _clusterSVG(cluster, repLen) {
         .attr('pointer-events', 'none')
         .text(m.identity.toFixed(0) + '%');
     }
-
-    if (m.is_representative) {
-      g.append('text')
-        .attr('x', x1 + bw / 2)
-        .attr('y', TRACK / 2 + 4)
-        .attr('text-anchor', 'middle')
-        .attr('font-size', 10)
-        .attr('fill', 'rgba(255,255,255,.9)')
-        .attr('pointer-events', 'none')
-        .text('representative · ' + m.length.toLocaleString() + ' nt');
-    }
   });
 
   return svg.node();
 }
 
-// ── Jump to viewer section with sequence highlighted ─────────────────────────
-
-function _jumpToViewer(seqId) {
-  document.querySelector('[data-section="viewer"]')?.click();
-  setTimeout(() => {
-    const target = document.getElementById('seq-card-' + seqId);
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      target.classList.add('vq-seq-card--highlight');
-      setTimeout(() => target.classList.remove('vq-seq-card--highlight'), 2000);
-    }
-  }, 150);
-}
-
-// ── Colour scale: red (low) → yellow → green (high identity) ─────────────────
+// ── Colour scale (RdYlGn) ──────────────────────────────────────────────────
 
 function _identityColor(pct) {
   const t = Math.max(0, Math.min(1, pct / 100));
   return d3.interpolateRdYlGn(t);
 }
 
-// ── Legend ───────────────────────────────────────────────────────────────────
+// ── Continuous gradient legend ─────────────────────────────────────────────
 
 function _identityLegend() {
-  const stops = [0, 25, 50, 75, 100];
-  return `<div class="vq-legend">
-    ${stops.map(v =>
-      `<div class="vq-legend__item">
-         <div class="vq-legend__swatch"
-              style="background:${_identityColor(v)};width:18px;height:12px;border-radius:2px"></div>
-         <span>${v}% identity</span>
-       </div>`
-    ).join('')}
-  </div>`;
+  return `
+    <div class="vq-gradient-legend" title="Alignment identity (%)">
+      <span>% identity</span>
+      <div>
+        <div class="vq-gradient-legend__bar"></div>
+        <div class="vq-gradient-legend__ticks">
+          <span>0</span><span>50</span><span>100</span>
+        </div>
+      </div>
+    </div>`;
 }
+
+
+window.vqInitClusters = vqInitClusters;
+})();

@@ -8,6 +8,7 @@ component files, then writes a single .html file that has no external deps.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import urllib.request
@@ -49,10 +50,82 @@ def write_report(report: dict, output_path: str | Path, *, d3_js: str | None = N
 # ── Report enrichment ─────────────────────────────────────────────────────────
 
 def _enrich_report(report: dict) -> dict:
-    """Add _taxonomy_tree built from sequences[].taxonomy."""
-    seqs = report.get("sequences", [])
+    """Add _taxonomy_tree and pre-aggregated stats to the report."""
+    seqs     = report.get("sequences", [])
+    clusters = report.get("clusters", [])
     report["_taxonomy_tree"] = _build_taxonomy_tree(seqs)
+    report["summary"]        = _build_summary(seqs, clusters)
+    report["blast_stats"]    = _build_blast_stats(seqs)
+    report["hmm_stats"]      = _build_hmm_stats(seqs)
+    report["llm_stats"]      = _build_llm_stats(seqs)
+    report["salmon_stats"]   = _build_salmon_stats(report.get("salmon_quant"))
     return report
+
+
+def _build_summary(seqs: list[dict], clusters: list[dict]) -> dict:
+    return {
+        "total_sequences": len(seqs),
+        "confirmed_viral": sum(1 for s in seqs if s.get("is_viral")),
+        "total_orfs":      sum(len(s.get("orfs") or []) for s in seqs),
+        "total_clusters":  len(clusters),
+        "cap3_used":       False,
+    }
+
+
+def _build_blast_stats(seqs: list[dict]) -> dict:
+    return {
+        "refseq_unique_seqs": sum(1 for s in seqs if s.get("blastx_hits")),
+        "nr_unique_seqs":     sum(1 for s in seqs if s.get("blastx_nr_hits")),
+        "blastn_unique_seqs": sum(1 for s in seqs if s.get("blastn_hits")),
+    }
+
+
+def _build_hmm_stats(seqs: list[dict]) -> dict:
+    counts: dict[str, int] = {"RVDB": 0, "Vfam": 0, "EggNOG": 0, "Pfam": 0}
+    for s in seqs:
+        for orf in (s.get("orfs") or []):
+            for dom in (orf.get("domains") or []):
+                db = dom.get("database", "")
+                if db in counts:
+                    counts[db] += 1
+    return {
+        "rvdb_hits":   counts["RVDB"],
+        "vfam_hits":   counts["Vfam"],
+        "eggnog_hits": counts["EggNOG"],
+        "pfam_hits":   counts["Pfam"],
+    }
+
+
+def _build_llm_stats(seqs: list[dict]) -> dict:
+    scored = [s for s in seqs if s.get("llm_output")]
+    if not scored:
+        return {"present": False}
+    scores = [
+        s["llm_output"]["vq_score"]
+        for s in scored
+        if s["llm_output"].get("vq_score") is not None
+    ]
+    first = scored[0]["llm_output"]
+    return {
+        "present":       True,
+        "model":         first.get("model"),
+        "mode":          first.get("mode"),
+        "scored":        len(scored),
+        "viral_known":   sum(1 for s in scored if s["llm_output"].get("classification") == "viral-known"),
+        "viral_unknown": sum(1 for s in scored if s["llm_output"].get("classification") == "viral-unknown"),
+        "avg_score":     round(sum(scores) / len(scores), 1) if scores else None,
+    }
+
+
+def _build_salmon_stats(salmon_quant: dict | None) -> dict:
+    if not salmon_quant:
+        return {"present": False}
+    return {
+        "present":        True,
+        "mapping_rate":   salmon_quant.get("mapping_rate"),
+        "total_reads":    salmon_quant.get("total_reads"),
+        "host_viral_hits": len(salmon_quant.get("host_viral_hits") or []),
+    }
 
 
 def _build_taxonomy_tree(sequences: list[dict]) -> dict:
@@ -94,13 +167,26 @@ def _build_taxonomy_tree(sequences: list[dict]) -> dict:
             parent = idx[key]
 
         parent["children"].append({
-            "name":    seq.get("seq_id", ""),
-            "seq_id":  seq.get("seq_id", ""),
+            "name":    seq.get("id", ""),
+            "seq_id":  seq.get("id", ""),
             "family":  tax.get("family") or "Unclassified",
             "is_leaf": True,
         })
 
     return root
+
+
+# ── Asset helpers ─────────────────────────────────────────────────────────────
+
+def _asset_data_uri(filename: str) -> str:
+    """Return a base64 data URI for an asset in components/assets/."""
+    path = _COMPONENTS / "assets" / filename
+    if not path.exists():
+        return ""
+    data = base64.b64encode(path.read_bytes()).decode()
+    ext  = path.suffix.lower().lstrip(".")
+    mime = {"png": "image/png", "svg": "image/svg+xml", "ico": "image/x-icon"}.get(ext, "image/png")
+    return f"data:{mime};base64,{data}"
 
 
 # ── Template rendering ────────────────────────────────────────────────────────
@@ -116,6 +202,8 @@ def _render_template(report: dict, d3_js: str) -> str:
 
     replacements = {
         "{{SAMPLE_NAME}}":  sample_name,
+        "{{VQ_FAVICON}}":   _asset_data_uri("favicon.png"),
+        "{{VQ_LOGO}}":      _asset_data_uri("logo-text.png"),
         "{{VQ_STYLES}}":    (_COMPONENTS / "base.css").read_text(encoding="utf-8"),
         "{{VQ_DATA}}":      json.dumps(report, ensure_ascii=False),
         "{{VQ_D3}}":        d3_js,
