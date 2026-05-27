@@ -3,7 +3,7 @@ import re
 import subprocess
 import tempfile
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Generator
 from enum import Enum
 from pathlib import Path
 
@@ -55,7 +55,7 @@ class DiamondRunner:
         e_value: float = 1e-5,
         max_target_seqs: int = 5,
         outdir: str | None = None,
-        batch_size: int = 500,
+        batch_size: int = 5000,
     ):
         self.db_path        = db_path
         self.diamond_bin    = diamond_bin
@@ -104,39 +104,45 @@ class DiamondRunner:
         fasta_path.unlink(missing_ok=True)
         return out_path
 
-    def run_all(
+    def run_batched(
         self,
         nuc_seqs: list[NucSequence],
         phase: DiamondPhase,
-        max_workers: int = 1,
-    ) -> list[Path]:
+    ) -> Generator[tuple[int, int, Path], None, None]:
+        """
+        Sequential batch runner. Yields (batch_num_1based, total_batches, tsv_path)
+        after each batch completes so callers can show progress.
+        """
         if not nuc_seqs:
             logger.warning(f"diamond [{phase.value}]: no sequences.")
-            return []
-
+            return
         tag     = phase.value
         batches = self._chunk(nuc_seqs, self.batch_size)
+        n       = len(batches)
         logger.info(
-            f"diamond [{tag}]: {len(nuc_seqs)} seqs → "
-            f"{len(batches)} batch(es), {self.threads} threads"
+            f"diamond [{tag}]: {len(nuc_seqs)} seqs → {n} batch(es), {self.threads} threads"
         )
+        for i, batch in enumerate(batches):
+            path = self._run_batch(batch, i, tag)
+            logger.success(f"diamond [{tag}] batch {i + 1}/{n} done")
+            yield i + 1, n, path
 
-        tsv_paths: list[Path | None] = [None] * len(batches)
-
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(self._run_batch, batch, i, tag): i
-                for i, batch in enumerate(batches)
-            }
-            for future in as_completed(futures):
-                i = futures[future]
-                try:
-                    tsv_paths[i] = future.result()
-                    logger.success(f"diamond [{tag}] batch {i} done")
-                except Exception as exc:
-                    logger.error(f"diamond [{tag}] batch {i} failed: {exc}")
-
-        return [p for p in tsv_paths if p is not None]
+    def run_single(
+        self,
+        nuc_seqs: list[NucSequence],
+        phase: DiamondPhase,
+    ) -> Path | None:
+        """Run all sequences in a single Diamond call — no batching."""
+        if not nuc_seqs:
+            logger.warning(f"diamond [{phase.value}]: no sequences.")
+            return None
+        tag = phase.value
+        logger.info(
+            f"diamond [{tag}]: {len(nuc_seqs)} seqs → single run, {self.threads} threads"
+        )
+        path = self._run_batch(nuc_seqs, 0, tag)
+        logger.success(f"diamond [{tag}] done")
+        return path
 
 
 # ---------------------------------------------------------------------------

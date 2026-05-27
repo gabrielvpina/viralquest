@@ -32,12 +32,17 @@ _ROOT    = Path(__file__).parent.parent
 _DATA    = _ROOT / "data"
 _HMM_DIR = _DATA / "hmm-dbs"
 
+_FAMILY_INFO_DIR = _DATA / "viral-family-info"
+
 _DB = {
-    "viral_dmnd": _DATA    / "viralDB.dmnd",
-    "rvdb":       _HMM_DIR / "U-RVDBv29.0-prot.hmm",
-    "vfam":       _HMM_DIR / "Vfam-228.hmm",
-    "eggnog":     _HMM_DIR / "EggNOG-4.5.hmm",
-    "pfam":       _HMM_DIR / "Pfam-A.hmm",
+    "viral_dmnd":   _DATA            / "viralDB.dmnd",
+    "rvdb":         _HMM_DIR         / "U-RVDBv29.0-prot.hmm",
+    "vfam":         _HMM_DIR         / "Vfam-228.hmm",
+    "eggnog":       _HMM_DIR         / "EggNOG-4.5.hmm",
+    "pfam":         _HMM_DIR         / "Pfam-A.hmm",
+    "viral_tax":    _DATA            / "viralTax.json.xz",
+    "fam_high":     _FAMILY_INFO_DIR / "viral_info_highToken.json",
+    "fam_low":      _FAMILY_INFO_DIR / "viral_info_lowToken.json",
 }
 
 _INDEX_DIR = _DATA / "hmm-index"
@@ -120,7 +125,7 @@ def _build_parser():
         help="Export all input sequences, not only confirmed viral ones.")
     tun.add_argument("--min-identity", dest="min_identity", type=float,
         default=70.0, metavar="PCT",
-        help="Minimum %% identity for intra-cluster BLASTn alignment (default: 70.0).")
+        help="Minimum %% identity for intra-cluster BLASTn alignment (default: 90.0).")
 
     # Salmon quantification ────────────────────────────────────────────────────
     sal = parser.add_argument_group("salmon quantification (optional)")
@@ -341,6 +346,7 @@ def _build_steps(args) -> list[str]:
     if args.nr_db:
         steps.append(f"Diamond BLASTx NR  —  {Path(args.nr_db).name}")
     steps.append("HMMsearch  —  Pfam  (functional annotation)")
+    steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
     if args.model_type:
         steps.append(f"LLM scoring  —  {args.model_type} / {args.model_name}")
@@ -353,8 +359,11 @@ def _build_steps(args) -> list[str]:
 
 def _run_pipeline(args):
     """
-    Execute every pipeline step. Yields (step_index, elapsed_seconds) after
-    each step completes so the caller can update its display.
+    Execute every pipeline step.
+
+    Yields tagged event tuples:
+      ("step",  step_idx, elapsed_seconds)   — a full pipeline step completed
+      ("batch", step_idx, batch_num, total)  — one Diamond batch completed (RefSeq only)
     """
     from loguru import logger
 
@@ -365,18 +374,22 @@ def _run_pipeline(args):
     from .hmm         import (HmmMetadataLoader, HmmSequencePreparer,
                               HmmSearcher, HmmResultAttacher, HmmViralFlagSetter)
     from .blastn      import BlastnRunner, BlastnMode, BlastnResultAttacher
+    from .tax         import TaxonomyAnnotator, ViralFamilyAnnotator
     from .track_seqs  import SequenceTracker
     from .exporter    import ReportExporter
     from .html_report import write_report
+    from .output      import OutputOrganizer
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    step = 0
+    stem       = Path(args.input).stem
+    organizer  = OutputOrganizer(outdir, stem)
+    step       = 0
 
     def _tick(start: float):
         nonlocal step
         elapsed = time.time() - start
-        yield step, elapsed
+        yield ("step", step, elapsed)
         step += 1
 
     # ── 1. Parse / assemble ───────────────────────────────────────────────────
@@ -404,12 +417,15 @@ def _run_pipeline(args):
     # ── 3. Diamond RefSeq filter ──────────────────────────────────────────────
     t    = time.time()
     dmnd = DiamondRunner(db_path=str(_DB["viral_dmnd"]), threads=args.cpu,
-                         outdir=str(outdir))
-    tsvs = dmnd.run_all(seqs, DiamondPhase.REFSEQ_FILTER)
-    hits: list = []
-    for tsv in tsvs:
+                         outdir=str(organizer.diamond_dir))
+    tsvs:  list[Path] = []
+    hits:  list        = []
+    for batch_num, n_batches, tsv in dmnd.run_batched(seqs, DiamondPhase.REFSEQ_FILTER):
+        tsvs.append(tsv)
         hits.extend(DiamondOutputParser.parse(tsv))
+        yield ("batch", step, batch_num, n_batches)
     DiamondResultAttacher.attach(hits, seqs, DiamondPhase.REFSEQ_FILTER)
+    organizer.finalize_diamond_refseq(tsvs)
     yield from _tick(t)
 
     # ── 4. HMM viral confirmation (RVDB + Vfam + EggNOG) ─────────────────────
@@ -418,9 +434,10 @@ def _run_pipeline(args):
     seq_block, orf_map = HmmSequencePreparer.prepare(seqs)
     if seq_block is not None:
         for db_key, json_path, db_name in _HMM_FILTER:
-            meta  = HmmMetadataLoader.load(str(json_path), db_name)
-            hits  = searcher.search(seq_block, str(_DB[db_key]))
-            HmmResultAttacher.attach(hits, orf_map, meta, db_name)
+            meta      = HmmMetadataLoader.load(str(json_path), db_name)
+            hmm_hits  = searcher.search(seq_block, str(_DB[db_key]))
+            HmmResultAttacher.attach(hmm_hits, orf_map, meta, db_name)
+            organizer.save_hmm_table(hmm_hits, db_name)
     HmmViralFlagSetter.flag(seqs)
     yield from _tick(t)
 
@@ -429,12 +446,12 @@ def _run_pipeline(args):
         t       = time.time()
         viral   = [s for s in seqs if s.is_viral]
         dmnd_nr = DiamondRunner(db_path=str(args.nr_db), threads=args.cpu,
-                                outdir=str(outdir))
-        tsvs_nr = dmnd_nr.run_all(viral, DiamondPhase.NR_CHARACTERIZE)
-        hits_nr: list = []
-        for tsv in tsvs_nr:
-            hits_nr.extend(DiamondOutputParser.parse(tsv))
-        DiamondResultAttacher.attach(hits_nr, seqs, DiamondPhase.NR_CHARACTERIZE)
+                                outdir=str(organizer.diamond_dir))
+        nr_tsv  = dmnd_nr.run_single(viral, DiamondPhase.NR_CHARACTERIZE)
+        if nr_tsv:
+            hits_nr = DiamondOutputParser.parse(nr_tsv)
+            DiamondResultAttacher.attach(hits_nr, seqs, DiamondPhase.NR_CHARACTERIZE)
+        organizer.finalize_diamond_nr(nr_tsv)
         yield from _tick(t)
 
     # ── 6. BLASTn ─────────────────────────────────────────────────────────────
@@ -442,16 +459,24 @@ def _run_pipeline(args):
         t = time.time()
         if args.blastn_local:
             blastn = BlastnRunner(mode=BlastnMode.LOCAL, db_path=args.blastn_local,
-                                  threads=args.cpu, outdir=str(outdir))
+                                  threads=args.cpu, outdir=str(organizer.blastn_dir))
         else:
-            blastn = BlastnRunner(mode=BlastnMode.ONLINE)
-        blastn_hits = blastn.run(seqs)
+            blastn = BlastnRunner(mode=BlastnMode.ONLINE,
+                                  outdir=str(organizer.blastn_dir))
+        # NR run → only NR-confirmed sequences; no NR → all viral sequences
+        blastn_seqs = (
+            [s for s in seqs if s.blastx_nr_hits]
+            if args.nr_db
+            else [s for s in seqs if s.is_viral]
+        )
+        blastn_hits = blastn.run(blastn_seqs)
         BlastnResultAttacher.attach(blastn_hits, seqs)
+        organizer.save_blastn_table(blastn_hits)
         yield from _tick(t)
 
     # ── 7. Pfam characterisation (confirmed viral only) ───────────────────────
-    t           = time.time()
-    viral_seqs  = [s for s in seqs if s.is_viral]
+    t          = time.time()
+    viral_seqs = [s for s in seqs if s.is_viral]
     if viral_seqs:
         pfam_block, pfam_orf_map = HmmSequencePreparer.prepare(viral_seqs)
         if pfam_block is not None:
@@ -462,15 +487,25 @@ def _run_pipeline(args):
                 pfam_block, str(_DB["pfam"])
             )
             HmmResultAttacher.attach(pfam_hits, pfam_orf_map, pfam_meta, "Pfam")
+            organizer.save_hmm_table(pfam_hits, "Pfam")
     yield from _tick(t)
 
-    # ── 8. Clustering ─────────────────────────────────────────────────────────
-    t        = time.time()
-    tracker  = SequenceTracker(min_identity=args.min_identity)
-    clusters = tracker.track(seqs)
+    # ── 8. Taxonomy annotation ────────────────────────────────────────────────
+    t = time.time()
+    TaxonomyAnnotator(str(_DB["viral_tax"])).annotate(seqs)
+    ViralFamilyAnnotator(
+        str(_DB["fam_high"]), str(_DB["fam_low"])
+    ).annotate(seqs)
     yield from _tick(t)
 
-    # ── 9. LLM scoring ────────────────────────────────────────────────────────
+    # ── 9. Clustering ─────────────────────────────────────────────────────────
+    t            = time.time()
+    tracker      = SequenceTracker(min_identity=args.min_identity)
+    viral_for_cl = [s for s in seqs if s.is_viral]
+    clusters     = tracker.track(viral_for_cl)
+    yield from _tick(t)
+
+    # ── 10. LLM scoring ───────────────────────────────────────────────────────
     if args.model_type and args.model_name:
         t = time.time()
         from .score_ai import SequenceScorer
@@ -479,7 +514,7 @@ def _run_pipeline(args):
                        api_key=args.api_key).score(seqs)
         yield from _tick(t)
 
-    # ── 10. Salmon quantification ─────────────────────────────────────────────
+    # ── 11. Salmon quantification ─────────────────────────────────────────────
     salmon_report = None
     if args.transcriptome and args.reads:
         t = time.time()
@@ -492,11 +527,12 @@ def _run_pipeline(args):
         )
         yield from _tick(t)
 
-    # ── 11. JSON export ───────────────────────────────────────────────────────
-    t         = time.time()
-    json_path = outdir / f"{Path(args.input).stem}_viralquest.json"
-    exporter  = ReportExporter(force=args.force)
-    report    = exporter.export(
+    # ── 12. Export: viral FASTA + JSON ────────────────────────────────────────
+    t             = time.time()
+    viral_fasta   = organizer.save_viral_contigs(seqs)
+    json_path     = outdir / f"{stem}_viralquest.json"
+    exporter      = ReportExporter(force=args.force)
+    report        = exporter.export(
         nuc_seqs=seqs,
         clusters=clusters,
         input_fasta=input_fasta,
@@ -506,17 +542,21 @@ def _run_pipeline(args):
     )
     yield from _tick(t)
 
-    # ── 12. HTML report ───────────────────────────────────────────────────────
+    # ── 13. HTML report ───────────────────────────────────────────────────────
     t         = time.time()
-    html_path = outdir / f"{Path(args.input).stem}_viralquest.html"
+    html_path = outdir / f"{stem}_viralquest.html"
     write_report(report, html_path)
     yield from _tick(t)
 
     # Stash for summary
-    args._result_seqs     = seqs
-    args._result_clusters = clusters
-    args._result_json     = json_path
-    args._result_html     = html_path
+    args._result_seqs         = seqs
+    args._result_clusters     = clusters
+    args._result_json         = json_path
+    args._result_html         = html_path
+    args._result_viral_fasta  = viral_fasta
+    args._result_diamond_dir  = organizer.diamond_dir
+    args._result_blastn_dir   = organizer.blastn_dir if (args.blastn_local or args.blastn_online) else None
+    args._result_hmm_dir      = organizer.hmm_dir
 
 
 # ── Default mode (plain loguru) ───────────────────────────────────────────────
@@ -524,16 +564,26 @@ def _run_pipeline(args):
 def _run_default(args) -> None:
     from loguru import logger
     from rich.console import Console
-    from rich.panel import Panel
+    from .output import OutputOrganizer
 
     console  = Console(stderr=True)
     steps    = _build_steps(args)
     timings: dict[int, float] = {}
 
-    for step_idx, elapsed in _run_pipeline(args):
-        timings[step_idx] = elapsed
-        label = steps[step_idx] if step_idx < len(steps) else "?"
-        logger.success(f"  ✓  {label}  ({elapsed:.1f}s)")
+    outdir   = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    log_id   = OutputOrganizer(outdir, Path(args.input).stem).add_log_sink()
+
+    try:
+        for event in _run_pipeline(args):
+            if event[0] == "step":
+                _, step_idx, elapsed = event
+                timings[step_idx] = elapsed
+                label = steps[step_idx] if step_idx < len(steps) else "?"
+                logger.success(f"  ✓  {label}  ({elapsed:.1f}s)")
+            # "batch" events are already logged inside DiamondRunner
+    finally:
+        OutputOrganizer.remove_log_sink(log_id)
 
     _print_summary(console, args, timings)
 
@@ -547,19 +597,24 @@ def _run_live(args) -> None:
     from rich.panel import Panel
     from rich.progress import (Progress, BarColumn, TextColumn,
                                MofNCompleteColumn, TimeElapsedColumn)
+    from .output import OutputOrganizer
 
     console  = Console()
     steps    = _build_steps(args)
     log_buf  = deque(maxlen=28)
     timings: dict[int, float] = {}
 
-    # Redirect loguru to our deque (remove default stderr sink first)
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # Redirect loguru to deque + log file (remove default stderr sink first)
     logger.remove()
     logger.add(
         lambda msg: log_buf.append(msg.rstrip()),
         format="{time:HH:mm:ss} | <level>{level:<8}</level> | {message}",
         colorize=False,
     )
+    log_id = OutputOrganizer(outdir, Path(args.input).stem).add_log_sink()
 
     progress = Progress(
         TextColumn("[bold cyan]{task.description}[/]"),
@@ -570,21 +625,35 @@ def _run_live(args) -> None:
     )
     task_id = progress.add_task(steps[0], total=len(steps))
 
-    with Live(
-        _build_live_display(log_buf, steps, 0, progress),
-        console=console,
-        refresh_per_second=10,
-        screen=False,
-    ) as live:
-        for step_idx, elapsed in _run_pipeline(args):
-            timings[step_idx] = elapsed
-            progress.advance(task_id)
-            next_step = step_idx + 1
-            if next_step < len(steps):
-                progress.update(task_id, description=steps[next_step])
-            else:
-                progress.update(task_id, description="[green]complete[/]")
-            live.update(_build_live_display(log_buf, steps, next_step, progress))
+    try:
+        with Live(
+            _build_live_display(log_buf, steps, 0, progress),
+            console=console,
+            refresh_per_second=10,
+            screen=False,
+        ) as live:
+            for event in _run_pipeline(args):
+                if event[0] == "step":
+                    _, step_idx, elapsed = event
+                    timings[step_idx] = elapsed
+                    progress.advance(task_id)
+                    next_step = step_idx + 1
+                    if next_step < len(steps):
+                        progress.update(task_id, description=steps[next_step])
+                    else:
+                        progress.update(task_id, description="[green]complete[/]")
+                    live.update(_build_live_display(log_buf, steps, next_step, progress))
+
+                elif event[0] == "batch":
+                    _, step_idx, batch_num, total = event
+                    label = steps[step_idx] if step_idx < len(steps) else "?"
+                    progress.update(
+                        task_id,
+                        description=f"{label}  [dim][{batch_num}/{total}][/dim]",
+                    )
+                    live.update(_build_live_display(log_buf, steps, step_idx, progress))
+    finally:
+        OutputOrganizer.remove_log_sink(log_id)
 
     # Restore loguru to stderr after Live exits
     logger.remove()
@@ -599,23 +668,37 @@ def _run_live(args) -> None:
 def _print_summary(console, args, timings: dict) -> None:
     from rich.panel import Panel
 
-    seqs     = getattr(args, "_result_seqs",     [])
-    clusters = getattr(args, "_result_clusters", [])
-    json_p   = getattr(args, "_result_json",     Path(args.outdir))
-    html_p   = getattr(args, "_result_html",     Path(args.outdir))
+    seqs         = getattr(args, "_result_seqs",         [])
+    clusters     = getattr(args, "_result_clusters",     [])
+    json_p       = getattr(args, "_result_json",         Path(args.outdir))
+    html_p       = getattr(args, "_result_html",         Path(args.outdir))
+    viral_fasta  = getattr(args, "_result_viral_fasta",  None)
+    diamond_dir  = getattr(args, "_result_diamond_dir",  None)
+    hmm_dir      = getattr(args, "_result_hmm_dir",      None)
 
     viral_count = sum(1 for s in seqs if s.is_viral)
     total_time  = sum(timings.values())
 
-    console.print()
-    console.print(Panel(
+    blastn_dir = getattr(args, "_result_blastn_dir", None)
+
+    lines = (
         f"[bold green]Confirmed viral sequences:[/]  {viral_count}\n"
         f"[bold green]Clusters:[/]                   {len(clusters)}\n"
+        f"[bold green]Viral contigs FASTA:[/]        {viral_fasta}\n"
+        f"[bold green]Diamond results:[/]             {diamond_dir}\n"
+        + (f"[bold green]BLASTn results:[/]              {blastn_dir}\n" if blastn_dir else "")
+        + f"[bold green]HMM tables:[/]                 {hmm_dir}\n"
         f"[bold green]JSON report:[/]                {json_p}\n"
         f"[bold green]HTML report:[/]                {html_p}\n"
-        f"[bold green]Total time:[/]                 {total_time:.1f}s",
+        f"[bold green]Log file:[/]                   {Path(args.outdir) / 'viralquest.log'}\n"
+        f"[bold green]Total time:[/]                 {total_time:.1f}s"
+    )
+
+    console.print()
+    console.print(Panel(
+        lines,
         title=f"[bold white]ViralQuest — {Path(args.input).name} complete[/bold white]",
-        border_style="green", width=80,
+        border_style="green", width=85,
     ))
 
 
@@ -652,8 +735,7 @@ def main() -> None:
 if __name__ == "__main__":
     import sys as _sys
     from pathlib import Path as _Path
-    # When invoked as `python viralquest/cli.py`, there is no parent package
-    # and relative imports fail. Re-enter through the package instead.
+
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
     from viralquest.cli import main
     main()

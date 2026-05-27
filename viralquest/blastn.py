@@ -91,19 +91,17 @@ class BlastnRunner:
         Attaching results to NucSequence objects is done separately by
         BlastnResultAttacher.
         """
-        viral = [s for s in nuc_seqs if s.is_viral and s.blastx_nr_hits]
-        if not viral:
-            logger.warning("BLASTn: no sequences passed REFSEQ + NR filter — skipping.")
+        if not nuc_seqs:
+            logger.warning("BLASTn: no sequences to search — skipping.")
             return []
 
         logger.info(
-            f"BLASTn [{self.mode.value}]: searching {len(viral)} sequence(s) "
-            f"confirmed by REFSEQ and NR BLASTx."
+            f"BLASTn [{self.mode.value}]: searching {len(nuc_seqs)} sequence(s)."
         )
 
         if self.mode == BlastnMode.LOCAL:
-            return self._run_local(viral)
-        return self._run_online(viral)
+            return self._run_local(nuc_seqs)
+        return self._run_online(nuc_seqs)
 
     # --- local mode ----------------------------------------------------------
 

@@ -65,7 +65,7 @@ class BlastnAligner:
     Parameters
     ----------
     blastn_bin    : path/command for blastn (default "blastn").
-    min_identity  : minimum % identity passed to -perc_identity (default 70).
+    min_identity  : minimum % identity passed to -perc_identity (default 90).
     """
 
     _OUTFMT = (
@@ -73,7 +73,7 @@ class BlastnAligner:
         "qstart qend sstart send evalue bitscore"
     )
 
-    def __init__(self, blastn_bin: str = "blastn", min_identity: float = 70.0):
+    def __init__(self, blastn_bin: str = "blastn", min_identity: float = 90.0):
         self.blastn_bin  = blastn_bin
         self.min_identity = min_identity
 
@@ -233,10 +233,10 @@ class SequenceTracker:
     Parameters
     ----------
     blastn_bin   : blastn command or full path (default "blastn").
-    min_identity : minimum % identity for BLASTn hits (default 70.0).
+    min_identity : minimum % identity for BLASTn hits (default 90.0).
     """
 
-    def __init__(self, blastn_bin: str = "blastn", min_identity: float = 70.0):
+    def __init__(self, blastn_bin: str = "blastn", min_identity: float = 90.0):
         self._aligner = BlastnAligner(blastn_bin, min_identity)
 
     def track(self, nuc_seqs: list[NucSequence]) -> list[ViralCluster]:

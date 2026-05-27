@@ -5,13 +5,14 @@
    ============================================================ */
 
 :root {
-  /* --- Brand colours --- */
+  /* --- Brand colours (blue palette, Seqera-inspired clarity) --- */
   --vq-primary:        #1a3a5c;
   --vq-primary-light:  #2a5080;
   --vq-accent:         #3b9eff;
   --vq-accent-dark:    #1a7fd4;
+  --vq-accent-subtle:  #ebf5ff;   /* Seqera-style tag background */
   --vq-success:        #27ae60;
-  --vq-warning:        #f39c12;
+  --vq-warning:        #f59e0b;
   --vq-danger:         #e74c3c;
   --vq-muted:          #7f8c8d;
 
@@ -35,11 +36,11 @@
   --vq-dom-8: #34495e;
 
   /* --- Surfaces --- */
-  --vq-bg:          #f0f4f8;
+  --vq-bg:          #f3f6fa;      /* slightly lighter, cleaner */
   --vq-surface:     #ffffff;
   --vq-surface-2:   #f8fafc;
-  --vq-border:      #dde3ec;
-  --vq-border-dark: #b0bec5;
+  --vq-border:      #e2e8f0;      /* lighter — Seqera-style */
+  --vq-border-dark: #c5d0dc;
 
   /* --- Text --- */
   --vq-text:        #1e293b;
@@ -65,21 +66,21 @@
   --vq-space-8:  2rem;
   --vq-space-12: 3rem;
 
-  /* --- Shape --- */
-  --vq-radius-sm: 4px;
-  --vq-radius:    8px;
-  --vq-radius-lg: 14px;
-  --vq-shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
-  --vq-shadow:    0 4px 12px rgba(0,0,0,.10), 0 2px 4px rgba(0,0,0,.06);
-  --vq-shadow-lg: 0 10px 30px rgba(0,0,0,.12), 0 4px 10px rgba(0,0,0,.08);
+  /* --- Shape (more rounded — Seqera feel) --- */
+  --vq-radius-sm: 6px;
+  --vq-radius:    10px;
+  --vq-radius-lg: 16px;
+  --vq-shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --vq-shadow:    0 4px 14px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+  --vq-shadow-lg: 0 10px 32px rgba(0,0,0,.10), 0 4px 10px rgba(0,0,0,.06);
 
   /* --- Nav --- */
-  --vq-nav-h:     56px;
+  --vq-nav-h:     58px;
   --vq-nav-bg:    var(--vq-primary);
 
   /* --- Transitions --- */
   --vq-ease:      cubic-bezier(.4,0,.2,1);
-  --vq-dur:       200ms;
+  --vq-dur:       180ms;
 }
 
 /* ============================================================
@@ -100,7 +101,7 @@ body {
 }
 
 /* ============================================================
-   Navigation
+   Navigation  —  Seqera-style: underline active tab
    ============================================================ */
 
 .vq-nav {
@@ -113,7 +114,7 @@ body {
   padding:    0 var(--vq-space-6);
   gap:        var(--vq-space-8);
   z-index:    1000;
-  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  box-shadow: 0 1px 0 rgba(255,255,255,.08), 0 2px 12px rgba(0,0,0,.28);
 }
 
 .vq-nav__logo {
@@ -131,35 +132,42 @@ body {
 
 .vq-nav__tabs {
   display:    flex;
-  gap:        var(--vq-space-1);
+  gap:        0;
   flex:       1;
   overflow-x: auto;
   scrollbar-width: none;
+  height:     var(--vq-nav-h);
+  align-items: stretch;
 }
 
 .vq-nav__tabs::-webkit-scrollbar { display: none; }
 
 .vq-nav__tab {
-  padding:         var(--vq-space-2) var(--vq-space-4);
+  padding:         0 var(--vq-space-4);
   border:          none;
   background:      transparent;
-  color:           rgba(255,255,255,.7);
+  color:           rgba(255,255,255,.6);
   font:            inherit;
   font-size:       var(--vq-text-sm);
   font-weight:     500;
   cursor:          pointer;
-  border-radius:   var(--vq-radius-sm);
   white-space:     nowrap;
-  transition:      background var(--vq-dur) var(--vq-ease),
-                   color      var(--vq-dur) var(--vq-ease);
+  position:        relative;
+  border-bottom:   3px solid transparent;
+  transition:      color      var(--vq-dur) var(--vq-ease),
+                   border-color var(--vq-dur) var(--vq-ease);
 }
 
-.vq-nav__tab:hover  { background: rgba(255,255,255,.10); color: #fff; }
-.vq-nav__tab.active { background: var(--vq-accent);      color: #fff; }
+.vq-nav__tab:hover  { color: rgba(255,255,255,.88); }
+.vq-nav__tab.active {
+  color:         #fff;
+  border-bottom-color: var(--vq-accent);
+  font-weight:   600;
+}
 
 .vq-nav__meta {
   font-size:  var(--vq-text-xs);
-  color:      rgba(255,255,255,.45);
+  color:      rgba(255,255,255,.4);
   flex-shrink: 0;
   display:    flex;
   align-items: center;
@@ -186,12 +194,12 @@ body {
 .vq-section.active { display: block; }
 
 @keyframes vq-fadein {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(5px); }
   to   { opacity: 1; transform: translateY(0);   }
 }
 
 /* ============================================================
-   Cards
+   Cards  —  flatter, border-only (Seqera style)
    ============================================================ */
 
 .vq-card {
@@ -226,7 +234,7 @@ body {
 }
 
 /* ============================================================
-   Stats grid (for section 1)
+   Stats grid
    ============================================================ */
 
 .vq-stats-grid {
@@ -235,14 +243,23 @@ body {
   gap:                   var(--vq-space-4);
 }
 
+/* Seqera-style stat chip: left accent border on hover */
 .vq-stat-chip {
-  background:    var(--vq-surface-2);
+  background:    var(--vq-surface);
   border:        1px solid var(--vq-border);
+  border-left:   3px solid var(--vq-border);
   border-radius: var(--vq-radius);
   padding:       var(--vq-space-4);
   display:       flex;
   flex-direction: column;
   gap:           var(--vq-space-1);
+  transition:    border-left-color var(--vq-dur) var(--vq-ease),
+                 box-shadow        var(--vq-dur) var(--vq-ease);
+}
+
+.vq-stat-chip:hover {
+  border-left-color: var(--vq-accent);
+  box-shadow:        var(--vq-shadow-sm);
 }
 
 .vq-stat-chip__label {
@@ -250,7 +267,7 @@ body {
   font-weight: 600;
   color:       var(--vq-text-3);
   text-transform: uppercase;
-  letter-spacing: .06em;
+  letter-spacing: .07em;
 }
 
 .vq-stat-chip__value {
@@ -270,7 +287,7 @@ body {
 .vq-stat-chip--warn    .vq-stat-chip__value { color: var(--vq-warning); }
 
 /* ============================================================
-   Section headers
+   Section headers  —  with Seqera-style count label
    ============================================================ */
 
 .vq-section-header {
@@ -286,6 +303,16 @@ body {
   font-size:   var(--vq-text-xl);
   font-weight: 700;
   color:       var(--vq-primary);
+  display:     flex;
+  align-items: baseline;
+  gap:         var(--vq-space-3);
+}
+
+/* "Showing N results" muted label — like Seqera's "Showing all 81" */
+.vq-count-label {
+  font-size:   var(--vq-text-sm);
+  font-weight: 400;
+  color:       var(--vq-text-3);
 }
 
 .vq-section-sub {
@@ -318,21 +345,33 @@ body {
 
 .vq-btn:disabled { opacity: .5; cursor: not-allowed; }
 
+/* Dark primary — like Seqera's "Launch" button */
 .vq-btn--primary {
+  background: var(--vq-primary);
+  color:      #fff;
+  border-color: var(--vq-primary-light);
+}
+.vq-btn--primary:hover:not(:disabled) {
+  background: var(--vq-primary-light);
+  box-shadow: var(--vq-shadow-sm);
+}
+
+/* Accent variant */
+.vq-btn--accent {
   background: var(--vq-accent);
   color:      #fff;
 }
-.vq-btn--primary:hover:not(:disabled) { background: var(--vq-accent-dark); }
+.vq-btn--accent:hover:not(:disabled) { background: var(--vq-accent-dark); }
 
 .vq-btn--ghost {
-  background: transparent;
-  color:      var(--vq-text-2);
-  border-color: var(--vq-border-dark);
+  background:   transparent;
+  color:        var(--vq-text-2);
+  border-color: var(--vq-border);
 }
 .vq-btn--ghost:hover:not(:disabled) {
-  background: var(--vq-surface-2);
+  background:   var(--vq-surface-2);
   border-color: var(--vq-accent);
-  color:      var(--vq-accent);
+  color:        var(--vq-accent);
 }
 
 .vq-btn--sm {
@@ -341,12 +380,12 @@ body {
 }
 
 /* ============================================================
-   Form controls
+   Form controls  —  rounder search (Seqera style)
    ============================================================ */
 
 .vq-input, .vq-select {
   padding:       var(--vq-space-2) var(--vq-space-3);
-  border:        1px solid var(--vq-border-dark);
+  border:        1px solid var(--vq-border);
   border-radius: var(--vq-radius-sm);
   font:          inherit;
   font-size:     var(--vq-text-sm);
@@ -360,21 +399,33 @@ body {
 
 .vq-input:focus, .vq-select:focus {
   border-color: var(--vq-accent);
-  box-shadow:   0 0 0 3px rgba(59,158,255,.15);
+  box-shadow:   0 0 0 3px rgba(59,158,255,.12);
 }
 
+/* Seqera-style: pill-shaped search field */
 .vq-search-wrap {
-  position: relative;
-  max-width: 340px;
+  position:  relative;
+  max-width: 360px;
+  flex:      1;
 }
+
+.vq-search-wrap .vq-input {
+  border-radius: 999px;
+  padding-left:  2.4rem;
+  background:    var(--vq-surface);
+  border-color:  var(--vq-border);
+}
+
+.vq-search-wrap .vq-input::placeholder { color: var(--vq-text-3); }
+
 .vq-search-wrap svg {
   position: absolute;
   left: var(--vq-space-3);
   top: 50%; transform: translateY(-50%);
   color: var(--vq-text-3);
   pointer-events: none;
+  width: 15px; height: 15px;
 }
-.vq-search-wrap .vq-input { padding-left: 2.2rem; }
 
 /* ============================================================
    Toolbar (filters + actions row)
@@ -389,13 +440,13 @@ body {
 }
 
 .vq-toolbar__filters {
-  display: flex;
-  gap:     var(--vq-space-2);
+  display:   flex;
+  gap:       var(--vq-space-2);
   flex-wrap: wrap;
-  flex: 1;
+  flex:      1;
 }
 
-.vq-select { width: auto; min-width: 130px; }
+.vq-select { width: auto; min-width: 130px; border-radius: var(--vq-radius-sm); }
 
 /* ============================================================
    Toggle (TPM / NumReads)
@@ -403,7 +454,7 @@ body {
 
 .vq-toggle {
   display:       inline-flex;
-  border:        1px solid var(--vq-border-dark);
+  border:        1px solid var(--vq-border);
   border-radius: var(--vq-radius-sm);
   overflow:      hidden;
 }
@@ -416,7 +467,8 @@ body {
   font-size:  var(--vq-text-sm);
   cursor:     pointer;
   color:      var(--vq-text-2);
-  transition: background var(--vq-dur) var(--vq-ease);
+  transition: background var(--vq-dur) var(--vq-ease),
+              color      var(--vq-dur) var(--vq-ease);
 }
 
 .vq-toggle__btn.active {
@@ -425,13 +477,14 @@ body {
 }
 
 /* ============================================================
-   Badge / tag
+   Badges / tags  —  Seqera pill style
    ============================================================ */
 
+/* Original badge (status indicators — kept) */
 .vq-badge {
   display:       inline-flex;
   align-items:   center;
-  padding:       2px 8px;
+  padding:       2px 9px;
   border-radius: 999px;
   font-size:     var(--vq-text-xs);
   font-weight:   600;
@@ -439,37 +492,72 @@ body {
 }
 
 .vq-badge--viral-known    { background: #e8f5e9; color: #2e7d32; }
-.vq-badge--viral-unknown  { background: #fff8e1; color: #f57f17; }
+.vq-badge--viral-unknown  { background: #fff8e1; color: #b45309; }
 .vq-badge--non-viral      { background: #fce4ec; color: #c62828; }
-.vq-badge--cluster        { background: #e3f2fd; color: #1565c0; }
+.vq-badge--cluster        { background: var(--vq-accent-subtle); color: var(--vq-accent-dark); }
+
+/* Seqera-style keyword tags: light blue pill, like "nextflow · pipeline · workflow" */
+.vq-tag {
+  display:       inline-flex;
+  align-items:   center;
+  padding:       3px 10px;
+  border-radius: 999px;
+  border:        1px solid #d0e8ff;
+  background:    var(--vq-accent-subtle);
+  color:         var(--vq-accent-dark);
+  font-size:     var(--vq-text-xs);
+  font-weight:   500;
+  white-space:   nowrap;
+  gap:           4px;
+  transition:    background var(--vq-dur) var(--vq-ease);
+}
+
+.vq-tag:hover { background: #d6edff; }
+
+/* Tag row — flex container matching Seqera's tag strip */
+.vq-tag-row {
+  display:    flex;
+  flex-wrap:  wrap;
+  gap:        var(--vq-space-2);
+  margin-top: var(--vq-space-2);
+}
 
 /* ============================================================
-   Genome viewer — sequence card
+   Genome viewer — sequence card  (Seqera list-row style)
    ============================================================ */
 
 .vq-seq-card {
+  background:    var(--vq-surface);
   border:        1px solid var(--vq-border);
+  border-left:   3px solid var(--vq-border);
   border-radius: var(--vq-radius);
   overflow:      hidden;
-  transition:    box-shadow var(--vq-dur) var(--vq-ease);
+  transition:    border-left-color var(--vq-dur) var(--vq-ease),
+                 box-shadow        var(--vq-dur) var(--vq-ease);
 }
 
-.vq-seq-card:hover { box-shadow: var(--vq-shadow); }
+.vq-seq-card:hover {
+  border-left-color: var(--vq-accent);
+  box-shadow:        var(--vq-shadow);
+}
 
 .vq-seq-card__head {
   display:     flex;
   align-items: center;
   gap:         var(--vq-space-3);
   padding:     var(--vq-space-3) var(--vq-space-4);
-  background:  var(--vq-surface-2);
+  background:  var(--vq-surface);
   cursor:      pointer;
   user-select: none;
   border-bottom: 1px solid transparent;
-  transition:  border-color var(--vq-dur) var(--vq-ease);
+  transition:  border-color var(--vq-dur) var(--vq-ease),
+               background   var(--vq-dur) var(--vq-ease);
 }
 
+.vq-seq-card__head:hover    { background: var(--vq-surface-2); }
 .vq-seq-card.open .vq-seq-card__head {
   border-bottom-color: var(--vq-border);
+  background: var(--vq-surface-2);
 }
 
 .vq-seq-card__id {
@@ -487,6 +575,7 @@ body {
   flex:      1;
   font-size: var(--vq-text-xs);
   color:     var(--vq-text-2);
+  align-items: center;
 }
 
 .vq-seq-card__chevron {
@@ -536,7 +625,7 @@ body {
 .vq-legend__swatch {
   width:         12px;
   height:        12px;
-  border-radius: 2px;
+  border-radius: 3px;
   flex-shrink:   0;
 }
 
@@ -546,7 +635,7 @@ body {
 
 .vq-tooltip {
   position:      fixed;
-  background:    rgba(15,23,42,.9);
+  background:    rgba(15,23,42,.92);
   color:         #fff;
   border-radius: var(--vq-radius-sm);
   padding:       var(--vq-space-2) var(--vq-space-3);
@@ -578,6 +667,21 @@ body {
 .vq-tooltip__key { color: rgba(255,255,255,.5); }
 
 /* ============================================================
+   Divider / meta row  —  Seqera "· 198 KB · Updated 2y ago"
+   ============================================================ */
+
+.vq-meta-row {
+  display:     flex;
+  align-items: center;
+  gap:         var(--vq-space-2);
+  font-size:   var(--vq-text-xs);
+  color:       var(--vq-text-3);
+  margin-top:  var(--vq-space-2);
+}
+
+.vq-meta-row__sep { color: var(--vq-border-dark); }
+
+/* ============================================================
    Checkbox selection
    ============================================================ */
 
@@ -594,17 +698,23 @@ body {
    ============================================================ */
 
 .vq-empty {
-  text-align: center;
-  padding:    var(--vq-space-12) var(--vq-space-8);
-  color:      var(--vq-text-3);
-  font-size:  var(--vq-text-sm);
+  text-align:  center;
+  padding:     var(--vq-space-12) var(--vq-space-8);
+  color:       var(--vq-text-3);
+  font-size:   var(--vq-text-sm);
+}
+
+.vq-empty__icon {
+  font-size:     2rem;
+  margin-bottom: var(--vq-space-3);
+  opacity:       .4;
 }
 
 /* ============================================================
    Scrollbar (webkit)
    ============================================================ */
 
-::-webkit-scrollbar         { width: 6px; height: 6px; }
+::-webkit-scrollbar         { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track   { background: transparent; }
 ::-webkit-scrollbar-thumb   { background: var(--vq-border-dark); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--vq-muted); }
