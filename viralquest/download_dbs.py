@@ -130,6 +130,16 @@ def _decompress(src: Path, dst: Path, fmt: str) -> None:
         raise
 
 
+# ── Pre-flight check ─────────────────────────────────────────────────────────
+
+def check_databases() -> dict[str, bool]:
+    """
+    Return a mapping of database name → True (present) / False (missing).
+    Does not download anything.
+    """
+    return {db["name"]: db["target"].exists() for db in DATABASES}
+
+
 # ── Main logic ───────────────────────────────────────────────────────────────
 
 def download_all(*, force: bool = False) -> None:

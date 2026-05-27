@@ -28,8 +28,9 @@ Documentation = "https://github.com/gabrielvpina/viralquest/blob/main/README.md"
 "Bug Reports" = "https://github.com/gabrielvpina/viralquest/issues"
 
 [project.scripts]
-viralquest       = "viralquest.cli:main"
-viralquest-setup = "viralquest.setup_env:setup"
+viralquest          = "viralquest.cli:main"
+viralquest-setup    = "viralquest.setup_env:setup"
+viralquest-download = "viralquest.setup_env:download"
 
 [tool.setuptools]
 include-package-data = true
