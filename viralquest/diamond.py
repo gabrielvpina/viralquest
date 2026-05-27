@@ -56,15 +56,21 @@ class DiamondRunner:
         max_target_seqs: int = 5,
         outdir: str | None = None,
         batch_size: int = 5000,
+        block_size: float | None = None,
+        index_chunks: int | None = None,
+        tmpdir: str | None = None,
     ):
-        self.db_path        = db_path
-        self.diamond_bin    = diamond_bin
-        self.threads        = threads
-        self.e_value        = e_value
+        self.db_path         = db_path
+        self.diamond_bin     = diamond_bin
+        self.threads         = threads
+        self.e_value         = e_value
         self.max_target_seqs = max_target_seqs
-        self.outdir         = Path(outdir) if outdir else Path(tempfile.gettempdir())
+        self.outdir          = Path(outdir) if outdir else Path(tempfile.gettempdir())
         self.outdir.mkdir(parents=True, exist_ok=True)
-        self.batch_size     = batch_size
+        self.batch_size      = batch_size
+        self.block_size      = block_size
+        self.index_chunks    = index_chunks
+        self.tmpdir          = tmpdir
 
     @staticmethod
     def _chunk(seqs: list[NucSequence], size: int) -> list[list[NucSequence]]:
@@ -91,6 +97,12 @@ class DiamondRunner:
             "--max-target-seqs", str(self.max_target_seqs),
             "--quiet",
         ]
+        if self.block_size is not None:
+            cmd += ["--block-size", str(self.block_size)]
+        if self.index_chunks is not None:
+            cmd += ["--index-chunks", str(self.index_chunks)]
+        if self.tmpdir is not None:
+            cmd += ["--tmpdir", str(self.tmpdir)]
 
         logger.debug(f"diamond [{tag}] batch {batch_index} — {len(batch)} seqs")
         result = subprocess.run(cmd, capture_output=True, text=True)

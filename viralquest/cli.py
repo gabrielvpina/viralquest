@@ -102,6 +102,22 @@ def _build_parser():
         help="Path to a Diamond-format NCBI NR database for protein-level "
              "characterisation of confirmed viral sequences. "
              "This is a large (>100 GB) database and is optional.")
+    dbs.add_argument("--nr-block-size", dest="nr_block_size", type=float,
+        default=None, metavar="N",
+        help="Diamond --block-size for NR search: GB of RAM per thread pass "
+             "(default: Diamond's built-in default ~2.0). "
+             "Increase to reduce database passes and speed up the search "
+             "(e.g. 6 uses ~45 GB, 12 uses ~90 GB).")
+    dbs.add_argument("--nr-index-chunks", dest="nr_index_chunks", type=int,
+        default=None, metavar="N",
+        help="Diamond --index-chunks for NR search: number of seed-index chunks "
+             "(default: 4). Lower values (e.g. 1 or 2) mean fewer disk passes "
+             "but higher RAM usage.")
+    dbs.add_argument("--nr-tmpdir", dest="nr_tmpdir", type=str,
+        default=None, metavar="DIR",
+        help="Directory for Diamond temporary files during the NR search. "
+             "Pointing this at a fast NVMe drive or RAM disk (/dev/shm) "
+             "removes disk I/O as a bottleneck.")
 
     # BLASTn ───────────────────────────────────────────────────────────────────
     bln = parser.add_argument_group("blastn (choose one)")
@@ -144,6 +160,10 @@ def _build_parser():
     ai.add_argument("--model-name", dest="model_name", type=str,
         metavar="MODEL",
         help="Model name (e.g. 'qwen3:4b', 'gpt-4o', 'claude-opus-4-7').")
+    ai.add_argument("--llm-tokens", dest="llm_tokens",
+        choices=["high", "low"],
+        help="Token usage mode: 'high' (all hits, full details) or "
+             "'low' (best hits only, compact). Required when --model-type is set.")
     ai.add_argument("--api-key", dest="api_key", type=str,
         metavar="KEY",
         help="API key for cloud AI providers (not needed for ollama).")
@@ -200,11 +220,20 @@ def _show_rich_help() -> None:
     console.print()
 
     console.print(Panel(
-        "[bold white]-nr / --nr-db[/]  [dim]NR.dmnd[/]\n"
+        "[bold white]-nr / --nr-db[/]         [dim]NR.dmnd[/]\n"
         "  Diamond-format NCBI NR database for full protein-level characterisation\n"
         "  of confirmed viral sequences. Optional but recommended for complete\n"
         "  annotation. NR is a large database (>100 GB); build with:\n"
-        "  [dim]diamond makedb --in nr.fasta --db nr[/dim]",
+        "  [dim]diamond makedb --in nr.fasta --db nr[/dim]\n\n"
+        "[bold white]--nr-block-size[/]       [dim]N[/]  (default: Diamond built-in ~2.0)\n"
+        "  GB of RAM loaded per database pass. Higher = fewer passes = faster.\n"
+        "  Examples: 6 → ~45 GB RAM · 12 → ~90 GB RAM.\n\n"
+        "[bold white]--nr-index-chunks[/]     [dim]N[/]  (default: 4)\n"
+        "  Seed-index chunks. Lower values (1–2) reduce disk passes but use\n"
+        "  more RAM. Combine with --nr-block-size for maximum speed.\n\n"
+        "[bold white]--nr-tmpdir[/]           [dim]DIR[/]\n"
+        "  Directory for Diamond temporary files. Use a fast NVMe drive or\n"
+        "  RAM disk ([dim]/dev/shm[/dim]) to eliminate I/O as a bottleneck.",
         title="[bold yellow]NR DATABASE (optional)[/bold yellow]",
         border_style="yellow", width=85, box=box.ROUNDED,
     ))
@@ -236,12 +265,16 @@ def _show_rich_help() -> None:
     console.print()
 
     console.print(Panel(
-        "[bold white]--model-type[/]  [dim]ollama | openai | anthropic | google[/]\n"
+        "[bold white]--model-type[/]   [dim]ollama | openai | anthropic | google[/]\n"
         "  AI provider for LLM viral sequence scoring.\n\n"
-        "[bold white]--model-name[/]  [dim]MODEL[/]\n"
+        "[bold white]--model-name[/]   [dim]MODEL[/]\n"
         "  Model identifier (e.g. 'qwen3:4b', 'gpt-4o', 'claude-opus-4-7',\n"
         "  'gemini-2.5-pro').\n\n"
-        "[bold white]--api-key[/]     [dim]KEY[/]\n"
+        "[bold white]--llm-tokens[/]   [dim]high | low[/]  [bold red](required with --model-type)[/]\n"
+        "  Token usage mode for LLM prompts:\n"
+        "    [bold]high[/] — all hits, Pfam details, full taxonomy, full family description.\n"
+        "    [bold]low[/]  — best hits only, no Pfam details, compact taxonomy.\n\n"
+        "[bold white]--api-key[/]      [dim]KEY[/]\n"
         "  API key for cloud providers (not required for ollama).",
         title="[bold magenta]AI SCORING (optional)[/bold magenta]",
         border_style="magenta", width=85, box=box.ROUNDED,
@@ -289,6 +322,10 @@ def _validate_args(args, console) -> None:
         errors.append("--reads accepts at most two files (R1 and R2).")
     if args.model_type and not args.model_name:
         errors.append("--model-name is required when --model-type is set.")
+    if args.model_type and not args.llm_tokens:
+        errors.append("--llm-tokens (high|low) is required when --model-type is set.")
+    if args.llm_tokens and not args.model_type:
+        errors.append("--llm-tokens requires --model-type to be set.")
     if args.nr_db and not Path(args.nr_db).exists():
         errors.append(f"NR database not found: {args.nr_db}")
     for msg in errors:
@@ -349,7 +386,8 @@ def _build_steps(args) -> list[str]:
     steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
     if args.model_type:
-        steps.append(f"LLM scoring  —  {args.model_type} / {args.model_name}")
+        token_tag = f"[{args.llm_tokens}]" if args.llm_tokens else ""
+        steps.append(f"LLM scoring  —  {args.model_type} / {args.model_name}  {token_tag}".rstrip())
     if args.transcriptome:
         steps.append("Salmon quantification")
     steps.append("Export JSON report")
@@ -445,8 +483,14 @@ def _run_pipeline(args):
     if args.nr_db:
         t       = time.time()
         viral   = [s for s in seqs if s.is_viral]
-        dmnd_nr = DiamondRunner(db_path=str(args.nr_db), threads=args.cpu,
-                                outdir=str(organizer.diamond_dir))
+        dmnd_nr = DiamondRunner(
+            db_path      = str(args.nr_db),
+            threads      = args.cpu,
+            outdir       = str(organizer.diamond_dir),
+            block_size   = args.nr_block_size,
+            index_chunks = args.nr_index_chunks,
+            tmpdir       = args.nr_tmpdir,
+        )
         nr_tsv  = dmnd_nr.run_single(viral, DiamondPhase.NR_CHARACTERIZE)
         if nr_tsv:
             hits_nr = DiamondOutputParser.parse(nr_tsv)
@@ -508,9 +552,11 @@ def _run_pipeline(args):
     # ── 10. LLM scoring ───────────────────────────────────────────────────────
     if args.model_type and args.model_name:
         t = time.time()
-        from .score_ai import SequenceScorer
+        from .score_ai import SequenceScorer, LlmMode
+        mode = LlmMode.HIGH if args.llm_tokens == "high" else LlmMode.LOW
         SequenceScorer(model_type=args.model_type,
                        model_name=args.model_name,
+                       mode=mode,
                        api_key=args.api_key).score(seqs)
         yield from _tick(t)
 
