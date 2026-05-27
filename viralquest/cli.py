@@ -552,7 +552,7 @@ def _run_pipeline(args):
     # ── 10. LLM scoring ───────────────────────────────────────────────────────
     if args.model_type and args.model_name:
         t          = time.time()
-        viral_seqs = [s for s in seqs if s.is_viral]
+        viral_seqs = [s for s in seqs if s.blastx_nr_hits]
         from .score_ai import SequenceScorer, LlmMode
         mode = LlmMode.HIGH if args.llm_tokens == "high" else LlmMode.LOW
         SequenceScorer(model_type=args.model_type,

@@ -128,12 +128,9 @@ body {
 }
 
 .vq-nav__logo img {
-  height:  30px;
+  height:  40px;
   width:   auto;
   display: block;
-  /* Logo art is dark navy/blue on transparent; invert-ish for the dark nav */
-  filter: brightness(0) invert(1);
-  opacity: .96;
 }
 
 .vq-nav__tabs {

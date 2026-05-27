@@ -227,7 +227,7 @@ def main() -> None:
     if args.model_type and args.model_name and args.llm_tokens:
         from viralquest.score_ai import LlmMode, SequenceScorer
         mode       = LlmMode.HIGH if args.llm_tokens == "high" else LlmMode.LOW
-        viral_seqs = [s for s in seqs if s.is_viral]
+        viral_seqs = [s for s in seqs if s.blastx_nr_hits]
         logger.info(
             f"LLM scoring ({args.llm_tokens}-token) — "
             f"{args.model_type}/{args.model_name} — {len(viral_seqs)} sequences"

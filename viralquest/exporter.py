@@ -137,9 +137,10 @@ class ReportExporter:
             ]
 
         report = {
-            "meta":      self._build_meta(input_fasta, version),
-            "sequences": [self._seq_to_dict(s) for s in confirmed],
-            "clusters":  [self._cluster_to_dict(c) for c in confirmed_clusters],
+            "meta":           self._build_meta(input_fasta, version),
+            "pipeline_stats": self._build_pipeline_stats(nuc_seqs, confirmed, confirmed_clusters),
+            "sequences":      [self._seq_to_dict(s) for s in confirmed],
+            "clusters":       [self._cluster_to_dict(c) for c in confirmed_clusters],
         }
 
         if salmon_report is not None:
@@ -211,6 +212,65 @@ class ReportExporter:
             "representative_id": cluster.representative_id,
             "size":              cluster.size,
             "members":           [_to_serializable(m) for m in cluster.members],
+        }
+
+    @staticmethod
+    def _build_pipeline_stats(
+        all_seqs:  list,
+        confirmed: list,
+        clusters:  list,
+    ) -> dict:
+        """
+        Aggregate counts from the full (pre-filter) sequence set so the HTML
+        report can show meaningful pipeline-wide numbers rather than counts
+        derived only from the exported subset.
+        """
+        # BLAST
+        refseq_seqs   = sum(1 for s in all_seqs if s.blastx_hits)
+        nr_seqs       = sum(1 for s in confirmed if s.blastx_nr_hits)
+        blastn_seqs   = sum(1 for s in confirmed if s.blastn_hits)
+        viral_seqs    = sum(1 for s in all_seqs if s.is_viral)
+
+        # HMM — count domains across ORFs from the full set
+        db_counts: dict[str, int] = {"RVDB": 0, "Vfam": 0, "EggNOG": 0, "Pfam": 0}
+        total_orfs = 0
+        for s in all_seqs:
+            total_orfs += len(s.orfs)
+            for orf in s.orfs:
+                for dom in orf.domains:
+                    if dom.database in db_counts:
+                        db_counts[dom.database] += 1
+
+        # LLM — only from confirmed (LLM runs on viral seqs)
+        scored = [s for s in confirmed if s.llm_output]
+        llm_scores = [s.llm_output.vq_score for s in scored if s.llm_output.vq_score is not None]
+
+        return {
+            "blast": {
+                "refseq_unique_seqs": refseq_seqs,
+                "nr_unique_seqs":     nr_seqs,
+                "blastn_unique_seqs": blastn_seqs,
+                "total_confirmed":    len(confirmed),
+                "total_input":        len(all_seqs),
+                "total_viral_flagged": viral_seqs,
+            },
+            "hmm": {
+                "rvdb_hits":   db_counts["RVDB"],
+                "vfam_hits":   db_counts["Vfam"],
+                "eggnog_hits": db_counts["EggNOG"],
+                "pfam_hits":   db_counts["Pfam"],
+                "total_orfs":  total_orfs,
+            },
+            "llm": {
+                "present":       bool(scored),
+                "model":         scored[0].llm_output.model if scored else None,
+                "mode":          scored[0].llm_output.mode  if scored else None,
+                "scored":        len(scored),
+                "viral_known":   sum(1 for s in scored if s.llm_output.classification == "viral-known"),
+                "viral_unknown": sum(1 for s in scored if s.llm_output.classification == "viral-unknown"),
+                "avg_score":     round(sum(llm_scores) / len(llm_scores), 1) if llm_scores else None,
+            },
+            "clusters": len(clusters),
         }
 
     @staticmethod

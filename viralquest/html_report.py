@@ -53,34 +53,47 @@ def _enrich_report(report: dict) -> dict:
     """Add _taxonomy_tree and pre-aggregated stats to the report."""
     seqs     = report.get("sequences", [])
     clusters = report.get("clusters", [])
+    ps       = report.get("pipeline_stats") or {}   # pre-computed by exporter when available
+
     report["_taxonomy_tree"] = _build_taxonomy_tree(seqs)
-    report["summary"]        = _build_summary(seqs, clusters)
-    report["blast_stats"]    = _build_blast_stats(seqs)
-    report["hmm_stats"]      = _build_hmm_stats(seqs)
-    report["llm_stats"]      = _build_llm_stats(seqs)
+    report["summary"]        = _build_summary(seqs, clusters, ps)
+    report["blast_stats"]    = _build_blast_stats(seqs, ps)
+    report["hmm_stats"]      = _build_hmm_stats(seqs, ps)
+    report["llm_stats"]      = _build_llm_stats(seqs, ps)
     report["salmon_stats"]   = _build_salmon_stats(report.get("salmon_quant"))
     return report
 
 
-def _build_summary(seqs: list[dict], clusters: list[dict]) -> dict:
+def _build_summary(seqs: list[dict], clusters: list[dict], ps: dict) -> dict:
+    blast = ps.get("blast") or {}
+    hmm   = ps.get("hmm")   or {}
     return {
-        "total_sequences": len(seqs),
-        "confirmed_viral": sum(1 for s in seqs if s.get("is_viral")),
-        "total_orfs":      sum(len(s.get("orfs") or []) for s in seqs),
-        "total_clusters":  len(clusters),
+        "total_sequences": blast.get("total_input",    len(seqs)),
+        "confirmed_viral": blast.get("total_confirmed", sum(1 for s in seqs if s.get("is_viral"))),
+        "total_orfs":      hmm.get("total_orfs",       sum(len(s.get("orfs") or []) for s in seqs)),
+        "total_clusters":  ps.get("clusters",          len(clusters)),
         "cap3_used":       False,
     }
 
 
-def _build_blast_stats(seqs: list[dict]) -> dict:
+def _build_blast_stats(seqs: list[dict], ps: dict) -> dict:
+    blast = ps.get("blast") or {}
     return {
-        "refseq_unique_seqs": sum(1 for s in seqs if s.get("blastx_hits")),
-        "nr_unique_seqs":     sum(1 for s in seqs if s.get("blastx_nr_hits")),
-        "blastn_unique_seqs": sum(1 for s in seqs if s.get("blastn_hits")),
+        "refseq_unique_seqs": blast.get("refseq_unique_seqs", sum(1 for s in seqs if s.get("blastx_hits"))),
+        "nr_unique_seqs":     blast.get("nr_unique_seqs",     sum(1 for s in seqs if s.get("blastx_nr_hits"))),
+        "blastn_unique_seqs": blast.get("blastn_unique_seqs", sum(1 for s in seqs if s.get("blastn_hits"))),
     }
 
 
-def _build_hmm_stats(seqs: list[dict]) -> dict:
+def _build_hmm_stats(seqs: list[dict], ps: dict) -> dict:
+    hmm = ps.get("hmm") or {}
+    if hmm:
+        return {
+            "rvdb_hits":   hmm.get("rvdb_hits",   0),
+            "vfam_hits":   hmm.get("vfam_hits",   0),
+            "eggnog_hits": hmm.get("eggnog_hits", 0),
+            "pfam_hits":   hmm.get("pfam_hits",   0),
+        }
     counts: dict[str, int] = {"RVDB": 0, "Vfam": 0, "EggNOG": 0, "Pfam": 0}
     for s in seqs:
         for orf in (s.get("orfs") or []):
@@ -96,7 +109,10 @@ def _build_hmm_stats(seqs: list[dict]) -> dict:
     }
 
 
-def _build_llm_stats(seqs: list[dict]) -> dict:
+def _build_llm_stats(seqs: list[dict], ps: dict) -> dict:
+    llm = ps.get("llm") or {}
+    if llm and llm.get("present") is not None:
+        return llm
     scored = [s for s in seqs if s.get("llm_output")]
     if not scored:
         return {"present": False}
@@ -203,7 +219,7 @@ def _render_template(report: dict, d3_js: str) -> str:
     replacements = {
         "{{SAMPLE_NAME}}":  sample_name,
         "{{VQ_FAVICON}}":   _asset_data_uri("favicon.png"),
-        "{{VQ_LOGO}}":      _asset_data_uri("logo-text.png"),
+        "{{VQ_LOGO}}":      _asset_data_uri("logo-bg-text.png"),
         "{{VQ_STYLES}}":    (_COMPONENTS / "base.css").read_text(encoding="utf-8"),
         "{{VQ_DATA}}":      json.dumps(report, ensure_ascii=False),
         "{{VQ_D3}}":        d3_js,
