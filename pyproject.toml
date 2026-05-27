@@ -11,6 +11,16 @@ readme = "README.md"
 authors = [{name = "Gabriel Rodrigues", email = "gvpina.rodrigues@gmail.com"}]
 license = {text = "MIT"}
 requires-python = ">=3.11"
+keywords = ["bioinformatics", "viral genomics", "genome annotation", "blast", "hmmer"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+]
 dependencies = [
     "biopython>=1.87",
     "loguru>=0.7",
@@ -22,16 +32,18 @@ dependencies = [
     "mygene>=3.2",
     "gprofiler-official>=1.0",
     "httpx>=0.24",
+    "rich>=13.0",
+    "setproctitle>=1.3",
+    "orfipy>=0.0.4",
+    "pyhmmer>=0.10.0",
 ]
-keywords = ["bioinformatics", "viral genomics", "genome annotation", "blast", "hmmer"]
-classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Science/Research",
-    "Topic :: Scientific/Engineering :: Bio-Informatics",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Operating System :: POSIX :: Linux",
+
+[project.optional-dependencies]
+ai = [
+    "ollama>=0.4.7",
+    "openai>=1.0.0",
+    "anthropic>=0.40.0",
+    "google-generativeai>=0.8.0",
 ]
 
 [project.urls]

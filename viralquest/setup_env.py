@@ -152,7 +152,7 @@ def setup() -> None:
     else:
         print("✓ All bioinformatics tools already available on PATH.")
 
-    # ── Step 4: check and download databases ────────────────────────────────
+    # ── Step 4: offer database download ─────────────────────────────────────
     _print_header("Step 3 / 3 — Reference databases")
     from viralquest.download_dbs import check_databases, download_all
 
@@ -163,13 +163,32 @@ def setup() -> None:
     for name in present:
         print(f"  ✓  {name}")
     for name in missing:
-        print(f"  ✗  {name}  ← will be downloaded")
+        print(f"  ✗  {name}")
 
     if not missing:
-        print("\n  All databases already present — skipping download.")
+        print("\n  All databases already present.")
     else:
-        print(f"\n  Downloading {len(missing)} missing database(s)...")
-        download_all(force=False)
+        print(f"\n  {len(missing)} database(s) are missing (~several GB total).")
+        print("  They will be downloaded via curl and stored inside the package.")
+        print()
+        try:
+            answer = input("  Download now? [Y/n]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = "n"
+            print()
+
+        if answer in ("", "y", "yes"):
+            print()
+            download_all(force=False)
+        else:
+            print()
+            print("  Skipped. You can download later with:")
+            print("    viralquest-download")
+            print()
+            print("  Or place the database files (.hmm + viralDB.dmnd) in any flat")
+            print("  directory and point viralquest at it at runtime:")
+            print("    viralquest --db-dir /path/to/dbs  -in input.fasta  -out results/")
+            print()
 
     _print_header("Setup complete")
     print("✓ ViralQuest is ready to use.\n")
@@ -182,6 +201,8 @@ def setup() -> None:
 
 def download() -> None:
     """Standalone database downloader (re-runs only the download step)."""
+    from pathlib import Path
+
     parser = argparse.ArgumentParser(
         prog="viralquest-download",
         description="Download ViralQuest reference databases from Zenodo.",
@@ -191,12 +212,23 @@ def download() -> None:
         action="store_true",
         help="Re-download and overwrite files that already exist.",
     )
+    parser.add_argument(
+        "--db-dir",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help="Directory where databases will be stored "
+             "(default: data/ inside the package).",
+    )
     args = parser.parse_args()
+
+    db_dir = Path(args.db_dir) if args.db_dir else None
+    flat   = db_dir is not None   # custom dir → flat layout (no hmm-dbs/ subdir)
 
     _print_header("ViralQuest — database download")
     from viralquest.download_dbs import check_databases, download_all
 
-    db_status = check_databases()
+    db_status = check_databases(db_dir=db_dir, flat=flat)
     for name, ok in db_status.items():
         mark = "✓" if ok else "✗"
         note = "" if ok else "  ← will be downloaded"
@@ -207,4 +239,4 @@ def download() -> None:
         return
 
     print()
-    download_all(force=args.force)
+    download_all(force=args.force, db_dir=db_dir, flat=flat)

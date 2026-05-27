@@ -26,33 +26,50 @@ from pathlib import Path
 __version__ = "3.0.0"
 __author__  = "gabrielvpina"
 
-# ── Auto-detected database paths ──────────────────────────────────────────────
+# ── Database path resolution ──────────────────────────────────────────────────
 
-_ROOT    = Path(__file__).parent.parent
-_DATA    = _ROOT / "data"
-_HMM_DIR = _DATA / "hmm-dbs"
+_DEFAULT_DATA = Path(__file__).parent.parent / "data"
 
-_FAMILY_INFO_DIR = _DATA / "viral-family-info"
 
-_DB = {
-    "viral_dmnd":   _DATA            / "viralDB.dmnd",
-    "rvdb":         _HMM_DIR         / "U-RVDBv29.0-prot.hmm",
-    "vfam":         _HMM_DIR         / "Vfam-228.hmm",
-    "eggnog":       _HMM_DIR         / "EggNOG-4.5.hmm",
-    "pfam":         _HMM_DIR         / "Pfam-A.hmm",
-    "viral_tax":    _DATA            / "viralTax.json.xz",
-    "fam_high":     _FAMILY_INFO_DIR / "viral_info_highToken.json",
-    "fam_low":      _FAMILY_INFO_DIR / "viral_info_lowToken.json",
-}
+def _resolve_db_paths(ext_db_dir: Path | None = None) -> tuple[dict, Path, list]:
+    """Return (db, index_dir, hmm_filter).
 
-_INDEX_DIR = _DATA / "hmm-index"
+    ext_db_dir — flat directory supplied via --db-dir that contains the five
+    binary database files (*.hmm + viralDB.dmnd) with no subdirectories.
+    When None the default nested data/ layout is used.
 
-# (hmm_path_key, json_index_path, db_name_for_metadata)
-_HMM_FILTER = [
-    ("rvdb",   _INDEX_DIR / "RVDB-index.json",       "RVDB"),
-    ("vfam",   _INDEX_DIR / "Vfam-index.json",       "Vfam"),
-    ("eggnog", _INDEX_DIR / "eggNOG-4.5-index.json", "EggNOG"),
-]
+    Index files, viralTax.json.xz, and viral-family-info/ are always read
+    from the bundled data/ directory regardless of ext_db_dir.
+    """
+    data      = _DEFAULT_DATA
+    index_dir = data / "hmm-index"
+    fam_dir   = data / "viral-family-info"
+
+    if ext_db_dir is not None:
+        hmm_base  = ext_db_dir
+        dmnd_base = ext_db_dir
+    else:
+        hmm_base  = data / "hmm-dbs"
+        dmnd_base = data / "viral-db"
+
+    db = {
+        "viral_dmnd": dmnd_base / "viralDB.dmnd",
+        "rvdb":       hmm_base  / "U-RVDBv29.0-prot.hmm",
+        "vfam":       hmm_base  / "Vfam-228.hmm",
+        "eggnog":     hmm_base  / "EggNOG-4.5.hmm",
+        "pfam":       hmm_base  / "Pfam-A.hmm",
+        "viral_tax":  data      / "viralTax.json.xz",
+        "fam_high":   fam_dir   / "viral_info_highToken.json",
+        "fam_low":    fam_dir   / "viral_info_lowToken.json",
+    }
+
+    hmm_filter = [
+        ("rvdb",   index_dir / "RVDB-index.json",       "RVDB"),
+        ("vfam",   index_dir / "Vfam-index.json",       "Vfam"),
+        ("eggnog", index_dir / "eggNOG-4.5-index.json", "EggNOG"),
+    ]
+
+    return db, index_dir, hmm_filter
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 
@@ -168,9 +185,15 @@ def _build_parser():
         metavar="KEY",
         help="API key for cloud AI providers (not needed for ollama).")
 
-    # Output mode ──────────────────────────────────────────────────────────────
+    # Output mode / misc ──────────────────────────────────────────────────────
     parser.add_argument("--live", action="store_true",
         help="Rich Live display: banner + scrolling log box + step progress bar.")
+    parser.add_argument("--db-dir", dest="db_dir", type=str,
+        default=None, metavar="DIR",
+        help="Flat directory containing the five binary database files "
+             "(U-RVDBv29.0-prot.hmm, Vfam-228.hmm, EggNOG-4.5.hmm, Pfam-A.hmm, "
+             "viralDB.dmnd). No subdirectories needed. Indices and metadata are "
+             "always read from the bundled data/ folder.")
 
     # Version ──────────────────────────────────────────────────────────────────
     parser.add_argument("-v", "--version",
@@ -282,6 +305,14 @@ def _show_rich_help() -> None:
     console.print()
 
     console.print(Panel(
+        "[bold white]--db-dir[/]  [dim]DIR[/]\n"
+        "  Flat directory that contains the five binary database files:\n"
+        "  [dim]U-RVDBv29.0-prot.hmm  Vfam-228.hmm  EggNOG-4.5.hmm\n"
+        "  Pfam-A.hmm  viralDB.dmnd[/dim]\n"
+        "  Files must sit directly in DIR — no subdirectories.\n"
+        "  Useful when databases are stored outside the package.\n"
+        "  Download them with: [dim]viralquest-download --db-dir DIR[/dim]\n"
+        "  Indices and metadata are always read from the bundled data/ folder.\n\n"
         "[bold white]--live[/]\n"
         "  Rich Live display: ASCII banner + scrolling log box + step progress bar.\n"
         "  Default (without flag): raw loguru log stream to stderr.\n\n"
@@ -294,16 +325,20 @@ def _show_rich_help() -> None:
 
 # ── Validation ────────────────────────────────────────────────────────────────
 
-def _check_databases(console) -> bool:
-    missing = [name for name, path in _DB.items() if not path.exists()]
+def _check_databases(console, db: dict) -> bool:
+    missing = [name for name, path in db.items() if not path.exists()]
     if not missing:
         return True
-    console.print(f"\n[bold red]ERROR:[/bold red] {len(missing)} database(s) not found:\n")
+    console.print(f"\n[bold red]ERROR:[/bold red] {len(missing)} database file(s) not found:\n")
     for name in missing:
-        console.print(f"  [red]✗[/red]  {name}  [dim]{_DB[name]}[/dim]")
+        console.print(f"  [red]✗[/red]  {name}  [dim]{db[name]}[/dim]")
     console.print(
-        "\n[bold yellow]Fix:[/bold yellow] run  "
-        "[bold white]python download_dbs.py[/bold white]  to fetch all required databases.\n"
+        "\n[bold yellow]Fix (option 1):[/bold yellow]  "
+        "[bold white]viralquest-download[/bold white]"
+        "  — downloads into the package data/ folder.\n"
+        "[bold yellow]Fix (option 2):[/bold yellow]  "
+        "[bold white]viralquest --db-dir DIR ...[/bold white]"
+        "  — point to a flat directory that already contains the database files.\n"
     )
     return False
 
@@ -454,7 +489,7 @@ def _run_pipeline(args):
 
     # ── 3. Diamond RefSeq filter ──────────────────────────────────────────────
     t    = time.time()
-    dmnd = DiamondRunner(db_path=str(_DB["viral_dmnd"]), threads=args.cpu,
+    dmnd = DiamondRunner(db_path=str(args._db["viral_dmnd"]), threads=args.cpu,
                          outdir=str(organizer.diamond_dir))
     tsvs:  list[Path] = []
     hits:  list        = []
@@ -471,9 +506,9 @@ def _run_pipeline(args):
     searcher = HmmSearcher(cpus=args.cpu)
     seq_block, orf_map = HmmSequencePreparer.prepare(seqs)
     if seq_block is not None:
-        for db_key, json_path, db_name in _HMM_FILTER:
+        for db_key, json_path, db_name in args._hmm_filter:
             meta      = HmmMetadataLoader.load(str(json_path), db_name)
-            hmm_hits  = searcher.search(seq_block, str(_DB[db_key]))
+            hmm_hits  = searcher.search(seq_block, str(args._db[db_key]))
             HmmResultAttacher.attach(hmm_hits, orf_map, meta, db_name)
             organizer.save_hmm_table(hmm_hits, db_name)
     HmmViralFlagSetter.flag(seqs)
@@ -525,10 +560,10 @@ def _run_pipeline(args):
         pfam_block, pfam_orf_map = HmmSequencePreparer.prepare(viral_seqs)
         if pfam_block is not None:
             pfam_meta = HmmMetadataLoader.load(
-                str(_INDEX_DIR / "Pfam-index.json"), "Pfam"
+                str(args._index_dir / "Pfam-index.json"), "Pfam"
             )
             pfam_hits = HmmSearcher(cpus=args.cpu).search(
-                pfam_block, str(_DB["pfam"])
+                pfam_block, str(args._db["pfam"])
             )
             HmmResultAttacher.attach(pfam_hits, pfam_orf_map, pfam_meta, "Pfam")
             organizer.save_hmm_table(pfam_hits, "Pfam")
@@ -536,9 +571,9 @@ def _run_pipeline(args):
 
     # ── 8. Taxonomy annotation ────────────────────────────────────────────────
     t = time.time()
-    TaxonomyAnnotator(str(_DB["viral_tax"])).annotate(seqs)
+    TaxonomyAnnotator(str(args._db["viral_tax"])).annotate(seqs)
     ViralFamilyAnnotator(
-        str(_DB["fam_high"]), str(_DB["fam_low"])
+        str(args._db["fam_high"]), str(args._db["fam_low"])
     ).annotate(seqs)
     yield from _tick(t)
 
@@ -762,8 +797,19 @@ def main() -> None:
         pass
 
     # Check bioinformatics binaries before doing anything else.
-    from viralquest.setup_env import missing_tools
+    # If tools are missing, try to auto-activate the pixi environment first —
+    # the user may have run viralquest-setup but not reloaded their shell PATH.
+    import os
+    from viralquest.setup_env import missing_tools, _find_pixi_toml
     absent = missing_tools()
+    if absent:
+        pixi_toml = _find_pixi_toml()
+        if pixi_toml:
+            env_bin = pixi_toml.parent / ".pixi" / "envs" / "default" / "bin"
+            if env_bin.exists():
+                os.environ["PATH"] = str(env_bin) + ":" + os.environ.get("PATH", "")
+                absent = missing_tools()
+
     if absent:
         print(
             f"[ERROR] Missing required tools: {', '.join(absent)}\n"
@@ -789,8 +835,11 @@ def main() -> None:
         _show_rich_help()
         sys.exit(0)
 
+    ext_db_dir = Path(args.db_dir) if args.db_dir else None
+    args._db, args._index_dir, args._hmm_filter = _resolve_db_paths(ext_db_dir)
+
     _validate_args(args, console)
-    if not _check_databases(console):
+    if not _check_databases(console, args._db):
         sys.exit(1)
 
     if args.live:
