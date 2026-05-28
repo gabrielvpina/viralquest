@@ -3747,7 +3747,7 @@ function vqInitSalmon(salmonQuant, clusters) {
       <div class="vq-card__body" id="sq-refhk-wrap" style="padding:12px 14px"></div>
     </div>` : ''}
 
-    ${_renderHostHits(salmonQuant.host_viral_hits || [])}
+    ${_SQ.pathway === 'reference' ? _renderHostHits(salmonQuant.host_viral_hits || []) : ''}
   `;
 
   // Wire metric toggle
