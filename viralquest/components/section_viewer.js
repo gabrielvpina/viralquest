@@ -239,7 +239,7 @@ function _seqCard(seq) {
 
   const orfCount     = (seq.orfs || []).length;
   const blastnCount  = (seq.blastn_hits || []).length;
-  const refseqCount  = (seq.blastx_refseq_hits || []).length;
+  const refseqCount  = (seq.blastx_hits || []).length;
   const nrCount      = (seq.blastx_nr_hits || []).length;
 
   card.innerHTML = `
@@ -332,7 +332,7 @@ function _seqCard(seq) {
   const renderBlast = (kind) => {
     let hits = [];
     if      (kind === 'blastn') hits = seq.blastn_hits        || [];
-    else if (kind === 'refseq') hits = seq.blastx_refseq_hits || [];
+    else if (kind === 'refseq') hits = seq.blastx_hits || [];
     else                        hits = seq.blastx_nr_hits     || [];
     blastBody.innerHTML = _blastTable(hits, kind);
   };
@@ -386,16 +386,27 @@ function _blastTable(hits, kind) {
     return `<div class="vq-empty" style="padding:24px 16px">No ${kind} hits.</div>`;
   }
   const esc = VQ.esc;
-  const rows = hits.map(h => `
+  const rows = hits.map(h => {
+    const accession = h.subject_id || '—';
+    const title     = h.subject_title || h.stitle || '—';
+    const pident    = h.pct_identity ?? h.pident;
+    const qcov      = h.query_coverage ?? h.qcovhsp;
+    const evalue    = h.e_value ?? h.evalue;
+    const bitscore  = h.bit_score ?? h.bitscore;
+    const qrange    = (h.query_start != null && h.query_end != null)
+      ? `${h.query_start}–${h.query_end}`
+      : '—';
+    return `
     <tr>
-      <td class="vq-td--mono">${esc(h.accession)}</td>
-      <td>${esc(h.title)}</td>
-      <td class="vq-td--num">${h.pident.toFixed(1)}%</td>
-      <td class="vq-td--num">${h.qcovhsp}%</td>
-      <td class="vq-td--num">${h.evalue.toExponential(1)}</td>
-      <td class="vq-td--num">${h.bitscore}</td>
-      <td class="vq-td--num">${h.qstart}–${h.qend}</td>
-    </tr>`).join('');
+      <td class="vq-td--mono">${esc(accession)}</td>
+      <td>${esc(title)}</td>
+      <td class="vq-td--num">${pident != null ? pident.toFixed(1) + '%' : '—'}</td>
+      <td class="vq-td--num">${qcov != null ? (+qcov).toFixed(1) + '%' : '—'}</td>
+      <td class="vq-td--num">${evalue != null ? evalue.toExponential(1) : '—'}</td>
+      <td class="vq-td--num">${bitscore ?? '—'}</td>
+      <td class="vq-td--num">${qrange}</td>
+    </tr>`;
+  }).join('');
   return `
     <table class="vq-table">
       <thead>
@@ -541,7 +552,11 @@ function _genomeSVG(seq, containerWidth) {
   const FRAME_LABEL = ['+1','+2','+3','-1','-2','-3'];
 
   function frameLane(orf) {
-    const key = (orf.frame || '').replace(/\s+/g, '');
+    const f = orf.frame;
+    // frame may be a number (2, -2) or already a string ('+2', '-2')
+    const key = typeof f === 'number'
+      ? (f > 0 ? '+' : '') + f
+      : String(f ?? '').replace(/\s+/g, '');
     return FRAME_INDEX[key] ?? (orf.strand === '-' ? 3 : 0);
   }
   const nLanes = 6;

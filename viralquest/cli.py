@@ -24,7 +24,8 @@ from pathlib import Path
 # ── Version ───────────────────────────────────────────────────────────────────
 
 __version__ = "3.0.0"
-__author__  = "gabrielvpina"
+__author__  = "Gabriel Rodrigues"
+__link__ = "https://github.com/gabrielvpina/viralquest"
 
 # ── Database path resolution ──────────────────────────────────────────────────
 
@@ -168,6 +169,11 @@ def _build_parser():
     sal.add_argument("--reads", dest="reads", nargs="+", type=str,
         metavar="READS.fastq",
         help="FASTQ file(s) for Salmon: one = single-end, two = paired-end.")
+    sal.add_argument("--hk-genes", dest="hk_genes", type=str,
+        default=None, metavar="IDS.txt",
+        help="Text file with reference housekeeping gene IDs (one per line) for "
+             "normalization. IDs must exactly match the first word of the FASTA "
+             "header in --transcriptome (case-sensitive). Requires --transcriptome.")
 
     # AI scoring ───────────────────────────────────────────────────────────────
     ai = parser.add_argument_group("AI scoring (optional)")
@@ -215,13 +221,13 @@ def _show_rich_help() -> None:
 
     tagline = Text()
     tagline.append("  Viral diversity discovery and characterisation pipeline\n", style="italic")
-    tagline.append(f"  v{__version__} · {__author__}\n", style="dim")
+    tagline.append(f"  v{__version__} · {__author__}\n", style="italic")
     console.print(tagline)
 
     console.print(Panel(
-        "[bold white]-in / --input[/]    [dim]FASTA[/]\n"
+        "[bold cyan]-in / --input[/]    [dim]FASTA[/]\n"
         "  Input nucleotide FASTA file.\n\n"
-        "[bold white]-out / --outdir[/]  [dim]DIR[/]\n"
+        "[bold cyan]-out / --outdir[/]  [dim]DIR[/]\n"
         "  Output directory (created if absent).",
         title="[bold red]REQUIRED[/bold red]",
         border_style="red", width=85, box=box.ROUNDED,
@@ -229,13 +235,13 @@ def _show_rich_help() -> None:
     console.print()
 
     console.print(Panel(
-        "[bold white]--cap3[/]\n"
+        "[bold cyan]--cap3[/]\n"
         "  Assemble overlapping sequences with CAP3 before analysis.\n\n"
-        "[bold white]-cpu / --cpu[/]       [dim]N[/]  (default: 2)\n"
+        "[bold cyan]-cpu / --cpu[/]       [dim]N[/]  (default: 2)\n"
         "  CPU threads used by Diamond, HMMsearch, BLASTn, and Salmon.\n\n"
-        "[bold white]--min-identity[/]    [dim]%[/]  (default: 70.0)\n"
+        "[bold cyan]--min-identity[/]    [dim]%[/]  (default: 70.0)\n"
         "  Minimum %% identity for intra-cluster alignment.\n\n"
-        "[bold white]--force[/]\n"
+        "[bold cyan]--force[/]\n"
         "  Export all input sequences even if viral confirmation fails.",
         title="[bold green]PIPELINE OPTIONS[/bold green]",
         border_style="green", width=85, box=box.ROUNDED,
@@ -243,18 +249,18 @@ def _show_rich_help() -> None:
     console.print()
 
     console.print(Panel(
-        "[bold white]-nr / --nr-db[/]         [dim]NR.dmnd[/]\n"
+        "[bold cyan]-nr / --nr-db[/]         [dim]NR.dmnd[/]\n"
         "  Diamond-format NCBI NR database for full protein-level characterisation\n"
         "  of confirmed viral sequences. Optional but recommended for complete\n"
         "  annotation. NR is a large database (>100 GB); build with:\n"
         "  [dim]diamond makedb --in nr.fasta --db nr[/dim]\n\n"
-        "[bold white]--nr-block-size[/]       [dim]N[/]  (default: Diamond built-in ~2.0)\n"
+        "[bold cyan]--nr-block-size[/]       [dim]N[/]  (default: Diamond built-in ~2.0)\n"
         "  GB of RAM loaded per database pass. Higher = fewer passes = faster.\n"
         "  Examples: 6 → ~45 GB RAM · 12 → ~90 GB RAM.\n\n"
-        "[bold white]--nr-index-chunks[/]     [dim]N[/]  (default: 4)\n"
+        "[bold cyan]--nr-index-chunks[/]     [dim]N[/]  (default: 4)\n"
         "  Seed-index chunks. Lower values (1–2) reduce disk passes but use\n"
         "  more RAM. Combine with --nr-block-size for maximum speed.\n\n"
-        "[bold white]--nr-tmpdir[/]           [dim]DIR[/]\n"
+        "[bold cyan]--nr-tmpdir[/]           [dim]DIR[/]\n"
         "  Directory for Diamond temporary files. Use a fast NVMe drive or\n"
         "  RAM disk ([dim]/dev/shm[/dim]) to eliminate I/O as a bottleneck.",
         title="[bold yellow]NR DATABASE (optional)[/bold yellow]",
@@ -263,41 +269,47 @@ def _show_rich_help() -> None:
     console.print()
 
     console.print(Panel(
-        "[bold white]-n / --blastn-local[/]   [dim]BLAST_DB[/]\n"
+        "[bold cyan]-n / --blastn-local[/]   [dim]BLAST_DB[/]\n"
         "  Path to a local BLAST nucleotide database (e.g. nt).\n\n"
-        "[bold white]--blastn-online[/]       [dim]EMAIL[/]\n"
+        "[bold cyan]--blastn-online[/]       [dim]EMAIL[/]\n"
         "  NCBI e-mail for web BLASTn — no local database required.\n\n"
-        "[bold white]--blastn-online-db[/]    [dim]DB[/]  (default: nt)\n"
+        "[bold cyan]--blastn-online-db[/]    [dim]DB[/]  (default: nt)\n"
         "  NCBI database to query when using --blastn-online.\n\n"
-        "[bold yellow]Note:[/] --blastn-local and --blastn-online are mutually exclusive.",
+        "[bold]Note:[/] --blastn-local and --blastn-online are mutually exclusive.",
         title="[bold yellow]BLASTN (choose one)[/bold yellow]",
         border_style="yellow", width=85, box=box.ROUNDED,
     ))
     console.print()
 
     console.print(Panel(
-        "[bold white]--transcriptome[/]  [dim]HOST.fasta[/]\n"
-        "  Host transcriptome FASTA. Salmon quantifies viral + housekeeping\n"
-        "  gene expression in the context of this assembly.\n\n"
-        "[bold white]--reads[/]          [dim]R1.fastq [R2.fastq][/]\n"
+        "[bold cyan]--reads[/]          [dim]R1.fastq [R2.fastq][/]\n"
         "  FASTQ file(s): one = single-end, two = paired-end.\n\n"
-        "[bold yellow]Note:[/] --transcriptome and --reads must be used together.",
+        "[bold cyan]--transcriptome[/]  [dim]HOST.fasta[/]\n"
+        "  Host transcriptome FASTA. When provided, runs the [bold]reference pathway[/bold]:\n"
+        "  viral + bundled HK + ref-HK + transcriptome as a combined Salmon index.\n"
+        "  Without --transcriptome, runs the [bold]de-novo pathway[/bold]: quantifies\n"
+        "  assembled contigs directly, using BLASTn to find HK-matching contigs.\n\n"
+        "[bold cyan]--hk-genes[/]       [dim]IDS.txt[/]\n"
+        "  Text file with reference HK gene IDs (one per line) for normalization.\n"
+        "  IDs must exactly match the first word of the --transcriptome header\n"
+        "  (case-sensitive). Requires --transcriptome.\n\n"
+        "[bold]Note:[/] --reads alone triggers de-novo mode. --transcriptome requires --reads.",
         title="[bold cyan]SALMON QUANTIFICATION (optional)[/bold cyan]",
         border_style="cyan", width=85, box=box.ROUNDED,
     ))
     console.print()
 
     console.print(Panel(
-        "[bold white]--model-type[/]   [dim]ollama | openai | anthropic | google[/]\n"
+        "[bold cyan]--model-type[/]   [dim]ollama | openai | anthropic | google[/]\n"
         "  AI provider for LLM viral sequence scoring.\n\n"
-        "[bold white]--model-name[/]   [dim]MODEL[/]\n"
+        "[bold cyan]--model-name[/]   [dim]MODEL[/]\n"
         "  Model identifier (e.g. 'qwen3:4b', 'gpt-4o', 'claude-opus-4-7',\n"
         "  'gemini-2.5-pro').\n\n"
-        "[bold white]--llm-tokens[/]   [dim]high | low[/]  [bold red](required with --model-type)[/]\n"
+        "[bold cyan]--llm-tokens[/]   [dim]high | low[/]  [bold red](required with --model-type)[/]\n"
         "  Token usage mode for LLM prompts:\n"
         "    [bold]high[/] — all hits, Pfam details, full taxonomy, full family description.\n"
         "    [bold]low[/]  — best hits only, no Pfam details, compact taxonomy.\n\n"
-        "[bold white]--api-key[/]      [dim]KEY[/]\n"
+        "[bold cyan]--api-key[/]      [dim]KEY[/]\n"
         "  API key for cloud providers (not required for ollama).",
         title="[bold magenta]AI SCORING (optional)[/bold magenta]",
         border_style="magenta", width=85, box=box.ROUNDED,
@@ -305,7 +317,7 @@ def _show_rich_help() -> None:
     console.print()
 
     console.print(Panel(
-        "[bold white]--db-dir[/]  [dim]DIR[/]\n"
+        "[bold cyan]--db-dir[/]  [dim]DIR[/]\n"
         "  Flat directory that contains the five binary database files:\n"
         "  [dim]U-RVDBv29.0-prot.hmm  Vfam-228.hmm  EggNOG-4.5.hmm\n"
         "  Pfam-A.hmm  viralDB.dmnd[/dim]\n"
@@ -313,13 +325,13 @@ def _show_rich_help() -> None:
         "  Useful when databases are stored outside the package.\n"
         "  Download them with: [dim]viralquest-download --db-dir DIR[/dim]\n"
         "  Indices and metadata are always read from the bundled data/ folder.\n\n"
-        "[bold white]--live[/]\n"
+        "[bold cyan]--live[/]\n"
         "  Rich Live display: ASCII banner + scrolling log box + step progress bar.\n"
         "  Default (without flag): raw loguru log stream to stderr.\n\n"
-        "[bold white]-h / --help[/]     Show this help message and exit.\n"
-        "[bold white]-v / --version[/]  Show version and exit.",
-        title="[bold bright_black]OTHER[/bold bright_black]",
-        border_style="bright_black", width=85, box=box.ROUNDED,
+        "[bold cyan]-h / --help[/]     Show this help message and exit.\n"
+        "[bold cyan]-v / --version[/]  Show version and exit.",
+        title="[bold cyan]OTHER[/bold cyan]",
+        border_style="blue", width=85, box=box.ROUNDED,
     ))
 
 
@@ -334,10 +346,10 @@ def _check_databases(console, db: dict) -> bool:
         console.print(f"  [red]✗[/red]  {name}  [dim]{db[name]}[/dim]")
     console.print(
         "\n[bold yellow]Fix (option 1):[/bold yellow]  "
-        "[bold white]viralquest-download[/bold white]"
+        "[bold cyan]viralquest-download[/bold cyan]"
         "  — downloads into the package data/ folder.\n"
         "[bold yellow]Fix (option 2):[/bold yellow]  "
-        "[bold white]viralquest --db-dir DIR ...[/bold white]"
+        "[bold cyan]viralquest --db-dir DIR ...[/bold cyan]"
         "  — point to a flat directory that already contains the database files.\n"
     )
     return False
@@ -351,8 +363,10 @@ def _validate_args(args, console) -> None:
         errors.append(f"input file not found: {args.input}")
     if not args.outdir:
         errors.append("--outdir is required.")
-    if bool(args.transcriptome) ^ bool(args.reads):
-        errors.append("--transcriptome and --reads must be provided together.")
+    if args.transcriptome and not args.reads:
+        errors.append("--transcriptome requires --reads.")
+    if args.hk_genes and not args.transcriptome:
+        errors.append("--hk-genes requires --transcriptome.")
     if args.reads and len(args.reads) > 2:
         errors.append("--reads accepts at most two files (R1 and R2).")
     if args.model_type and not args.model_name:
@@ -385,7 +399,7 @@ def _build_live_display(log_buf: deque, steps: list[str], current: int, progress
 
     layout["banner"].update(
         Panel(Text(_BANNER_RAW, style="bold cyan", no_wrap=True),
-              border_style="bright_black", padding=(0, 1))
+              border_style="blue", padding=(0, 1))
     )
 
     log_content = "\n".join(log_buf) if log_buf else "[dim]Waiting for output…[/dim]"
@@ -393,11 +407,11 @@ def _build_live_display(log_buf: deque, steps: list[str], current: int, progress
         Panel(log_content,
               title=f"[bold cyan]Log[/bold cyan]  "
                     f"[dim]{steps[current] if current < len(steps) else 'done'}[/dim]",
-              border_style="bright_black",
+              border_style="blue",
               subtitle=f"[dim]step {min(current+1, len(steps))}/{len(steps)}[/dim]")
     )
 
-    layout["progress"].update(Panel(progress, border_style="bright_black", padding=(0, 1)))
+    layout["progress"].update(Panel(progress, border_style="blue", padding=(0, 1)))
 
     return layout
 
@@ -423,8 +437,9 @@ def _build_steps(args) -> list[str]:
     if args.model_type:
         token_tag = f"[{args.llm_tokens}]" if args.llm_tokens else ""
         steps.append(f"LLM scoring  —  {args.model_type} / {args.model_name}  {token_tag}".rstrip())
-    if args.transcriptome:
-        steps.append("Salmon quantification")
+    if args.reads:
+        mode = "reference" if args.transcriptome else "de novo"
+        steps.append(f"Salmon quantification  —  {mode}")
     steps.append("Export JSON report")
     steps.append("Build HTML report")
     return steps
@@ -476,8 +491,11 @@ def _run_pipeline(args):
         contigs_p  = FastaParser(str(cap3_res.contigs));  contigs_p.read_input_file()
         singlets_p = FastaParser(str(cap3_res.singlets)); singlets_p.read_input_file()
         seqs = contigs_p.sequences + singlets_p.sequences
+        assembled_fasta = outdir / "cap3" / "assembled.fasta"
+        cap3_res.get_combined_fasta(assembled_fasta)
     else:
         seqs = fp.sequences
+        assembled_fasta = Path(args.input)
     yield from _tick(t)
 
     # ── 2. ORF finding ────────────────────────────────────────────────────────
@@ -598,15 +616,17 @@ def _run_pipeline(args):
 
     # ── 11. Salmon quantification ─────────────────────────────────────────────
     salmon_report = None
-    if args.transcriptome and args.reads:
+    if args.reads:
         t = time.time()
         from .salmon_quant import SalmonQuantPipeline
         try:
-            salmon_report = SalmonQuantPipeline().run(
-                user_transcriptome=Path(args.transcriptome),
-                reads=args.reads,
-                viral_seqs=seqs,
-                outdir=outdir / "salmon",
+            salmon_report = SalmonQuantPipeline(threads=args.cpu).run(
+                reads              = args.reads,
+                viral_seqs         = seqs,
+                outdir             = outdir / "salmon",
+                assembled_fasta    = assembled_fasta,
+                user_transcriptome = Path(args.transcriptome) if args.transcriptome else None,
+                hk_genes_file      = Path(args.hk_genes) if args.hk_genes else None,
             )
         except Exception as exc:
             logger.error(f"Salmon quantification failed — skipping: {exc}")
@@ -782,7 +802,7 @@ def _print_summary(console, args, timings: dict) -> None:
     console.print()
     console.print(Panel(
         lines,
-        title=f"[bold white]ViralQuest — {Path(args.input).name} complete[/bold white]",
+        title=f"[bold green]ViralQuest — {Path(args.input).name} complete[/bold green]",
         border_style="green", width=85,
     ))
 
@@ -825,7 +845,7 @@ def main() -> None:
     if len(sys.argv) == 1:
         console.print(
             "[bold red]ERROR:[/bold red] No arguments provided. "
-            "Use [bold white]-h[/] or [bold white]--help[/] for usage."
+            "Use [bold cyan]-h[/] or [bold cyan]--help[/] for usage."
         )
         sys.exit(1)
 

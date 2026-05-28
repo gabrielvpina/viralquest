@@ -241,17 +241,18 @@ class GoogleBackend(_LlmBackend):
         self.api_key    = api_key
 
     def call(self, system_prompt: str, user_json: dict) -> str:
-        import google.generativeai as genai
-        genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(
-            model_name=self.model_name,
-            system_instruction=system_prompt,
-            generation_config=genai.GenerationConfig(
+        from google import genai
+        from google.genai import types
+        client   = genai.Client(api_key=self.api_key)
+        response = client.models.generate_content(
+            model=self.model_name,
+            contents=json.dumps(user_json, ensure_ascii=False),
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
                 temperature=0.3,
                 response_mime_type="application/json",
             ),
         )
-        response = model.generate_content(json.dumps(user_json, ensure_ascii=False))
         return response.text
 
 
@@ -283,9 +284,9 @@ def _make_backend(model_type: str, model_name: str, api_key: str | None) -> _Llm
         if not api_key:
             raise ValueError("api_key required for Google")
         try:
-            import google.generativeai  # noqa: F401
+            from google import genai  # noqa: F401
         except ImportError:
-            raise ImportError("Package 'google-generativeai' is required. Install: pip install google-generativeai")
+            raise ImportError("Package 'google-genai' is required. Install: pip install google-genai")
         return GoogleBackend(model_name, api_key)
     raise ValueError(f"Unknown model_type '{model_type}'. Choose: ollama, openai, anthropic, google")
 

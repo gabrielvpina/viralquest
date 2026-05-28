@@ -137,10 +137,12 @@ def _build_salmon_stats(salmon_quant: dict | None) -> dict:
     if not salmon_quant:
         return {"present": False}
     return {
-        "present":        True,
-        "mapping_rate":   salmon_quant.get("mapping_rate"),
-        "total_reads":    salmon_quant.get("total_reads"),
+        "present":         True,
+        "pathway":         salmon_quant.get("pathway", "reference"),
+        "mapping_rate":    salmon_quant.get("mapping_rate"),
+        "total_reads":     salmon_quant.get("total_reads"),
         "host_viral_hits": len(salmon_quant.get("host_viral_hits") or []),
+        "ref_hk_count":    len(salmon_quant.get("ref_hk_quant") or []),
     }
 
 

@@ -187,6 +187,9 @@ class BlastnResult:
     evalue: float
     bit_score: float
     stitle: str
+    accession: str | None = None
+    query_start: int | None = None
+    query_end: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +314,10 @@ class SalmonQuantReport:
     reads:           list[str]             # read file(s) passed to salmon quant
     mapping_rate:    float                 # overall mapping rate (%)
     total_reads:     int                   # total reads counted across all entries
+    pathway:         str                   # "reference" | "de_novo"
     viral_quant:     list[SalmonEntry]     # TPM for each viralquest viral sequence
-    conserved_quant: list[SalmonEntry]     # TPM for housekeeping genes (all kingdoms)
+    conserved_quant: list[SalmonEntry]     # bundled HK (reference) or HK-matched contigs (de_novo)
+    ref_hk_quant:    list[SalmonEntry]     # user-provided reference HK genes (reference pathway only)
     host_viral_hits: list[HostViralRecord] # host transcripts with similarity to viral seqs
 
 

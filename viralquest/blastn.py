@@ -18,7 +18,7 @@ class BlastnMode(Enum):
 
 # outfmt columns for local mode (order matters for the parser)
 _OUTFMT = (
-    "6 qseqid sseqid stitle pident length qlen slen qcovhsp evalue bitscore"
+    "6 qseqid sseqid stitle pident length qlen slen qcovhsp evalue bitscore sacc qstart qend"
 )
 
 
@@ -218,7 +218,7 @@ class BlastnOutputParser:
 
     # Column indices for the custom outfmt defined in _OUTFMT
     # 0:qseqid  1:sseqid  2:stitle  3:pident  4:length
-    # 5:qlen    6:slen    7:qcovhsp 8:evalue  9:bitscore
+    # 5:qlen    6:slen    7:qcovhsp 8:evalue  9:bitscore  10:sacc  11:qstart  12:qend
     _QSEQID   = 0
     _STITLE   = 2
     _PIDENT   = 3
@@ -227,6 +227,9 @@ class BlastnOutputParser:
     _QCOVHSP  = 7
     _EVALUE   = 8
     _BITSCORE = 9
+    _SACC     = 10
+    _QSTART   = 11
+    _QEND     = 12
 
     @classmethod
     def parse_tsv(cls, tsv_path: Path) -> list[BlastnResult]:
@@ -242,14 +245,17 @@ class BlastnOutputParser:
                     continue
                 try:
                     hits.append(BlastnResult(
-                        qseqid    = row[cls._QSEQID],
-                        qlen      = int(row[cls._QLEN]),
-                        slen      = int(row[cls._SLEN]),
-                        qcovhsp   = int(float(row[cls._QCOVHSP])),
-                        pident    = float(row[cls._PIDENT]),
-                        evalue    = float(row[cls._EVALUE]),
-                        bit_score = float(row[cls._BITSCORE]),
-                        stitle    = row[cls._STITLE],
+                        qseqid      = row[cls._QSEQID],
+                        qlen        = int(row[cls._QLEN]),
+                        slen        = int(row[cls._SLEN]),
+                        qcovhsp     = int(float(row[cls._QCOVHSP])),
+                        pident      = float(row[cls._PIDENT]),
+                        evalue      = float(row[cls._EVALUE]),
+                        bit_score   = float(row[cls._BITSCORE]),
+                        stitle      = row[cls._STITLE],
+                        accession   = row[cls._SACC]   if len(row) > cls._SACC  else None,
+                        query_start = int(row[cls._QSTART]) if len(row) > cls._QSTART else None,
+                        query_end   = int(row[cls._QEND])   if len(row) > cls._QEND   else None,
                     ))
                 except (ValueError, IndexError) as exc:
                     logger.warning(
@@ -285,14 +291,17 @@ class BlastnOutputParser:
 
             try:
                 hits.append(BlastnResult(
-                    qseqid    = query_id,
-                    qlen      = qlen,
-                    slen      = alignment.length,
-                    qcovhsp   = qcovhsp,
-                    pident    = pident,
-                    evalue    = best_hsp.expect,
-                    bit_score = float(best_hsp.bits),
-                    stitle    = stitle,
+                    qseqid      = query_id,
+                    qlen        = qlen,
+                    slen        = alignment.length,
+                    qcovhsp     = qcovhsp,
+                    pident      = pident,
+                    evalue      = best_hsp.expect,
+                    bit_score   = float(best_hsp.bits),
+                    stitle      = stitle,
+                    accession   = getattr(alignment, "accession", None) or None,
+                    query_start = best_hsp.query_start,
+                    query_end   = best_hsp.query_end,
                 ))
             except Exception as exc:
                 logger.warning(

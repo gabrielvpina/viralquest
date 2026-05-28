@@ -5,17 +5,24 @@
 
 /* ============================================================
    section_salmon.js — Section 5: Salmon Quantification
-   Left card: viral sequences — boxplot if clustered, dot if singleton.
-   Right card: housekeeping genes (sorted, aligned).
-   Toggle: TPM ↔ NumReads.
-   Toggle: overlay housekeeping medians in the main plot.
+
+   Two pathways:
+     reference  — viral + bundled HK + ref-HK + transcriptome
+     de_novo    — assembled contigs with viral/HK-matched prefixes
+
+   Left card:   viral sequences — boxplot if clustered, dot if singleton.
+   Right card:  housekeeping genes (reference) OR HK-matched contigs (de novo).
+   Ref-HK card: reference housekeeping genes (reference pathway + --hk-genes only).
+   Toggle:      TPM ↔ NumReads.
+   Toggle:      overlay housekeeping medians in the main plot.
    ============================================================ */
 
 const _SQ = {
   data:     null,
   clusters: null,
   metric:   'tpm',
-  showHK:   false,    // overlay housekeeping medians on the main plot
+  pathway:  'reference',
+  showHK:   false,
   resizeT:  null,
 };
 
@@ -25,11 +32,25 @@ function vqInitSalmon(salmonQuant, clusters) {
 
   _SQ.data     = salmonQuant;
   _SQ.clusters = clusters || [];
+  _SQ.pathway  = salmonQuant.pathway || 'reference';
+
+  const isRef      = _SQ.pathway === 'reference';
+  const hkTitle    = isRef ? 'Housekeeping Genes' : 'HK-Matched Contigs';
+  const refHkData  = salmonQuant.ref_hk_quant || [];
+  const showRefHk  = isRef && refHkData.length > 0;
+
+  const pathwayColor = isRef
+    ? 'background:#dbeafe;color:#1d4ed8'
+    : 'background:#dcfce7;color:#166534';
+  const pathwayLabel = isRef ? 'Reference' : 'De Novo';
+  const pathwayBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:10px;`
+    + `font-size:11px;font-weight:600;vertical-align:middle;${pathwayColor};margin-left:8px;">`
+    + `${pathwayLabel}</span>`;
 
   el.innerHTML = `
     <div class="vq-section-header">
       <div>
-        <div class="vq-section-title">Salmon Quantification</div>
+        <div class="vq-section-title">Salmon Quantification ${pathwayBadge}</div>
         <div class="vq-section-sub">
           Mapping rate: <strong>${(salmonQuant.mapping_rate ?? 0).toFixed(1)}%</strong>
           &nbsp;·&nbsp; ${(salmonQuant.total_reads ?? 0).toLocaleString()} total reads
@@ -78,12 +99,21 @@ function vqInitSalmon(salmonQuant, clusters) {
       </div>
       <div class="vq-card" style="display:flex;flex-direction:column">
         <div class="vq-card__header">
-          <div class="vq-card__title">Housekeeping Genes</div>
+          <div class="vq-card__title">${hkTitle}</div>
           <span class="vq-panel__count" id="sq-cons-count">0</span>
         </div>
         <div class="vq-card__body" id="sq-cons-wrap" style="padding:12px 14px;flex:1"></div>
       </div>
     </div>
+
+    ${showRefHk ? `
+    <div class="vq-card" style="margin-top:var(--vq-space-3)">
+      <div class="vq-card__header">
+        <div class="vq-card__title">Reference Housekeeping Genes</div>
+        <span class="vq-panel__count" id="sq-refhk-count">0</span>
+      </div>
+      <div class="vq-card__body" id="sq-refhk-wrap" style="padding:12px 14px"></div>
+    </div>` : ''}
 
     ${_renderHostHits(salmonQuant.host_viral_hits || [])}
   `;
@@ -134,7 +164,6 @@ function vqInitSalmon(salmonQuant, clusters) {
   });
 
   // ResizeObserver — re-draw once the wraps actually have real widths
-  // (they're 0 while the section is still display:none during init).
   let lastW = 0;
   const ro = new ResizeObserver(() => {
     const w = document.getElementById('sq-viral-wrap')?.clientWidth || 0;
@@ -159,12 +188,16 @@ function _setMetric(metric) {
   _draw();
 }
 
-function _draw() { _drawViralPanel(); _drawConsPanel(); }
+function _draw() {
+  _drawViralPanel();
+  _drawConsPanel();
+  if (_SQ.pathway === 'reference') _drawRefHkPanel();
+}
 
 // ── Housekeeping medians per kingdom ───────────────────────────────────────
 
 function _hkMedians() {
-  const cons = (_SQ.data.conserved_quant || []);
+  const cons   = (_SQ.data.conserved_quant || []);
   const metric = _SQ.metric;
   const byKingdom = {};
   cons.forEach(c => {
@@ -212,7 +245,7 @@ function _drawViralPanel() {
     groups[key].seqIds.push(v.name);
   });
 
-  // Sort by median descending for readability
+  // Sort by median descending
   const keys = Object.keys(groups).sort((a, b) => {
     const ma = d3.quantile(groups[a].values.slice().sort(d3.ascending), 0.5) ?? 0;
     const mb = d3.quantile(groups[b].values.slice().sort(d3.ascending), 0.5) ?? 0;
@@ -228,18 +261,16 @@ function _drawViralPanel() {
   const ROW_H = 30;
   const drawW = W - PAD_L - PAD_R;
 
-  // Include HK medians in the x-domain if overlay enabled
   const allVals = viral.map(v => v[metric] ?? 0).slice();
   if (_SQ.showHK) _hkMedians().forEach(h => allVals.push(h.median));
   const maxVal = d3.max(allVals) || 1;
 
   const xScale = d3.scaleLinear([0, maxVal], [0, drawW]);
 
-  // Overlay band
-  const HK = _SQ.showHK ? _hkMedians() : [];
+  const HK      = _SQ.showHK ? _hkMedians() : [];
   const overlayH = HK.length ? 24 : 0;
-  const PAD_B  = 60 + overlayH;
-  const H      = PAD_T + keys.length * ROW_H + PAD_B;
+  const PAD_B   = 60 + overlayH;
+  const H       = PAD_T + keys.length * ROW_H + PAD_B;
 
   const svg = d3.create('svg')
     .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
@@ -381,7 +412,6 @@ function _drawViralPanel() {
         .text(h.kingdom.slice(0, 3).toUpperCase());
     });
 
-    // Overlay legend strip
     svg.append('text')
       .attr('x', PAD_L).attr('y', overlayY)
       .attr('font-size', 11).attr('fill', 'var(--vq-text-2)')
@@ -405,7 +435,7 @@ function _drawViralPanel() {
   wrap.appendChild(svg.node());
 }
 
-// ── Housekeeping panel ─────────────────────────────────────────────────────
+// ── Housekeeping / HK-matched contigs panel ────────────────────────────────
 
 function _drawConsPanel() {
   const wrap = document.getElementById('sq-cons-wrap');
@@ -420,7 +450,10 @@ function _drawConsPanel() {
   if (countEl) countEl.textContent = `${cons.length} gene${cons.length !== 1 ? 's' : ''}`;
 
   if (!cons.length) {
-    wrap.innerHTML = '<div class="vq-empty" style="font-size:12px">No housekeeping data.</div>';
+    const msg = _SQ.pathway === 'de_novo'
+      ? 'No HK-matched contigs found.'
+      : 'No housekeeping data.';
+    wrap.innerHTML = `<div class="vq-empty" style="font-size:12px">${msg}</div>`;
     return;
   }
 
@@ -430,7 +463,6 @@ function _drawConsPanel() {
     (byKingdom[k] ??= []).push(c[metric] ?? 0);
   });
 
-  // Sort kingdoms by median descending
   const kingdoms = Object.keys(byKingdom).map(k => {
     const vals = byKingdom[k].slice().sort(d3.ascending);
     return { k, vals, median: d3.quantile(vals, 0.5) ?? 0 };
@@ -467,14 +499,12 @@ function _drawConsPanel() {
       .attr('fill', 'var(--vq-text-2)')
       .text(row.k);
 
-    // Track
     svg.append('rect')
       .attr('x', PAD_L).attr('y', y)
       .attr('width', W - PAD_L - PAD_R).attr('height', BAR_H)
       .attr('rx', 2)
       .attr('fill', 'var(--vq-bg)');
 
-    // Value bar
     const bw = Math.max(xScale(row.median), 2);
     svg.append('rect')
       .attr('x', PAD_L).attr('y', y)
@@ -494,6 +524,97 @@ function _drawConsPanel() {
       .attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
       .attr('font-variant-numeric', 'tabular-nums')
       .text(row.median.toFixed(1));
+  });
+
+  wrap.appendChild(svg.node());
+}
+
+// ── Reference HK genes panel (reference pathway + --hk-genes only) ─────────
+
+function _drawRefHkPanel() {
+  const wrap = document.getElementById('sq-refhk-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const refHk  = (_SQ.data.ref_hk_quant || []);
+  const metric = _SQ.metric;
+  const label  = metric === 'tpm' ? 'TPM' : 'Reads';
+
+  const countEl = document.getElementById('sq-refhk-count');
+  if (countEl) countEl.textContent = `${refHk.length} gene${refHk.length !== 1 ? 's' : ''}`;
+
+  if (!refHk.length) {
+    wrap.innerHTML = '<div class="vq-empty" style="font-size:12px">No reference HK data.</div>';
+    return;
+  }
+
+  const sorted = [...refHk].sort((a, b) => (b[metric] ?? 0) - (a[metric] ?? 0));
+  const maxVal = (sorted[0]?.[metric] ?? 0) || 1;
+
+  const W     = Math.max(wrap.clientWidth || 600, 400);
+  const PAD_L = 180;
+  const PAD_R = 60;
+  const ROW_H = 24;
+  const BAR_H = 10;
+  const H     = sorted.length * ROW_H + 36;
+
+  const xScale = d3.scaleLinear([0, maxVal], [0, W - PAD_L - PAD_R]);
+
+  const svg = d3.create('svg')
+    .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  svg.append('text')
+    .attr('x', PAD_L).attr('y', 14)
+    .attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+    .text(`${label} per reference HK gene`);
+
+  sorted.forEach((entry, i) => {
+    const y     = 26 + i * ROW_H;
+    const val   = entry[metric] ?? 0;
+    const gName = entry.name.replace(/^VQ_REFHK_/, '');
+    const truncated = gName.length > 26 ? gName.slice(0, 25) + '…' : gName;
+
+    const lbl = svg.append('text')
+      .attr('x', PAD_L - 8).attr('y', y + BAR_H / 2 + 3.5)
+      .attr('text-anchor', 'end')
+      .attr('font-size', 10)
+      .attr('fill', 'var(--vq-text-2)')
+      .attr('font-family', 'var(--vq-font-mono)')
+      .text(truncated);
+    if (truncated !== gName) {
+      lbl.style('cursor', 'help')
+        .on('mousemove', evt => VQ.tooltipShow(
+          `<div class="vq-tooltip__title">${VQ.esc(gName)}</div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+    }
+
+    svg.append('rect')
+      .attr('x', PAD_L).attr('y', y)
+      .attr('width', W - PAD_L - PAD_R).attr('height', BAR_H)
+      .attr('rx', 2).attr('fill', 'var(--vq-bg)');
+
+    const bw = Math.max(xScale(val), val > 0 ? 2 : 0);
+    svg.append('rect')
+      .attr('x', PAD_L).attr('y', y)
+      .attr('width', bw).attr('height', BAR_H)
+      .attr('rx', 2)
+      .attr('fill', 'var(--vq-primary)').attr('opacity', 0.7)
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${VQ.esc(gName)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">${label}</span><span>${val.toFixed(2)}</span>
+          <span class="vq-tooltip__key">Reads</span><span>${(entry.num_reads ?? 0).toFixed(0)}</span>
+        </div>`, evt))
+      .on('mouseleave', VQ.tooltipHide);
+
+    svg.append('text')
+      .attr('x', PAD_L + bw + 6).attr('y', y + BAR_H / 2 + 3.5)
+      .attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+      .attr('font-variant-numeric', 'tabular-nums')
+      .text(val.toFixed(1));
   });
 
   wrap.appendChild(svg.node());
