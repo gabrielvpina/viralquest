@@ -1,9 +1,11 @@
 anyio==4.13.0
+anthropic>=0.40.0
 bio==1.8.1
 biopython==1.87
 biothings_client==0.5.0
 certifi==2026.2.25
 charset-normalizer==3.4.7
+google-generativeai>=0.8.0
 gprofiler-official==1.0.0
 h11==0.16.0
 httpcore==1.0.9
@@ -12,6 +14,8 @@ idna==3.11
 loguru==0.7.3
 mygene==3.2.2
 numpy==2.4.4
+ollama>=0.4.7
+openai>=1.0.0
 packaging==26.0
 pandas==3.0.2
 platformdirs==4.9.6
