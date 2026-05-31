@@ -158,7 +158,7 @@ def _build_parser():
     tun.add_argument("--force", action="store_true",
         help="Export all input sequences, not only confirmed viral ones.")
     tun.add_argument("--min-identity", dest="min_identity", type=float,
-        default=70.0, metavar="PCT",
+        default=90.0, metavar="PCT",
         help="Minimum %% identity for intra-cluster BLASTn alignment (default: 90.0).")
 
     # Salmon quantification ────────────────────────────────────────────────────
@@ -174,6 +174,11 @@ def _build_parser():
         help="Text file with reference housekeeping gene IDs (one per line) for "
              "normalization. IDs must exactly match the first word of the FASTA "
              "header in --transcriptome (case-sensitive). Requires --transcriptome.")
+    sal.add_argument("--low-memory", dest="low_memory", action="store_true",
+        help="Low-RAM mode for Salmon: builds the index with a smaller k-mer size "
+             "(-k 25 instead of 31) to reduce the SSHash index footprint, and runs "
+             "quant with GC-bias correction at reduced memory cost "
+             "(--gcBias --reduceGCMemory). Recommended on machines with <16 GB RAM.")
 
     # AI scoring ───────────────────────────────────────────────────────────────
     ai = parser.add_argument_group("AI scoring (optional)")
@@ -239,7 +244,7 @@ def _show_rich_help() -> None:
         "  Assemble overlapping sequences with CAP3 before analysis.\n\n"
         "[bold cyan]-cpu / --cpu[/]       [dim]N[/]  (default: 2)\n"
         "  CPU threads used by Diamond, HMMsearch, BLASTn, and Salmon.\n\n"
-        "[bold cyan]--min-identity[/]    [dim]%[/]  (default: 70.0)\n"
+        "[bold cyan]--min-identity[/]    [dim]%[/]  (default: 90.0)\n"
         "  Minimum %% identity for intra-cluster alignment.\n\n"
         "[bold cyan]--force[/]\n"
         "  Export all input sequences even if viral confirmation fails.",
@@ -293,6 +298,12 @@ def _show_rich_help() -> None:
         "  Text file with reference HK gene IDs (one per line) for normalization.\n"
         "  IDs must exactly match the first word of the --transcriptome header\n"
         "  (case-sensitive). Requires --transcriptome.\n\n"
+        "[bold cyan]--low-memory[/]\n"
+        "  Low-RAM mode: builds the Salmon index with a smaller k-mer size\n"
+        "  ([dim]-k 25[/dim] instead of the default 31), reducing the SSHash index\n"
+        "  memory footprint, and runs quant with GC-bias correction at reduced\n"
+        "  memory cost ([dim]--gcBias --reduceGCMemory[/dim]).\n"
+        "  Recommended on machines with <16 GB RAM.\n\n"
         "[bold]Note:[/] --reads alone triggers de-novo mode. --transcriptome requires --reads.",
         title="[bold cyan]SALMON QUANTIFICATION (optional)[/bold cyan]",
         border_style="cyan", width=85, box=box.ROUNDED,
@@ -620,7 +631,7 @@ def _run_pipeline(args):
         t = time.time()
         from .salmon_quant import SalmonQuantPipeline
         try:
-            salmon_report = SalmonQuantPipeline(threads=args.cpu).run(
+            salmon_report = SalmonQuantPipeline(threads=args.cpu, low_memory=args.low_memory).run(
                 reads              = args.reads,
                 viral_seqs         = seqs,
                 outdir             = outdir / "salmon",

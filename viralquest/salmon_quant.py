@@ -384,9 +384,10 @@ class DeNovoFastaWriter:
 class SalmonIndexBuilder:
     """Builds a Salmon quasi-mapping index from the combined reference FASTA."""
 
-    def __init__(self, salmon_bin: str = "salmon", threads: int = 4):
+    def __init__(self, salmon_bin: str = "salmon", threads: int = 4, kmer_len: int = 31):
         self.salmon_bin = salmon_bin
         self.threads    = threads
+        self.kmer_len   = kmer_len
 
     def build(self, ref_fasta: Path, index_dir: Path) -> None:
         index_dir.mkdir(parents=True, exist_ok=True)
@@ -395,6 +396,7 @@ class SalmonIndexBuilder:
             "-t", str(ref_fasta),
             "-i", str(index_dir),
             "-p", str(self.threads),
+            "-k", str(self.kmer_len),
         ]
         logger.info(f"Salmon index: '{ref_fasta.name}' → '{index_dir.name}' ...")
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -423,9 +425,10 @@ class SalmonQuantRunner:
 
     _RATE_RE = re.compile(r"Mapping rate\s*=\s*([\d.]+)%", re.IGNORECASE)
 
-    def __init__(self, salmon_bin: str = "salmon", threads: int = 4):
+    def __init__(self, salmon_bin: str = "salmon", threads: int = 4, low_memory: bool = False):
         self.salmon_bin = salmon_bin
         self.threads    = threads
+        self.low_memory = low_memory
 
     def run(
         self,
@@ -445,6 +448,8 @@ class SalmonQuantRunner:
             "--validateMappings",
             "-o",  str(out_dir),
         ]
+        if self.low_memory:
+            cmd += ["--gcBias", "--reduceGCMemory"]
         if len(reads) == 1:
             cmd += ["-r", reads[0]]
         else:
@@ -669,9 +674,10 @@ class SalmonQuantPipeline:
         e_value:     float = 1e-5,
         min_pident:  float = 70.0,
         min_qcov:    int   = 20,
+        low_memory:  bool  = False,
     ):
-        self._index_builder = SalmonIndexBuilder(salmon_bin, threads)
-        self._quant_runner  = SalmonQuantRunner(salmon_bin, threads)
+        self._index_builder = SalmonIndexBuilder(salmon_bin, threads, kmer_len=25 if low_memory else 31)
+        self._quant_runner  = SalmonQuantRunner(salmon_bin, threads, low_memory=low_memory)
         self._aligner       = TranscriptomeViralAligner(
             blastn_bin, e_value, threads, min_pident, min_qcov,
         )
