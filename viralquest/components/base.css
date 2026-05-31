@@ -543,6 +543,101 @@ body {
 .vq-select { width: auto; min-width: 130px; border-radius: var(--vq-radius-sm); }
 
 /* ============================================================
+   Filter row (BLAST identity / coverage + sequence length)
+   ============================================================ */
+
+.vq-toolbar__filter-row {
+  display:     flex;
+  align-items: center;
+  flex-wrap:   wrap;
+  gap:         var(--vq-space-4);
+  width:       100%;
+  padding-top: var(--vq-space-2);
+  border-top:  1px solid var(--vq-border);
+}
+
+.vq-filter-group {
+  display:     flex;
+  align-items: center;
+  flex-wrap:   wrap;
+  gap:         var(--vq-space-2);
+}
+
+.vq-filter-label {
+  font-size:      var(--vq-text-xs);
+  font-weight:    600;
+  color:          var(--vq-text-3);
+  white-space:    nowrap;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.vq-filter-sub {
+  font-size:   var(--vq-text-xs);
+  color:       var(--vq-text-3);
+  white-space: nowrap;
+}
+
+.vq-filter-sep {
+  font-size: var(--vq-text-xs);
+  color:     var(--vq-text-3);
+}
+
+.vq-filter-divider {
+  width:       1px;
+  height:      20px;
+  background:  var(--vq-border-dark);
+  flex-shrink: 0;
+}
+
+.vq-input--sm {
+  width:     68px;
+  padding:   5px 10px;
+  font-size: var(--vq-text-xs);
+}
+
+/* Remove number spinners for a cleaner look */
+.vq-input[type="number"]::-webkit-inner-spin-button,
+.vq-input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.vq-input[type="number"] { -moz-appearance: textfield; }
+
+/* Checkbox pill — highlights when checked */
+.vq-filter-check {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           5px;
+  padding:       4px 10px;
+  border:        1px solid var(--vq-border);
+  border-radius: 999px;
+  background:    var(--vq-surface);
+  font-size:     var(--vq-text-xs);
+  color:         var(--vq-text-2);
+  white-space:   nowrap;
+  cursor:        pointer;
+  user-select:   none;
+  transition:    border-color var(--vq-dur) var(--vq-ease),
+                 background   var(--vq-dur) var(--vq-ease),
+                 color        var(--vq-dur) var(--vq-ease);
+}
+
+.vq-filter-check:has(input:checked) {
+  border-color: var(--vq-accent);
+  background:   var(--vq-accent-subtle);
+  color:        var(--vq-accent-dark);
+  font-weight:  500;
+}
+
+.vq-filter-check input[type="checkbox"] {
+  accent-color: var(--vq-accent);
+  width:        13px;
+  height:       13px;
+  cursor:       pointer;
+}
+
+/* ============================================================
    Toggle
    ============================================================ */
 

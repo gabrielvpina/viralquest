@@ -41,6 +41,7 @@ function vqInitViewer(sequences) {
   const phyla    = [...new Set(sequences.map(s => s.taxonomy?.phylum).filter(Boolean))].sort();
   const families = [...new Set(sequences.map(s => s.taxonomy?.family).filter(Boolean))].sort();
   const genera   = [...new Set(sequences.map(s => s.taxonomy?.genus).filter(Boolean))].sort();
+  const hasLlm   = sequences.some(s => s.llm_output != null);
 
   el.innerHTML = `
     <div class="vq-section-header">
@@ -117,6 +118,7 @@ function vqInitViewer(sequences) {
           <option value="">All genera</option>
           ${genera.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
         </select>
+        ${hasLlm ? `
         <select class="vq-select" id="viewer-score" aria-label="Filter by VQ score">
           <option value="">Any VQ score</option>
           <option value="80">VQ ≥ 80</option>
@@ -128,15 +130,54 @@ function vqInitViewer(sequences) {
           <option value="viral-known">Viral known</option>
           <option value="viral-unknown">Viral unknown</option>
           <option value="non-viral">Non-viral</option>
-        </select>
+        </select>` : ''}
+      </div>
+
+      <div class="vq-toolbar__filter-row">
+        <div class="vq-filter-group">
+          <span class="vq-filter-label">BLAST filter</span>
+          <span class="vq-filter-sub">Identity&nbsp;%</span>
+          <input class="vq-input vq-input--sm" type="number" id="viewer-ident-min"
+                 min="0" max="100" step="0.1" placeholder="min" aria-label="Min identity %">
+          <span class="vq-filter-sep">–</span>
+          <input class="vq-input vq-input--sm" type="number" id="viewer-ident-max"
+                 min="0" max="100" step="0.1" placeholder="max" aria-label="Max identity %">
+          <span class="vq-filter-sub">Coverage&nbsp;%</span>
+          <input class="vq-input vq-input--sm" type="number" id="viewer-cov-min"
+                 min="0" max="100" step="0.1" placeholder="min" aria-label="Min coverage %">
+          <span class="vq-filter-sep">–</span>
+          <input class="vq-input vq-input--sm" type="number" id="viewer-cov-max"
+                 min="0" max="100" step="0.1" placeholder="max" aria-label="Max coverage %">
+          <label class="vq-filter-check">
+            <input type="checkbox" id="viewer-filter-blastn"> BLASTn
+          </label>
+          <label class="vq-filter-check">
+            <input type="checkbox" id="viewer-filter-blastx"> BLASTx NR
+          </label>
+        </div>
+
+        <div class="vq-filter-divider"></div>
+
+        <div class="vq-filter-group">
+          <span class="vq-filter-label">Length (nt)</span>
+          <input class="vq-input vq-input--sm" type="number" id="viewer-len-min"
+                 min="0" step="1" placeholder="min" aria-label="Min sequence length">
+          <span class="vq-filter-sep">–</span>
+          <input class="vq-input vq-input--sm" type="number" id="viewer-len-max"
+                 min="0" step="1" placeholder="max" aria-label="Max sequence length">
+        </div>
       </div>
     </div>
 
     <div id="viewer-list"></div>
   `;
 
-  ['viewer-search','viewer-phylum','viewer-family','viewer-genus','viewer-score','viewer-classification']
+  ['viewer-search','viewer-phylum','viewer-family','viewer-genus','viewer-score','viewer-classification',
+   'viewer-ident-min','viewer-ident-max','viewer-cov-min','viewer-cov-max',
+   'viewer-len-min','viewer-len-max']
     .forEach(id => document.getElementById(id)?.addEventListener('input', _applyFilters));
+  ['viewer-filter-blastn','viewer-filter-blastx']
+    .forEach(id => document.getElementById(id)?.addEventListener('change', _applyFilters));
 
   document.getElementById('viewer-select-all')?.addEventListener('click', () => {
     _VW.filtered.forEach(s => _VW.selected.add(s.id));
@@ -179,13 +220,41 @@ function vqInitViewer(sequences) {
 
 // ── Filtering ──────────────────────────────────────────────────────────────
 
+function _hitPassesBlastFilter(hit, identMin, identMax, covMin, covMax) {
+  const pident = hit.pct_identity ?? hit.pident;
+  const qcov   = hit.query_coverage ?? hit.qcovhsp;
+  if (identMin !== null && pident != null && pident < identMin) return false;
+  if (identMax !== null && pident != null && pident > identMax) return false;
+  if (covMin   !== null && qcov   != null && qcov   < covMin)   return false;
+  if (covMax   !== null && qcov   != null && qcov   > covMax)   return false;
+  return true;
+}
+
 function _applyFilters() {
-  const q       = document.getElementById('viewer-search')?.value.toLowerCase() || '';
-  const phylum  = document.getElementById('viewer-phylum')?.value || '';
-  const family  = document.getElementById('viewer-family')?.value || '';
-  const genus   = document.getElementById('viewer-genus')?.value  || '';
-  const cls     = document.getElementById('viewer-classification')?.value || '';
+  const q        = document.getElementById('viewer-search')?.value.toLowerCase() || '';
+  const phylum   = document.getElementById('viewer-phylum')?.value || '';
+  const family   = document.getElementById('viewer-family')?.value || '';
+  const genus    = document.getElementById('viewer-genus')?.value  || '';
+  const cls      = document.getElementById('viewer-classification')?.value || '';
   const minScore = parseInt(document.getElementById('viewer-score')?.value || '0', 10);
+
+  const identMinRaw = document.getElementById('viewer-ident-min')?.value;
+  const identMaxRaw = document.getElementById('viewer-ident-max')?.value;
+  const covMinRaw   = document.getElementById('viewer-cov-min')?.value;
+  const covMaxRaw   = document.getElementById('viewer-cov-max')?.value;
+  const identMin = identMinRaw !== '' ? parseFloat(identMinRaw) : null;
+  const identMax = identMaxRaw !== '' ? parseFloat(identMaxRaw) : null;
+  const covMin   = covMinRaw   !== '' ? parseFloat(covMinRaw)   : null;
+  const covMax   = covMaxRaw   !== '' ? parseFloat(covMaxRaw)   : null;
+  const filterBlastn = document.getElementById('viewer-filter-blastn')?.checked ?? false;
+  const filterBlastx = document.getElementById('viewer-filter-blastx')?.checked ?? false;
+  const hasBlastFilter = (filterBlastn || filterBlastx) &&
+    (identMin !== null || identMax !== null || covMin !== null || covMax !== null);
+
+  const lenMinRaw = document.getElementById('viewer-len-min')?.value;
+  const lenMaxRaw = document.getElementById('viewer-len-max')?.value;
+  const lenMin = lenMinRaw !== '' ? parseInt(lenMinRaw, 10) : null;
+  const lenMax = lenMaxRaw !== '' ? parseInt(lenMaxRaw, 10) : null;
 
   _VW.filtered = _VW.sequences.filter(s => {
     if (q && !s.id.toLowerCase().includes(q) &&
@@ -195,6 +264,18 @@ function _applyFilters() {
     if (genus  && s.taxonomy?.genus  !== genus)  return false;
     if (cls    && s.llm_output?.classification !== cls) return false;
     if (minScore && (s.llm_output?.vq_score ?? 0) < minScore) return false;
+    if (lenMin !== null && (s.length ?? 0) < lenMin) return false;
+    if (lenMax !== null && (s.length ?? 0) > lenMax) return false;
+    if (hasBlastFilter) {
+      if (filterBlastn) {
+        const hits = s.blastn_hits || [];
+        if (!hits.some(h => _hitPassesBlastFilter(h, identMin, identMax, covMin, covMax))) return false;
+      }
+      if (filterBlastx) {
+        const hits = s.blastx_nr_hits || [];
+        if (!hits.some(h => _hitPassesBlastFilter(h, identMin, identMax, covMin, covMax))) return false;
+      }
+    }
     return true;
   });
 
