@@ -391,9 +391,9 @@ function _seqCard(seq) {
           ${esc(llm.analysis)}
         </div>` : ''}
 
-      ${seq.sequence_nt ? `
+      ${(seq.sequence || seq.sequence_nt) ? `
         <div class="vq-body-label">FASTA preview</div>
-        <div class="vq-fasta">${esc(seq.sequence_nt)}</div>` : ''}
+        <div class="vq-fasta">${esc(seq.sequence || seq.sequence_nt)}</div>` : ''}
 
     </div>`;
 

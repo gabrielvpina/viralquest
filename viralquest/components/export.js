@@ -258,7 +258,7 @@ function vqDownloadText(text, filename) {
 
 function vqBuildFasta(seqs) {
   return seqs.map(s => {
-    const body = (s.sequence_nt || '').replace(/^>.*\n/, '');
+    const body = (s.sequence || s.sequence_nt || '').replace(/^>.*\n/, '');
     const header = `>${s.id} ${s.taxonomy?.species || ''}`.trim();
     return body.startsWith('>') ? body : header + '\n' + body;
   }).join('\n') + '\n';
