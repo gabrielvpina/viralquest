@@ -160,6 +160,10 @@ def _build_parser():
     tun.add_argument("--min-identity", dest="min_identity", type=float,
         default=90.0, metavar="PCT",
         help="Minimum %% identity for intra-cluster BLASTn alignment (default: 90.0).")
+    tun.add_argument("--min-coverage", dest="min_coverage", type=float,
+        default=50.0, metavar="PCT",
+        help="Minimum query coverage (%%) for a sequence to qualify as a cluster member "
+             "(default: 50.0). Clusters with fewer than 2 qualifying members are dropped.")
 
     # Salmon quantification ────────────────────────────────────────────────────
     sal = parser.add_argument_group("salmon quantification (optional)")
@@ -245,7 +249,10 @@ def _show_rich_help() -> None:
         "[bold cyan]-cpu / --cpu[/]       [dim]N[/]  (default: 2)\n"
         "  CPU threads used by Diamond, HMMsearch, BLASTn, and Salmon.\n\n"
         "[bold cyan]--min-identity[/]    [dim]%[/]  (default: 90.0)\n"
-        "  Minimum %% identity for intra-cluster alignment.\n\n"
+        "  Minimum %% identity for intra-cluster BLASTn alignment.\n\n"
+        "[bold cyan]--min-coverage[/]    [dim]%[/]  (default: 50.0)\n"
+        "  Minimum query coverage for a sequence to qualify as a cluster member.\n"
+        "  Clusters with fewer than 2 qualifying members are dropped.\n\n"
         "[bold cyan]--force[/]\n"
         "  Export all input sequences even if viral confirmation fails.",
         title="[bold green]PIPELINE OPTIONS[/bold green]",
@@ -608,7 +615,7 @@ def _run_pipeline(args):
 
     # ── 9. Clustering ─────────────────────────────────────────────────────────
     t            = time.time()
-    tracker      = SequenceTracker(min_identity=args.min_identity)
+    tracker      = SequenceTracker(min_identity=args.min_identity, min_coverage=args.min_coverage)
     viral_for_cl = [s for s in seqs if s.is_viral]
     clusters     = tracker.track(viral_for_cl)
     yield from _tick(t)

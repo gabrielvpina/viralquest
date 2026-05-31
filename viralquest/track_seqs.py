@@ -73,9 +73,15 @@ class BlastnAligner:
         "qstart qend sstart send evalue bitscore"
     )
 
-    def __init__(self, blastn_bin: str = "blastn", min_identity: float = 90.0):
-        self.blastn_bin  = blastn_bin
+    def __init__(
+        self,
+        blastn_bin:   str   = "blastn",
+        min_identity: float = 90.0,
+        min_coverage: float = 50.0,
+    ):
+        self.blastn_bin   = blastn_bin
         self.min_identity = min_identity
+        self.min_coverage = min_coverage
 
     # --- public ---
 
@@ -85,8 +91,8 @@ class BlastnAligner:
         members: list[NucSequence],
     ) -> list[ClusterMember]:
         """
-        Returns one ClusterMember per sequence (representative first).
-        Members that produce no BLASTn hit get identity=0, aln_start=0, aln_end=0.
+        Returns qualifying ClusterMembers (representative first).
+        Members with query_coverage < min_coverage are silently dropped.
         """
         result: list[ClusterMember] = [
             ClusterMember(
@@ -108,27 +114,26 @@ class BlastnAligner:
 
         for seq in non_rep:
             hit = aln_map.get(seq.id)
-            if hit:
-                result.append(ClusterMember(
-                    seq_id=seq.id,
-                    length=seq.length,
-                    is_representative=False,
-                    identity=hit["pident"],
-                    query_coverage=hit["qcov"],
-                    aln_start=hit["sstart"],
-                    aln_end=hit["send"],
-                ))
-            else:
-                result.append(ClusterMember(
-                    seq_id=seq.id,
-                    length=seq.length,
-                    is_representative=False,
-                    identity=0.0,
-                    query_coverage=0.0,
-                    aln_start=0,
-                    aln_end=0,
-                ))
-                logger.debug(f"No BLASTn alignment: {seq.id} vs representative {representative.id}")
+            if not hit:
+                logger.debug(
+                    f"No BLASTn alignment: {seq.id} vs representative {representative.id}"
+                )
+                continue
+            if hit["qcov"] < self.min_coverage:
+                logger.debug(
+                    f"Coverage too low ({hit['qcov']:.1f}% < {self.min_coverage}%): "
+                    f"{seq.id} — excluded from cluster."
+                )
+                continue
+            result.append(ClusterMember(
+                seq_id=seq.id,
+                length=seq.length,
+                is_representative=False,
+                identity=hit["pident"],
+                query_coverage=hit["qcov"],
+                aln_start=hit["sstart"],
+                aln_end=hit["send"],
+            ))
 
         return result
 
@@ -236,21 +241,49 @@ class SequenceTracker:
     min_identity : minimum % identity for BLASTn hits (default 90.0).
     """
 
-    def __init__(self, blastn_bin: str = "blastn", min_identity: float = 90.0):
-        self._aligner = BlastnAligner(blastn_bin, min_identity)
+    def __init__(
+        self,
+        blastn_bin:   str   = "blastn",
+        min_identity: float = 90.0,
+        min_coverage: float = 50.0,
+    ):
+        self._aligner     = BlastnAligner(blastn_bin, min_identity, min_coverage)
+        self._min_coverage = min_coverage
 
     def track(self, nuc_seqs: list[NucSequence]) -> list[ViralCluster]:
         """
         Clusters sequences, runs alignments, annotates NucSequence.cluster_id,
         and returns the list of ViralCluster objects.
+
+        A cluster is only formed when ≥2 members survive the identity and
+        coverage thresholds (including the representative).
         """
         groups   = ClusterBuilder.build(nuc_seqs)
         clusters: list[ViralCluster] = []
+        cluster_num = 0
 
-        for i, (species, seqs) in enumerate(groups.items(), start=1):
-            cluster_id = f"VQ_CLU_{i:04d}"
-            rep        = RepresentativeSelector.select(seqs)
-            members    = self._aligner.align(rep, seqs)
+        for species, seqs in groups.items():
+            # Need at least 2 sequences before alignment
+            if len(seqs) < 2:
+                logger.debug(
+                    f"ClusterBuilder: skipping '{species}' — only 1 sequence."
+                )
+                continue
+
+            rep     = RepresentativeSelector.select(seqs)
+            members = self._aligner.align(rep, seqs)
+
+            # Members that didn't pass coverage/identity are already dropped by
+            # the aligner; require ≥2 survivors (representative + ≥1 member).
+            if len(members) < 2:
+                logger.debug(
+                    f"ClusterBuilder: skipping '{species}' — no members survived "
+                    f"the coverage/identity filter."
+                )
+                continue
+
+            cluster_num += 1
+            cluster_id  = f"VQ_CLU_{cluster_num:04d}"
 
             cluster = ViralCluster(
                 cluster_id=cluster_id,
@@ -260,12 +293,14 @@ class SequenceTracker:
             )
             clusters.append(cluster)
 
+            valid_ids = {m.seq_id for m in members}
             for seq in seqs:
-                seq.cluster_id = cluster_id
+                if seq.id in valid_ids:
+                    seq.cluster_id = cluster_id
 
             logger.success(
                 f"{cluster_id} | {species!r} | "
-                f"{len(seqs)} seq(s) | representative: {rep.id!r} ({rep.length} nt)"
+                f"{len(members)} member(s) | representative: {rep.id!r} ({rep.length} nt)"
             )
 
         return clusters

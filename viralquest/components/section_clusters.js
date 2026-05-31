@@ -13,7 +13,8 @@ function vqInitClusters(clusters) {
   const el = document.getElementById('section-clusters');
   if (!el) return;
   if (!clusters.length) {
-    el.innerHTML = '<div class="vq-empty">No clusters found.</div>';
+    el.hidden = true;
+    document.getElementById('tab-clusters')?.style.setProperty('display', 'none');
     return;
   }
 
@@ -206,12 +207,20 @@ function _clusterSVG(cluster, repLen, containerWidth) {
         .on('mouseleave', VQ.tooltipHide);
     }
 
-    // Backbone
+    // Full representative backbone (light gray, always full width)
     g.append('rect')
       .attr('x', 0).attr('y', TRACK / 2 - 1)
       .attr('width', drawW).attr('height', 2)
       .attr('rx', 1)
       .attr('fill', '#dde3ec');
+
+    // Member actual-length backbone (dark line showing the real sequence length)
+    const memberW = Math.min(xScale(m.length), drawW);
+    g.append('rect')
+      .attr('x', 0).attr('y', TRACK / 2 - 3)
+      .attr('width', Math.max(memberW, 2)).attr('height', 6)
+      .attr('rx', 2)
+      .attr('fill', 'var(--vq-primary)').attr('opacity', 0.18);
 
     // Alignment bar
     const x1 = xScale(m.aln_start - 1);

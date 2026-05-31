@@ -18,12 +18,13 @@
    ============================================================ */
 
 const _SQ = {
-  data:     null,
-  clusters: null,
-  metric:   'tpm',
-  pathway:  'reference',
-  showHK:   false,
-  resizeT:  null,
+  data:      null,
+  clusters:  null,
+  metric:    'tpm',
+  pathway:   'reference',
+  showHK:    false,
+  groupMode: 'cluster',
+  resizeT:   null,
 };
 
 function vqInitSalmon(salmonQuant, clusters) {
@@ -57,6 +58,14 @@ function vqInitSalmon(salmonQuant, clusters) {
         </div>
       </div>
       <div class="vq-section-actions">
+        <div class="vq-toggle" role="tablist" aria-label="Group mode">
+          <button class="vq-toggle__btn active"
+                  id="sq-btn-cluster" data-group="cluster" type="button"
+                  role="tab" aria-selected="true">By Cluster</button>
+          <button class="vq-toggle__btn"
+                  id="sq-btn-individual" data-group="individual" type="button"
+                  role="tab" aria-selected="false">By Sequence</button>
+        </div>
         <div class="vq-toggle" role="tablist" aria-label="Metric">
           <button class="vq-toggle__btn ${_SQ.metric==='tpm'?'active':''}"
                   id="sq-btn-tpm" data-metric="tpm" type="button"
@@ -118,6 +127,11 @@ function vqInitSalmon(salmonQuant, clusters) {
     ${_SQ.pathway === 'reference' ? _renderHostHits(salmonQuant.host_viral_hits || []) : ''}
   `;
 
+  // Wire group-mode toggle
+  document.querySelectorAll('[data-group]').forEach(btn => {
+    btn.addEventListener('click', () => _setGroupMode(btn.dataset.group));
+  });
+
   // Wire metric toggle
   document.querySelectorAll('[data-metric]').forEach(btn => {
     btn.addEventListener('click', () => _setMetric(btn.dataset.metric));
@@ -178,6 +192,16 @@ function vqInitSalmon(salmonQuant, clusters) {
   _draw();
 }
 
+function _setGroupMode(mode) {
+  _SQ.groupMode = mode;
+  document.querySelectorAll('[data-group]').forEach(btn => {
+    const active = btn.dataset.group === mode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+  _drawViralPanel();
+}
+
 function _setMetric(metric) {
   _SQ.metric = metric;
   document.querySelectorAll('[data-metric]').forEach(btn => {
@@ -230,20 +254,28 @@ function _drawViralPanel() {
     return;
   }
 
-  // Map seq_id → cluster_id
-  const seqCluster = {};
-  (_SQ.clusters || []).forEach(c => {
-    c.members.forEach(m => { seqCluster[m.seq_id] = c.cluster_id; });
-  });
-
-  // Group
+  // Build groups depending on view mode
   const groups = {};
-  viral.forEach(v => {
-    const cid = seqCluster[v.name];
-    const key = cid != null ? 'cluster_' + cid : v.name;
-    (groups[key] ??= { label: key, values: [], seqIds: [] }).values.push(v[metric] ?? 0);
-    groups[key].seqIds.push(v.name);
-  });
+
+  if (_SQ.groupMode === 'individual') {
+    // Every viral entry is its own row
+    viral.forEach(v => {
+      const key = v.name;
+      groups[key] = { label: key, values: [v[metric] ?? 0], seqIds: [v.name] };
+    });
+  } else {
+    // Group by cluster_id when available, fall back to individual
+    const seqCluster = {};
+    (_SQ.clusters || []).forEach(c => {
+      c.members.forEach(m => { seqCluster[m.seq_id] = c.cluster_id; });
+    });
+    viral.forEach(v => {
+      const cid = seqCluster[v.name];
+      const key = cid != null ? 'cluster_' + cid : v.name;
+      (groups[key] ??= { label: key, values: [], seqIds: [] }).values.push(v[metric] ?? 0);
+      groups[key].seqIds.push(v.name);
+    });
+  }
 
   // Sort by median descending
   const keys = Object.keys(groups).sort((a, b) => {
