@@ -79,9 +79,12 @@ def _build_summary(seqs: list[dict], clusters: list[dict], ps: dict) -> dict:
 def _build_blast_stats(seqs: list[dict], ps: dict) -> dict:
     blast = ps.get("blast") or {}
     return {
-        "refseq_unique_seqs": blast.get("refseq_unique_seqs", sum(1 for s in seqs if s.get("blastx_hits"))),
-        "nr_unique_seqs":     blast.get("nr_unique_seqs",     sum(1 for s in seqs if s.get("blastx_nr_hits"))),
-        "blastn_unique_seqs": blast.get("blastn_unique_seqs", sum(1 for s in seqs if s.get("blastn_hits"))),
+        "refseq_unique_seqs":  blast.get("refseq_unique_seqs",  sum(1 for s in seqs if s.get("blastx_hits"))),
+        "nr_unique_seqs":      blast.get("nr_unique_seqs",      sum(1 for s in seqs if s.get("blastx_nr_hits"))),
+        "blastn_unique_seqs":  blast.get("blastn_unique_seqs",  sum(1 for s in seqs if s.get("blastn_hits"))),
+        "total_input":         blast.get("total_input"),
+        "total_viral_flagged": blast.get("total_viral_flagged"),
+        "total_confirmed":     blast.get("total_confirmed",     len(seqs)),
     }
 
 

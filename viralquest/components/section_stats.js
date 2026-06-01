@@ -98,7 +98,7 @@ function vqInitStats(report) {
               <div class="vq-chart-card__sub">viral filter databases</div>
             </div>
             <div class="vq-chart-card__big" id="stats-hmm-total">${fmtNum(
-              (hmm.rvdb_hits||0) + (hmm.vfam_hits||0) + (hmm.eggnog_hits ?? hmm.eggnong_hits ?? 0)
+              (hmm.rvdb_hits||0) + (hmm.vfam_hits||0) + (hmm.eggnog_hits ?? hmm.eggnong_hits ?? 0) + (hmm.pfam_hits||0)
             )}</div>
           </div>
           <div class="vq-chart-card__body">
@@ -120,6 +120,65 @@ function vqInitStats(report) {
           </div>
           <div class="vq-chart-card__body">
             <div id="stats-salmon-svg" style="width:100%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline funnel (blue) -->
+      <div class="vq-stats-row" style="grid-template-columns:1fr">
+        <div class="vq-chart-card" id="stats-funnel-card"
+             style="min-height:auto;background:linear-gradient(135deg,#eaf3fb 0%,var(--vq-surface) 55%);border-color:#c2ddf5">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Detection Pipeline</div>
+              <div class="vq-chart-card__sub">sequences filtered at each stage</div>
+            </div>
+          </div>
+          <div class="vq-chart-card__body">
+            <div id="stats-funnel-svg" style="width:100%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BLASTx identity (green) + sequence length (blue) -->
+      <div class="vq-stats-row" style="grid-template-columns:1fr 1fr">
+        <div class="vq-chart-card" id="stats-identity-card"
+             style="background:linear-gradient(135deg,#e8f5ef 0%,var(--vq-surface) 55%);border-color:#b8dcc8">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">BLASTx Identity Distribution</div>
+              <div class="vq-chart-card__sub">best hit % identity · confirmed sequences</div>
+            </div>
+          </div>
+          <div class="vq-chart-card__body">
+            <div id="stats-identity-svg" style="width:100%"></div>
+          </div>
+        </div>
+        <div class="vq-chart-card" id="stats-length-card"
+             style="background:linear-gradient(135deg,#edf4ff 0%,var(--vq-surface) 55%);border-color:#bdd5f0">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Sequence Length Distribution</div>
+              <div class="vq-chart-card__sub">confirmed viral sequences only</div>
+            </div>
+          </div>
+          <div class="vq-chart-card__body">
+            <div id="stats-length-svg" style="width:100%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top detected species -->
+      <div class="vq-stats-row" style="grid-template-columns:1fr">
+        <div class="vq-chart-card" id="stats-species-card" style="min-height:auto">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Top Detected Species</div>
+              <div class="vq-chart-card__sub" id="stats-species-sub"></div>
+            </div>
+          </div>
+          <div class="vq-chart-card__body" style="padding:0">
+            <div id="stats-species-table"></div>
           </div>
         </div>
       </div>
@@ -177,6 +236,12 @@ function vqInitStats(report) {
   if (salmon.present) _renderSalmonChart(salmon);
   else                _renderSalmonEmpty();
 
+  // New charts
+  _renderFunnel(blast);
+  _renderIdentityHistogram(seqs);
+  _renderLengthHistogram(seqs);
+  _renderTopSpecies(seqs);
+
   // ResizeObserver so charts re-fit when the section is first revealed
   // (children measure 0 while the section is still display:none).
   let lastW = 0;
@@ -187,6 +252,9 @@ function vqInitStats(report) {
     renderTax();
     _renderHMMBars(hmm);
     if (salmon.present) _renderSalmonChart(salmon);
+    _renderFunnel(blast);
+    _renderIdentityHistogram(seqs);
+    _renderLengthHistogram(seqs);
   });
   ro.observe(el);
 }
@@ -372,9 +440,10 @@ function _renderHMMBars(hmm) {
 
   const eggnog = hmm.eggnog_hits ?? hmm.eggnong_hits ?? 0;
   const data = [
-    { name: 'RVDB',   value: hmm.rvdb_hits || 0,   color: 'var(--vq-accent)'       },
+    { name: 'RVDB',   value: hmm.rvdb_hits || 0,   color: 'var(--vq-accent)'        },
     { name: 'Vfam',   value: hmm.vfam_hits || 0,   color: 'var(--vq-primary-light)' },
-    { name: 'EggNOG', value: eggnog,               color: 'var(--vq-accent-dark)'  },
+    { name: 'EggNOG', value: eggnog,               color: 'var(--vq-accent-dark)'   },
+    { name: 'Pfam',   value: hmm.pfam_hits || 0,   color: 'var(--vq-success)'       },
   ];
 
   const W = Math.max(wrap.clientWidth || 0, 220);
@@ -527,6 +596,356 @@ function _renderSalmonEmpty() {
   if (wrap) wrap.innerHTML =
     '<div class="vq-empty" style="padding:40px 16px;font-size:12px">No Salmon quantification data.</div>';
 }
+
+// ────────────────────────────────────────────────────────────────────────
+//  Chart 4 — Pipeline funnel
+// ────────────────────────────────────────────────────────────────────────
+
+function _renderFunnel(blast) {
+  const wrap = document.getElementById('stats-funnel-svg');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const steps = [
+    { label: 'Input sequences',    value: blast.total_input         ?? null, color: 'var(--vq-primary)'       },
+    { label: 'RefSeq BLASTx hits', value: blast.refseq_unique_seqs  ?? 0,   color: 'var(--vq-accent)'        },
+    { label: 'Viral flagged',      value: blast.total_viral_flagged  ?? null, color: 'var(--vq-primary-light)' },
+    { label: 'NR confirmed',       value: blast.total_confirmed      ?? 0,   color: 'var(--vq-success)'       },
+  ].filter(s => s.value !== null);
+
+  if (!steps.length) {
+    wrap.innerHTML = '<div class="vq-empty" style="padding:20px;font-size:12px">No pipeline data.</div>';
+    return;
+  }
+
+  const W     = Math.max(wrap.clientWidth || 0, 400);
+  const PAD_L = 178;
+  const PAD_R = 130;
+  const ROW_H = 46;
+  const BAR_H = 22;
+  const H     = steps.length * ROW_H + 12;
+  const drawW = W - PAD_L - PAD_R;
+  const maxV  = steps[0].value || 1;
+
+  const svg = d3.create('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  steps.forEach((step, i) => {
+    const y    = 6 + i * ROW_H;
+    const barW = Math.max(maxV > 0 ? (step.value / maxV) * drawW : 0, step.value > 0 ? 4 : 0);
+    const pct  = i === 0 ? '100%' : (steps[0].value > 0
+      ? (step.value / steps[0].value * 100).toFixed(1) + '%' : '—');
+
+    svg.append('text')
+      .attr('x', PAD_L - 10).attr('y', y + BAR_H / 2 + 4)
+      .attr('text-anchor', 'end').attr('font-size', 12).attr('font-weight', 500)
+      .attr('fill', 'var(--vq-text-2)').text(step.label);
+
+    svg.append('rect')
+      .attr('x', PAD_L).attr('y', y)
+      .attr('width', drawW).attr('height', BAR_H)
+      .attr('rx', BAR_H / 2).attr('fill', 'var(--vq-bg)');
+
+    if (barW > 0) {
+      svg.append('rect')
+        .attr('x', PAD_L).attr('y', y)
+        .attr('width', barW).attr('height', BAR_H)
+        .attr('rx', BAR_H / 2).attr('fill', step.color).attr('opacity', 0.86)
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${VQ.esc(step.label)}</div>
+          <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">Count</span><span>${step.value.toLocaleString()}</span>
+            <span class="vq-tooltip__key">% of input</span><span>${pct}</span>
+          </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+    }
+
+    svg.append('text')
+      .attr('x', PAD_L + barW + 10).attr('y', y + BAR_H / 2 + 4)
+      .attr('font-size', 12).attr('font-weight', 600)
+      .attr('fill', 'var(--vq-text)').attr('font-variant-numeric', 'tabular-nums')
+      .text(`${step.value.toLocaleString()}  ·  ${pct}`);
+
+    if (i < steps.length - 1) {
+      const cx = PAD_L + Math.max((steps[i + 1].value / maxV) * drawW / 2, 14);
+      svg.append('line')
+        .attr('x1', cx).attr('y1', y + BAR_H + 2)
+        .attr('x2', cx).attr('y2', y + ROW_H - 2)
+        .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1.5)
+        .attr('stroke-dasharray', '3,2');
+    }
+  });
+
+  wrap.appendChild(svg.node());
+}
+
+
+// ────────────────────────────────────────────────────────────────────────
+//  Chart 5 — BLASTx identity histogram (green card)
+// ────────────────────────────────────────────────────────────────────────
+
+function _renderIdentityHistogram(sequences) {
+  const wrap = document.getElementById('stats-identity-svg');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const values = sequences
+    .filter(s => s.is_viral)
+    .map(s => {
+      const hit = (s.blastx_nr_hits && s.blastx_nr_hits[0]) || (s.blastx_hits && s.blastx_hits[0]);
+      return hit ? hit.pct_identity : null;
+    })
+    .filter(v => v != null);
+
+  if (!values.length) {
+    wrap.innerHTML = '<div class="vq-empty" style="padding:24px 16px;font-size:12px">No BLASTx data.</div>';
+    return;
+  }
+
+  const W     = Math.max(wrap.clientWidth || 0, 240);
+  const PAD_L = 34; const PAD_R = 10;
+  const PAD_T = 10; const PAD_B = 26;
+  const H     = 185;
+  const drawW = W - PAD_L - PAD_R;
+  const drawH = H - PAD_T - PAD_B;
+
+  const bins = d3.bin().domain([0, 100]).thresholds([0,10,20,30,40,50,60,70,80,90,100])(values);
+
+  const yMax   = d3.max(bins, b => b.length) || 1;
+  const xScale = d3.scaleLinear([0, 100], [0, drawW]);
+  const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
+
+  function _idColor(x0) {
+    if (x0 >= 90) return 'var(--vq-success)';
+    if (x0 >= 70) return 'var(--vq-accent)';
+    if (x0 >= 50) return 'var(--vq-warning)';
+    return 'var(--vq-danger)';
+  }
+
+  const svg = d3.create('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  const g = svg.append('g').attr('transform', `translate(${PAD_L},${PAD_T})`);
+
+  bins.forEach(bin => {
+    const x  = xScale(bin.x0);
+    const bw = Math.max(xScale(bin.x1) - xScale(bin.x0) - 2, 1);
+    const bh = drawH - yScale(bin.length);
+    if (bh <= 0) return;
+    g.append('rect')
+      .attr('x', x).attr('y', yScale(bin.length))
+      .attr('width', bw).attr('height', bh)
+      .attr('rx', 3).attr('fill', _idColor(bin.x0)).attr('opacity', 0.83)
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${bin.x0}–${bin.x1}% identity</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Sequences</span><span>${bin.length}</span>
+          <span class="vq-tooltip__key">Share</span>
+          <span>${(bin.length / values.length * 100).toFixed(1)}%</span>
+        </div>`, evt))
+      .on('mouseleave', VQ.tooltipHide);
+  });
+
+  // Baseline + x ticks
+  g.append('line').attr('x1', 0).attr('y1', drawH).attr('x2', drawW).attr('y2', drawH)
+    .attr('stroke', 'var(--vq-border)').attr('stroke-width', 1);
+  [0, 25, 50, 75, 100].forEach(tick => {
+    const tx = xScale(tick);
+    g.append('line').attr('x1', tx).attr('y1', drawH).attr('x2', tx).attr('y2', drawH + 4)
+      .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1);
+    g.append('text').attr('x', tx).attr('y', drawH + 14)
+      .attr('text-anchor', 'middle').attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+      .text(tick + '%');
+  });
+
+  // Y max label
+  g.append('text').attr('x', -4).attr('y', 4)
+    .attr('text-anchor', 'end').attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+    .text(yMax);
+
+  // Colour legend
+  const legend = [
+    { label: '≥90% (known)',    color: 'var(--vq-success)' },
+    { label: '70–90%',          color: 'var(--vq-accent)'  },
+    { label: '50–70%',          color: 'var(--vq-warning)' },
+    { label: '<50% (novel)',     color: 'var(--vq-danger)'  },
+  ];
+  let lx = PAD_L;
+  const ly = H - 2;
+  legend.forEach(l => {
+    const row = svg.append('g').attr('transform', `translate(${lx},${ly})`);
+    row.append('rect').attr('width', 8).attr('height', 8).attr('rx', 2)
+      .attr('y', -8).attr('fill', l.color).attr('opacity', 0.85);
+    row.append('text').attr('x', 11).attr('y', -1)
+      .attr('font-size', 9).attr('fill', 'var(--vq-text-3)').text(l.label);
+    lx += 78;
+  });
+
+  wrap.appendChild(svg.node());
+}
+
+
+// ────────────────────────────────────────────────────────────────────────
+//  Chart 6 — Sequence length histogram, viral only (blue card)
+// ────────────────────────────────────────────────────────────────────────
+
+function _renderLengthHistogram(sequences) {
+  const wrap = document.getElementById('stats-length-svg');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const lengths = sequences
+    .filter(s => s.is_viral && s.length > 0)
+    .map(s => s.length);
+
+  if (!lengths.length) {
+    wrap.innerHTML = '<div class="vq-empty" style="padding:24px 16px;font-size:12px">No sequence data.</div>';
+    return;
+  }
+
+  const W     = Math.max(wrap.clientWidth || 0, 240);
+  const PAD_L = 34; const PAD_R = 10;
+  const PAD_T = 10; const PAD_B = 26;
+  const H     = 185;
+  const drawW = W - PAD_L - PAD_R;
+  const drawH = H - PAD_T - PAD_B;
+
+  const maxL = d3.max(lengths);
+  const bins = d3.bin().domain([0, maxL * 1.02]).thresholds(9)(lengths);
+
+  const yMax   = d3.max(bins, b => b.length) || 1;
+  const xScale = d3.scaleLinear([0, maxL * 1.02], [0, drawW]);
+  const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
+
+  function _fmtLen(v) {
+    return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v));
+  }
+
+  const svg = d3.create('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  const g = svg.append('g').attr('transform', `translate(${PAD_L},${PAD_T})`);
+
+  bins.forEach((bin, i) => {
+    const x  = xScale(bin.x0);
+    const bw = Math.max(xScale(bin.x1) - xScale(bin.x0) - 2, 1);
+    const bh = drawH - yScale(bin.length);
+    if (bh <= 0) return;
+    const opacity = 0.5 + (i / Math.max(bins.length - 1, 1)) * 0.45;
+    g.append('rect')
+      .attr('x', x).attr('y', yScale(bin.length))
+      .attr('width', bw).attr('height', bh)
+      .attr('rx', 3).attr('fill', 'var(--vq-accent)').attr('opacity', opacity)
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${_fmtLen(bin.x0)} – ${_fmtLen(bin.x1)} bp</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Sequences</span><span>${bin.length}</span>
+          <span class="vq-tooltip__key">Share</span>
+          <span>${(bin.length / lengths.length * 100).toFixed(1)}%</span>
+        </div>`, evt))
+      .on('mouseleave', VQ.tooltipHide);
+  });
+
+  // Baseline + x ticks
+  g.append('line').attr('x1', 0).attr('y1', drawH).attr('x2', drawW).attr('y2', drawH)
+    .attr('stroke', 'var(--vq-border)').attr('stroke-width', 1);
+  xScale.ticks(5).forEach(tick => {
+    const tx = xScale(tick);
+    g.append('line').attr('x1', tx).attr('y1', drawH).attr('x2', tx).attr('y2', drawH + 4)
+      .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1);
+    g.append('text').attr('x', tx).attr('y', drawH + 14)
+      .attr('text-anchor', 'middle').attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+      .text(_fmtLen(tick));
+  });
+
+  // Y max label
+  g.append('text').attr('x', -4).attr('y', 4)
+    .attr('text-anchor', 'end').attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+    .text(yMax);
+
+  // X axis label
+  svg.append('text')
+    .attr('x', PAD_L + drawW / 2).attr('y', H)
+    .attr('text-anchor', 'middle').attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+    .text('bp');
+
+  wrap.appendChild(svg.node());
+}
+
+
+// ────────────────────────────────────────────────────────────────────────
+//  Chart 7 — Top detected species table
+// ────────────────────────────────────────────────────────────────────────
+
+function _renderTopSpecies(sequences) {
+  const tableWrap = document.getElementById('stats-species-table');
+  const sub       = document.getElementById('stats-species-sub');
+  if (!tableWrap) return;
+
+  const viral = sequences.filter(s => s.is_viral && s.taxonomy && s.taxonomy.species);
+  const counts = {};
+  viral.forEach(s => {
+    const sp = s.taxonomy.species;
+    if (!counts[sp]) counts[sp] = { count: 0, family: s.taxonomy.family || '—', order: s.taxonomy.order || '—' };
+    counts[sp].count++;
+  });
+
+  const entries = Object.entries(counts)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 10);
+
+  if (sub) {
+    const uniq = Object.keys(counts).length;
+    sub.textContent = `top ${entries.length} of ${uniq} species · ${viral.length} sequence${viral.length !== 1 ? 's' : ''}`;
+  }
+
+  if (!entries.length) {
+    tableWrap.innerHTML = '<div class="vq-empty" style="padding:20px;font-size:12px">No taxonomy data.</div>';
+    return;
+  }
+
+  const total = viral.length;
+  tableWrap.innerHTML = `
+    <table class="vq-table">
+      <thead>
+        <tr>
+          <th style="width:32px">#</th>
+          <th>Species</th>
+          <th>Family</th>
+          <th style="width:80px">Count</th>
+          <th style="width:140px">% of viral</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${entries.map(([sp, d], i) => {
+          const pct = (d.count / total * 100).toFixed(1);
+          return `
+          <tr>
+            <td class="vq-td--num" style="color:var(--vq-text-3)">${i + 1}</td>
+            <td style="font-style:italic">${VQ.esc(sp)}</td>
+            <td style="color:var(--vq-text-2)">${VQ.esc(d.family)}</td>
+            <td class="vq-td--num" style="font-weight:600">${d.count}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;height:6px;background:var(--vq-bg);border-radius:3px;min-width:60px">
+                  <div style="height:100%;width:${pct}%;background:var(--vq-accent);border-radius:3px;opacity:.8"></div>
+                </div>
+                <span style="font-size:11px;color:var(--vq-text-3);font-variant-numeric:tabular-nums;white-space:nowrap">${pct}%</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
 
 window.vqInitStats = vqInitStats;
 })();
