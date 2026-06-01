@@ -236,6 +236,7 @@ _KINGDOM_FILES: dict[str, Path] = {
     for name in (
         "mammals", "arthropods", "plants",
         "fish", "fungi", "bacteria", "nematodes",
+        "human", "mouse",
     )
 }
 
