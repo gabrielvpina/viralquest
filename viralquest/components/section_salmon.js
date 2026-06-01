@@ -24,6 +24,7 @@ const _SQ = {
   pathway:   'reference',
   showHK:    false,
   groupMode: 'cluster',
+  minVal:    0,
   resizeT:   null,
 };
 
@@ -95,6 +96,16 @@ function vqInitSalmon(salmonQuant, clusters) {
       </div>
     </div>
 
+    <div class="vq-toolbar__filter-row" style="margin-bottom:var(--vq-space-3)">
+      <div class="vq-filter-group">
+        <span class="vq-filter-label" id="sq-min-label">Min TPM</span>
+        <input class="vq-input vq-input--sm" type="number" id="sq-min-val"
+               min="0" step="0.01" placeholder="0"
+               aria-label="Minimum value threshold">
+        <span class="vq-filter-sub">— hide viral rows below this value</span>
+      </div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 320px;gap:var(--vq-space-3);
                 align-items:stretch" id="sq-grid">
       <div class="vq-card" style="display:flex;flex-direction:column">
@@ -126,6 +137,13 @@ function vqInitSalmon(salmonQuant, clusters) {
 
     ${_SQ.pathway === 'reference' ? _renderHostHits(salmonQuant.host_viral_hits || []) : ''}
   `;
+
+  // Min-value filter
+  document.getElementById('sq-min-val')?.addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    _SQ.minVal = isNaN(v) || v < 0 ? 0 : v;
+    _drawViralPanel();
+  });
 
   // Wire group-mode toggle
   document.querySelectorAll('[data-group]').forEach(btn => {
@@ -209,6 +227,10 @@ function _setMetric(metric) {
     btn.classList.toggle('active', active);
     btn.setAttribute('aria-selected', String(active));
   });
+  const lbl  = document.getElementById('sq-min-label');
+  const inp  = document.getElementById('sq-min-val');
+  if (lbl) lbl.textContent = metric === 'tpm' ? 'Min TPM' : 'Min Reads';
+  if (inp) inp.step = metric === 'tpm' ? '0.01' : '1';
   _draw();
 }
 
@@ -246,11 +268,23 @@ function _drawViralPanel() {
   const metric = _SQ.metric;
   const label  = metric === 'tpm' ? 'TPM' : 'Reads';
 
-  const countEl = document.getElementById('sq-viral-count');
-  if (countEl) countEl.textContent = `${viral.length} sequence${viral.length !== 1 ? 's' : ''}`;
+  // Apply min-value filter
+  const minVal  = _SQ.minVal || 0;
+  const viralFiltered = minVal > 0
+    ? viral.filter(v => (v[metric] ?? 0) >= minVal)
+    : viral;
 
-  if (!viral.length) {
-    wrap.innerHTML = '<div class="vq-empty">No viral quantification data.</div>';
+  const countEl = document.getElementById('sq-viral-count');
+  if (countEl) {
+    countEl.textContent = minVal > 0
+      ? `${viralFiltered.length} of ${viral.length} sequence${viral.length !== 1 ? 's' : ''}`
+      : `${viral.length} sequence${viral.length !== 1 ? 's' : ''}`;
+  }
+
+  if (!viralFiltered.length) {
+    wrap.innerHTML = viral.length
+      ? `<div class="vq-empty">All ${viral.length} sequence${viral.length !== 1 ? 's' : ''} hidden by the minimum ${label} filter.</div>`
+      : '<div class="vq-empty">No viral quantification data.</div>';
     return;
   }
 
@@ -259,7 +293,7 @@ function _drawViralPanel() {
 
   if (_SQ.groupMode === 'individual') {
     // Every viral entry is its own row
-    viral.forEach(v => {
+    viralFiltered.forEach(v => {
       const key = v.name;
       groups[key] = { label: key, values: [v[metric] ?? 0], seqIds: [v.name] };
     });
@@ -269,7 +303,7 @@ function _drawViralPanel() {
     (_SQ.clusters || []).forEach(c => {
       c.members.forEach(m => { seqCluster[m.seq_id] = c.cluster_id; });
     });
-    viral.forEach(v => {
+    viralFiltered.forEach(v => {
       const cid = seqCluster[v.name];
       const key = cid != null ? 'cluster_' + cid : v.name;
       (groups[key] ??= { label: key, values: [], seqIds: [] }).values.push(v[metric] ?? 0);
