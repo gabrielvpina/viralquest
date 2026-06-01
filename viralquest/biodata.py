@@ -259,6 +259,8 @@ class ClusterMember:
     query_coverage:    float   # % of this sequence covered by the alignment
     aln_start:         int     # 1-based start on representative (0 = no alignment)
     aln_end:           int     # 1-based end on representative   (0 = no alignment)
+    query_start:       int     # 1-based start within this sequence (0 = no alignment)
+    query_end:         int     # 1-based end within this sequence   (0 = no alignment)
 
 
 @dataclass(slots=True)

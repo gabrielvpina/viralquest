@@ -103,6 +103,8 @@ class BlastnAligner:
                 query_coverage=100.0,
                 aln_start=1,
                 aln_end=representative.length,
+                query_start=1,
+                query_end=representative.length,
             )
         ]
 
@@ -133,6 +135,8 @@ class BlastnAligner:
                 query_coverage=hit["qcov"],
                 aln_start=hit["sstart"],
                 aln_end=hit["send"],
+                query_start=hit["qstart"],
+                query_end=hit["qend"],
             ))
 
         return result
@@ -202,15 +206,17 @@ class BlastnAligner:
 
             bitscore_f = float(bitscore)
             qlen_i     = int(qlen)
-            aln_len    = abs(int(qend) - int(qstart)) + 1
+            qstart_i, qend_i   = int(qstart), int(qend)
+            sstart_i, send_i   = int(sstart), int(send)
+            aln_len    = abs(qend_i - qstart_i) + 1
             qcov       = round(aln_len / qlen_i * 100, 2) if qlen_i > 0 else 0.0
-
-            sstart_i, send_i = int(sstart), int(send)
 
             hit = {
                 "pident":   round(float(pident), 2),
                 "qcov":     qcov,
-                "sstart":   min(sstart_i, send_i),   # normalise for minus-strand
+                "qstart":   min(qstart_i, qend_i),   # normalise for minus-strand
+                "qend":     max(qstart_i, qend_i),
+                "sstart":   min(sstart_i, send_i),
                 "send":     max(sstart_i, send_i),
                 "bitscore": bitscore_f,
             }

@@ -226,6 +226,7 @@ def _render_template(report: dict, d3_js: str) -> str:
         "{{VQ_DATA}}":      json.dumps(report, ensure_ascii=False),
         "{{VQ_D3}}":        d3_js,
         "{{VQ_EXPORT}}":    (_COMPONENTS / "export.js").read_text(encoding="utf-8"),
+        "{{VQ_ABOUT}}":     (_COMPONENTS / "section_about.js").read_text(encoding="utf-8"),
         "{{VQ_STATS}}":     (_COMPONENTS / "section_stats.js").read_text(encoding="utf-8"),
         "{{VQ_CLUSTERS}}":  (_COMPONENTS / "section_clusters.js").read_text(encoding="utf-8"),
         "{{VQ_VIEWER}}":    (_COMPONENTS / "section_viewer.js").read_text(encoding="utf-8"),

@@ -286,33 +286,40 @@ class CombinedFastaWriter:
         viral_ids:     set[str]       = set()
         conserved_map: dict[str, str] = {}
         skip_ids = hk_original_ids or set()
+        seen:          set[str]       = set()
+
+        def _write(fh, record_id: str, sequence: str, desc: str = "") -> bool:
+            if record_id in seen:
+                logger.warning(f"Duplicate FASTA ID '{record_id}' — skipping to avoid salmon index failure.")
+                return False
+            seen.add(record_id)
+            header = f">{record_id}" + (f" {desc}" if desc else "")
+            fh.write(f"{header}\n{sequence}\n")
+            return True
 
         with open(output_path, "w", encoding="utf-8") as fh:
 
             # 1 — viral sequences
             for seq in viral_seqs:
                 prefixed = f"VQ_VIRAL_{seq.id}"
-                fh.write(f">{prefixed}\n{seq.sequence}\n")
-                viral_ids.add(prefixed)
+                if _write(fh, prefixed, seq.sequence):
+                    viral_ids.add(prefixed)
 
             # 2 — conserved bundled HK genes (all kingdoms)
             for kingdom, entries in conserved.items():
                 for prefixed_id, desc, sequence in entries:
-                    header = f">{prefixed_id}" + (f" {desc}" if desc else "")
-                    fh.write(f"{header}\n{sequence}\n")
-                    conserved_map[prefixed_id] = kingdom
+                    if _write(fh, prefixed_id, sequence, desc):
+                        conserved_map[prefixed_id] = kingdom
 
             # 3 — user reference HK genes (VQ_REFHK_)
             for prefixed_id, desc, sequence in (ref_hk or []):
-                header = f">{prefixed_id}" + (f" {desc}" if desc else "")
-                fh.write(f"{header}\n{sequence}\n")
+                _write(fh, prefixed_id, sequence, desc)
 
             # 4 — user transcriptome, skipping ref-HK IDs
             for seq_id, desc, seq in _parse_fasta_iter(user_transcriptome):
                 if seq_id in skip_ids:
                     continue
-                header = f">{seq_id}" + (f" {desc}" if desc else "")
-                fh.write(f"{header}\n{seq}\n")
+                _write(fh, seq_id, seq, desc)
 
         ref_hk_n = len(ref_hk) if ref_hk else 0
         logger.info(
@@ -353,20 +360,32 @@ class DeNovoFastaWriter:
         viral_id_set   = {s.id for s in viral_seqs if s.is_viral}
         viral_ids:     set[str]       = set()
         conserved_map: dict[str, str] = {}
+        seen:          set[str]       = set()
 
         with open(output_path, "w", encoding="utf-8") as fh:
             for seq_id, desc, seq in _parse_fasta_iter(assembled_fasta):
                 if seq_id in viral_id_set:
                     prefixed = f"VQ_VIRAL_{seq_id}"
-                    viral_ids.add(prefixed)
-                    header = f">{prefixed}" + (f" {desc}" if desc else "")
                 elif seq_id in hk_contig_map:
                     kingdom, _ = hk_contig_map[seq_id]
                     prefixed   = f"VQ_CONS_{kingdom}_{seq_id}"
-                    conserved_map[prefixed] = kingdom
-                    header = f">{prefixed}" + (f" {desc}" if desc else "")
                 else:
-                    header = f">{seq_id}" + (f" {desc}" if desc else "")
+                    prefixed = seq_id
+
+                if prefixed in seen:
+                    logger.warning(
+                        f"Duplicate FASTA ID '{prefixed}' in assembled contigs — "
+                        "skipping to avoid salmon index failure."
+                    )
+                    continue
+                seen.add(prefixed)
+
+                if prefixed.startswith("VQ_VIRAL_"):
+                    viral_ids.add(prefixed)
+                elif prefixed.startswith("VQ_CONS_"):
+                    conserved_map[prefixed] = kingdom  # type: ignore[possibly-undefined]
+
+                header = f">{prefixed}" + (f" {desc}" if desc else "")
                 fh.write(f"{header}\n{seq}\n")
 
         logger.info(
@@ -404,8 +423,9 @@ class SalmonIndexBuilder:
             tail = "\n".join(result.stderr.strip().splitlines()[-20:])
             raise RuntimeError(
                 f"salmon index failed (exit {result.returncode}):\n{tail}\n\n"
-                "Common causes: insufficient RAM for SSHash (try closing other "
-                "processes), or a corrupted/empty combined reference FASTA."
+                "Common causes: duplicate sequence IDs in the input FASTA (check "
+                "the WARNING lines above), insufficient RAM for SSHash (try closing "
+                "other processes), or a corrupted/empty combined reference FASTA."
             )
         logger.success(f"Salmon index built → '{index_dir}'")
 
