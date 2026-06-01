@@ -16,46 +16,6 @@ from viralquest.biodata import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Codon table + 6-frame translation helpers
-# ---------------------------------------------------------------------------
-
-_CODON_TABLE: dict[str, str] = {
-    'TTT':'F','TTC':'F','TTA':'L','TTG':'L','CTT':'L','CTC':'L','CTA':'L','CTG':'L',
-    'ATT':'I','ATC':'I','ATA':'I','ATG':'M','GTT':'V','GTC':'V','GTA':'V','GTG':'V',
-    'TCT':'S','TCC':'S','TCA':'S','TCG':'S','CCT':'P','CCC':'P','CCA':'P','CCG':'P',
-    'ACT':'T','ACC':'T','ACA':'T','ACG':'T','GCT':'A','GCC':'A','GCA':'A','GCG':'A',
-    'TAT':'Y','TAC':'Y','TAA':'*','TAG':'*','CAT':'H','CAC':'H','CAA':'Q','CAG':'Q',
-    'AAT':'N','AAC':'N','AAA':'K','AAG':'K','GAT':'D','GAC':'D','GAA':'E','GAG':'E',
-    'TGT':'C','TGC':'C','TGA':'*','TGG':'W','CGT':'R','CGC':'R','CGA':'R','CGG':'R',
-    'AGT':'S','AGC':'S','AGA':'R','AGG':'R','GGT':'G','GGC':'G','GGA':'G','GGG':'G',
-}
-_RC_TABLE = str.maketrans('ATCGatcg', 'TAGCtagc')
-
-
-def _rev_comp(seq: str) -> str:
-    return seq.translate(_RC_TABLE)[::-1]
-
-
-def _sixframe_fragments(dna: str, min_aa: int = 30) -> list[tuple[str, str]]:
-    """
-    Return (name_suffix, aa_fragment) for all ORF-like fragments >= min_aa
-    from the 6 reading frames of *dna*.  The name suffix encodes frame so the
-    original contig ID can be recovered by splitting on '|'.
-    """
-    results: list[tuple[str, str]] = []
-    dna = dna.upper()
-    for strand_name, strand in (('f', dna), ('r', _rev_comp(dna))):
-        for frame in range(3):
-            subseq = strand[frame:]
-            aa = ''.join(
-                _CODON_TABLE.get(subseq[i:i+3], 'X')
-                for i in range(0, len(subseq) - 2, 3)
-            )
-            for frag_idx, frag in enumerate(aa.split('*')):
-                if len(frag) >= min_aa:
-                    results.append((f'|{strand_name}{frame}|{frag_idx}', frag))
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -64,12 +24,11 @@ def _sixframe_fragments(dna: str, min_aa: int = 30) -> list[tuple[str, str]]:
 
 class PfamHkFinder:
     """
-    Identifies housekeeping-gene contigs in assembled FASTA by running a
-    targeted pyhmmer search against 22 high-confidence Pfam HK domain profiles,
-    then links hits to Salmon quantification data.
+    Identifies housekeeping-gene contigs by running a targeted pyhmmer search
+    against 22 high-confidence Pfam HK domain profiles, using the pre-computed
+    ORFs stored in each NucSequence, then links hits to Salmon quantification data.
 
-    Only the de-novo pathway is supported (assembled contigs are small enough
-    for 6-frame translation + search to be fast).
+    Only the de-novo pathway is supported.
     """
 
     _HK_FILE = Path(__file__).parent.parent / "data" / "salmon-quant" / "hk_pfam_domains.json"
@@ -81,7 +40,7 @@ class PfamHkFinder:
 
     # ── public ──────────────────────────────────────────────────────────────
 
-    def find(self, assembled_fasta: Path, quant_sf: Path) -> list[PfamHkEntry]:
+    def find(self, seqs: list[NucSequence], quant_sf: Path) -> list[PfamHkEntry]:
         if not self._hk_meta:
             logger.debug("PfamHkFinder: HK domain file not found — skipping.")
             return []
@@ -93,7 +52,7 @@ class PfamHkFinder:
         if not tpm_map:
             return []
 
-        seq_block, name_map = self._build_seq_block(assembled_fasta)
+        seq_block, name_map = self._build_seq_block(seqs)
         if seq_block is None:
             return []
 
@@ -128,7 +87,13 @@ class PfamHkFinder:
                 parts = line.rstrip().split("\t")
                 if len(parts) < 5:
                     continue
-                name = parts[0].removeprefix("VQ_VIRAL_").removeprefix("VQ_CONS_")
+                raw = parts[0]
+                if raw.startswith("VQ_VIRAL_"):
+                    name = raw[len("VQ_VIRAL_"):]
+                elif raw.startswith("VQ_CONS_"):
+                    name = raw.split("_", 3)[-1]  # drop VQ_CONS_{KINGDOM}_
+                else:
+                    name = raw
                 try:
                     result[name] = (float(parts[3]), float(parts[4]))
                 except ValueError:
@@ -136,12 +101,12 @@ class PfamHkFinder:
         return result
 
     def _build_seq_block(
-        self, fasta: Path
+        self, seqs: list[NucSequence]
     ) -> tuple["pyhmmer.easel.DigitalSequenceBlock | None", dict[str, str]]:
         """
-        Translates every contig in *fasta* into 6-frame ORF fragments and
-        returns a pyhmmer DigitalSequenceBlock + a mapping from fragment name
-        back to original contig ID.
+        Build a pyhmmer DigitalSequenceBlock from the pre-computed ORFs stored
+        in each NucSequence.  Returns the block and a name_map from orf.name
+        back to the parent contig ID.
         """
         try:
             import pyhmmer.easel
@@ -149,17 +114,19 @@ class PfamHkFinder:
             logger.warning("PfamHkFinder: pyhmmer not available — skipping.")
             return None, {}
 
-        alphabet   = pyhmmer.easel.Alphabet.amino()
-        digital    : list[pyhmmer.easel.DigitalSequence] = []
-        name_map   : dict[str, str] = {}   # fragment_name → contig_id
+        alphabet : pyhmmer.easel.Alphabet              = pyhmmer.easel.Alphabet.amino()
+        digital  : list[pyhmmer.easel.DigitalSequence] = []
+        name_map : dict[str, str]                      = {}
 
-        for seq_id, _desc, dna in _parse_fasta_iter(fasta):
-            for suffix, aa in _sixframe_fragments(dna):
-                full_name = seq_id + suffix
-                name_map[full_name] = seq_id
+        for nuc_seq in seqs:
+            for orf in nuc_seq.orfs:
+                aa = orf.aa_sequence
+                if not aa or len(aa) < 30:
+                    continue
+                name_map[orf.name] = nuc_seq.id
                 digital.append(
                     pyhmmer.easel.TextSequence(
-                        name=full_name.encode(),
+                        name=orf.name.encode(),
                         sequence=aa,
                     ).digitize(alphabet)
                 )
@@ -181,7 +148,9 @@ class PfamHkFinder:
         try:
             with pyhmmer.plan7.HMMFile(str(self.pfam_hmm_path)) as hf:
                 for hmm in hf:
-                    if hmm.name.decode("utf-8", errors="replace") in hk_ids:
+                    raw = hmm.name
+                    name = raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
+                    if name in hk_ids:
                         profiles.append(hmm)
         except Exception as exc:
             logger.warning(f"PfamHkFinder: error loading Pfam profiles: {exc}")
@@ -204,15 +173,20 @@ class PfamHkFinder:
         except ImportError:
             return {}
 
+        def _s(v) -> str:
+            return v if isinstance(v, str) else v.decode("utf-8", errors="replace")
+
         results: dict[str, dict[str, tuple[float, float]]] = {}
         try:
             for top_hits in pyhmmer.hmmsearch(profiles, seq_block, cpus=self.threads):
-                profile_name = top_hits.query_name.decode("utf-8", errors="replace")
+                profile_name = _s(top_hits.query_name)
                 for hit in top_hits:
                     if not hit.included:
                         continue
-                    frag_name  = hit.name.decode("utf-8", errors="replace")
-                    contig_id  = name_map.get(frag_name, frag_name.split("|")[0])
+                    frag_name = _s(hit.name)
+                    contig_id = name_map.get(frag_name)
+                    if contig_id is None:
+                        continue
                     contig_hits = results.setdefault(contig_id, {})
                     cur = contig_hits.get(profile_name)
                     if cur is None or hit.score > cur[0]:
@@ -593,11 +567,18 @@ class DeNovoFastaWriter:
         assembled_fasta: Path,
         viral_seqs:      list[NucSequence],
         hk_contig_map:   dict[str, tuple[str, str]],
+        min_bg_len:      int = 0,
     ) -> tuple[set[str], dict[str, str]]:
+        """
+        min_bg_len: background contigs (not viral, not HK-matched) shorter than
+        this are excluded from the index to reduce SSHash memory usage.
+        Viral and HK-matched contigs are always included regardless of length.
+        """
         viral_id_set   = {s.id for s in viral_seqs if s.is_viral}
         viral_ids:     set[str]       = set()
         conserved_map: dict[str, str] = {}
         seen:          set[str]       = set()
+        skipped_bg = 0
 
         with open(output_path, "w", encoding="utf-8") as fh:
             for seq_id, desc, seq in _parse_fasta_iter(assembled_fasta):
@@ -607,6 +588,9 @@ class DeNovoFastaWriter:
                     kingdom, _ = hk_contig_map[seq_id]
                     prefixed   = f"VQ_CONS_{kingdom}_{seq_id}"
                 else:
+                    if min_bg_len > 0 and len(seq) < min_bg_len:
+                        skipped_bg += 1
+                        continue
                     prefixed = seq_id
 
                 if prefixed in seen:
@@ -625,6 +609,8 @@ class DeNovoFastaWriter:
                 header = f">{prefixed}" + (f" {desc}" if desc else "")
                 fh.write(f"{header}\n{seq}\n")
 
+        if skipped_bg:
+            logger.info(f"De-novo FASTA: {skipped_bg} background contig(s) <{min_bg_len}bp excluded (low-memory).")
         logger.info(
             f"De-novo FASTA: {len(viral_ids)} viral + "
             f"{len(conserved_map)} HK-matched + rest unchanged "
@@ -934,7 +920,7 @@ class SalmonQuantPipeline:
         low_memory:    bool       = False,
         pfam_hmm_path: Path | None = None,
     ):
-        self._index_builder = SalmonIndexBuilder(salmon_bin, threads, kmer_len=25 if low_memory else 31)
+        self._index_builder = SalmonIndexBuilder(salmon_bin, threads, kmer_len=21 if low_memory else 31)
         self._quant_runner  = SalmonQuantRunner(salmon_bin, threads, low_memory=low_memory)
         self._aligner       = TranscriptomeViralAligner(
             blastn_bin, e_value, threads, min_pident, min_qcov,
@@ -942,6 +928,7 @@ class SalmonQuantPipeline:
         self._hk_blaster  = ContigHkBlaster(blastn_bin, e_value, threads)
         self._pfam_hk     = PfamHkFinder(pfam_hmm_path, threads) if pfam_hmm_path else None
         self.cleanup      = cleanup
+        self.low_memory   = low_memory
 
     # --- public ---------------------------------------------------------------
 
@@ -1072,6 +1059,7 @@ class SalmonQuantPipeline:
                 assembled_fasta = assembled_fasta,
                 viral_seqs      = confirmed,
                 hk_contig_map   = hk_contig_map,
+                min_bg_len      = 500 if self.low_memory else 0,
             )
 
             self._index_builder.build(denovo_fasta, index_dir)
@@ -1082,7 +1070,7 @@ class SalmonQuantPipeline:
 
             pfam_hk: list[PfamHkEntry] = []
             if self._pfam_hk is not None:
-                pfam_hk = self._pfam_hk.find(assembled_fasta, quant_sf)
+                pfam_hk = self._pfam_hk.find(viral_seqs, quant_sf)
 
             report = self._assemble(
                 reads        = reads,

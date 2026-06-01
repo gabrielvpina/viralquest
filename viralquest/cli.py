@@ -180,9 +180,10 @@ def _build_parser():
              "header in --transcriptome (case-sensitive). Requires --transcriptome.")
     sal.add_argument("--low-memory", dest="low_memory", action="store_true",
         help="Low-RAM mode for Salmon: builds the index with a smaller k-mer size "
-             "(-k 25 instead of 31) to reduce the SSHash index footprint, and runs "
-             "quant with GC-bias correction at reduced memory cost "
-             "(--gcBias --reduceGCMemory). Recommended on machines with <16 GB RAM.")
+             "(-k 21 instead of 31) and, in de-novo mode, excludes background "
+             "contigs shorter than 500 bp from the index (viral and HK-matched "
+             "contigs are always included). Both changes directly reduce the SSHash "
+             "index footprint. Recommended when salmon index runs out of memory.")
 
     # AI scoring ───────────────────────────────────────────────────────────────
     ai = parser.add_argument_group("AI scoring (optional)")
@@ -306,11 +307,11 @@ def _show_rich_help() -> None:
         "  IDs must exactly match the first word of the --transcriptome header\n"
         "  (case-sensitive). Requires --transcriptome.\n\n"
         "[bold cyan]--low-memory[/]\n"
-        "  Low-RAM mode: builds the Salmon index with a smaller k-mer size\n"
-        "  ([dim]-k 25[/dim] instead of the default 31), reducing the SSHash index\n"
-        "  memory footprint, and runs quant with GC-bias correction at reduced\n"
-        "  memory cost ([dim]--gcBias --reduceGCMemory[/dim]).\n"
-        "  Recommended on machines with <16 GB RAM.\n\n"
+        "  Low-RAM mode for [dim]salmon index[/dim]: uses [dim]-k 21[/dim] (instead of 31) and,\n"
+        "  in de-novo mode, excludes background contigs shorter than 500 bp\n"
+        "  from the index. Viral and HK-matched contigs are always included\n"
+        "  regardless of length. Both changes reduce the SSHash index footprint.\n"
+        "  Recommended when [dim]salmon index[/dim] runs out of memory.\n\n"
         "[bold]Note:[/] --reads alone triggers de-novo mode. --transcriptome requires --reads.",
         title="[bold cyan]SALMON QUANTIFICATION (optional)[/bold cyan]",
         border_style="cyan", width=85, box=box.ROUNDED,
