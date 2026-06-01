@@ -1,0 +1,360 @@
+[
+  {
+    "pfam_target_id": "Actin",
+    "pfam_accession": "PF00022",
+    "pfam_description": "Actin",
+    "pfam_type": "Family",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Gp_dh_N",
+    "pfam_accession": "PF00044",
+    "pfam_description": "Glyceraldehyde 3-phosphate dehydrogenase, NAD binding domain",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>GAPDH is a tetrameric NAD-binding enzyme involved in glycolysis and glyconeogenesis. N-terminal domain is a Rossmann NAD(P) binding fold.</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Gp_dh_C",
+    "pfam_accession": "PF02800",
+    "pfam_description": "Glyceraldehyde 3-phosphate dehydrogenase, C-terminal domain",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>GAPDH is a tetrameric NAD-binding enzyme involved in glycolysis and glyconeogenesis. C-terminal domain is a mixed alpha/antiparallel beta fold.</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "GTP_EFTU",
+    "pfam_accession": "PF00009",
+    "pfam_description": "Elongation factor Tu GTP binding domain",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>This domain contains a P-loop motif, also found in several other families such as [pfam:PF00071], [pfam:PF00025] and [pfam:PF00063]. Elongation factor Tu consists of three structural domains, this plus two C-terminal beta barrel domains.</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "GTP_EFTU_D2",
+    "pfam_accession": "PF03144",
+    "pfam_description": "Elongation factor Tu domain 2",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>Elongation factor Tu consists of three structural domains, this is the second domain. This domain adopts a beta barrel structure. This the second domain is involved in binding to charged tRNA [[cite:PUB00007398]]. This domain is also found in other proteins such as elongation factor G and translation initiation factor IF-2. This domain is structurally related to [pfam:PF03143], and in fact has weak sequence matches to this domain.</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "PGK",
+    "pfam_accession": "PF00162",
+    "pfam_description": "Phosphoglycerate kinase",
+    "pfam_type": "Domain",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "ATP-synt_ab",
+    "pfam_accession": "PF00006",
+    "pfam_description": "ATP synthase alpha/beta family, nucleotide-binding domain",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>This entry includes the ATP synthase alpha and beta subunits, the ATP synthase associated with flagella and the termination factor Rho.</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "ATP-synt_ab_N",
+    "pfam_accession": "PF02874",
+    "pfam_description": "ATP synthase alpha/beta family, beta-barrel domain",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>This family includes the ATP synthase alpha and beta subunits the ATP synthase associated with flagella.</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Tubulin",
+    "pfam_accession": "PF00091",
+    "pfam_description": "Tubulin/FtsZ family, GTPase domain",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>This family includes the tubulin alpha, beta and gamma chains, as well as the bacterial FtsZ family of proteins. Members of this family are involved in polymer formation. FtsZ is the polymer-forming protein of bacterial cell division. It is part of a ring in the middle of the dividing cell that is required for constriction of cell membrane and cell envelope to yield two daughter cells. FtsZ and tubulin are GTPases. FtsZ can polymerise into tubes, sheets, and rings in vitro and is ubiquitous in eubacteria and archaea. Tubulin is the major component of microtubules.</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Tubulin_C",
+    "pfam_accession": "PF03953",
+    "pfam_description": "Tubulin C-terminal domain",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>This family includes the tubulin alpha, beta and gamma chains. Members of this family are involved in polymer formation. Tubulins are GTPases. FtsZ can polymerise into tubes, sheets, and rings in vitro and is ubiquitous in eubacteria and archaea. Tubulin is the major component of microtubules. (The FtsZ GTPases have been split into their won family).</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "ubiquitin",
+    "pfam_accession": "PF00240",
+    "pfam_description": "Ubiquitin family",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>This family contains a number of ubiquitin-like proteins: SUMO (smt3 homologue) (see [swissprot:Q02724]), Nedd8 (see [swissprot:P29595]), Elongin B (see [swissprot:Q15370]), Rub1 (see [swissprot:Q9SHE7]), and Parkin (see [swissprot:O60260]). A number of them are thought to carry a distinctive five-residue motif termed the proteasome-interacting motif (PIM), which may have a biologically significant role in protein delivery to proteasomes and recruitment of proteasomes to transcription sites [[cite:PUB00021072]].</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Pro_isomerase",
+    "pfam_accession": "PF00160",
+    "pfam_description": "Cyclophilin type peptidyl-prolyl cis-trans isomerase/CLD",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>The peptidyl-prolyl cis-trans isomerases, also known as cyclophilins, share this domain of about 109 amino acids. Cyclophilins have been found in all organisms studied so far and catalyse peptidyl-prolyl isomerisation during which the peptide bond preceding proline (the peptidyl-prolyl bond) is stabilised in the cis conformation.  Mammalian cyclophilin A (CypA) is a major cellular target for the immunosuppressive drug cyclosporin A (CsA).  Other roles for cyclophilins may include chaperone and cell signalling function [[cite:PUB00021063]].</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "HSP70",
+    "pfam_accession": "PF00012",
+    "pfam_description": "Hsp70 protein",
+    "pfam_type": "Family",
+    "pfam_details": "<p>Hsp70 chaperones help to fold many proteins. Hsp70 assisted folding involves repeated cycles of substrate binding and release.  Hsp70 activity is ATP dependent. Hsp70 proteins are made up of two regions: the amino terminus is the ATPase domain and the carboxyl terminus is the substrate binding region.</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "HSP90",
+    "pfam_accession": "PF00183",
+    "pfam_description": "Hsp90 protein",
+    "pfam_type": "Family",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Enolase_C",
+    "pfam_accession": "PF00113",
+    "pfam_description": "Enolase, C-terminal TIM barrel domain",
+    "pfam_type": "Domain",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Enolase_N",
+    "pfam_accession": "PF03952",
+    "pfam_description": "Enolase, N-terminal domain",
+    "pfam_type": "Domain",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Glycolytic",
+    "pfam_accession": "PF00274",
+    "pfam_description": "Fructose-bisphosphate aldolase class-I",
+    "pfam_type": "Domain",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "PK",
+    "pfam_accession": "PF00224",
+    "pfam_description": "Pyruvate kinase, barrel domain",
+    "pfam_type": "Domain",
+    "pfam_details": "<p>This is the barrel domain of pyruvate kinases. This domain represents the beta/alpha barrel and the small beta-barrel domain inserted within it. The active site is found in a cleft between the two domains [[cite:PUB00020130],[cite:PUB00014243],[cite:PUB00014134],[cite:PUB00100069]].</p>",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "14-3-3",
+    "pfam_accession": "PF00244",
+    "pfam_description": "14-3-3 protein",
+    "pfam_type": "Repeat",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "RecA",
+    "pfam_accession": "PF00154",
+    "pfam_description": "recA bacterial DNA recombination protein",
+    "pfam_type": "Family",
+    "pfam_details": "<p>RecA is a DNA-dependent ATPase and functions in DNA repair systems.  RecA protein catalyses an ATP-dependent DNA strand-exchange reaction that is the central step in the repair of dsDNA breaks by homologous recombination [[cite:PUB00109190]].</p>",
+    "kingdoms": [
+      "bacteria"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Ribosomal_L13",
+    "pfam_accession": "PF00572",
+    "pfam_description": "Ribosomal protein L13",
+    "pfam_type": "Family",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "bacteria",
+      "nematodes"
+    ],
+    "confidence": "high"
+  },
+  {
+    "pfam_target_id": "Ribosomal_L23",
+    "pfam_accession": "PF00276",
+    "pfam_description": "Ribosomal protein L23",
+    "pfam_type": "Family",
+    "pfam_details": "",
+    "kingdoms": [
+      "mammals",
+      "arthropods",
+      "plants",
+      "fish",
+      "fungi",
+      "nematodes"
+    ],
+    "confidence": "high"
+  }
+]

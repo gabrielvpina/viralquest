@@ -133,6 +133,16 @@ class PromptBuilder:
             blastx_hits = [_blastx_dict(seq.best_blastx)] if seq.best_blastx else []
             blastn_hits = [_blastn_dict(seq.best_blastn)] if seq.best_blastn else []
 
+        # Salmon TPM / reads — included when available regardless of token mode,
+        # because expression level is a direct quality signal for the LLM.
+        salmon_quant = None
+        if seq.salmon_tpm is not None or seq.salmon_reads is not None:
+            salmon_quant = {}
+            if seq.salmon_tpm is not None:
+                salmon_quant["tpm"]       = round(float(seq.salmon_tpm),   4)
+            if seq.salmon_reads is not None:
+                salmon_quant["num_reads"] = round(float(seq.salmon_reads), 1)
+
         return {
             "sequence_id":      seq.id,
             "sequence_stats": {
@@ -140,12 +150,13 @@ class PromptBuilder:
                 "gc_content":  seq.gc_content,
                 "n_count":     seq.n_count,
             },
-            "is_viral_flag":    seq.is_viral,
-            "taxonomy":         taxonomy_dict,
-            "blastx_hits":      blastx_hits,
-            "blastn_hits":      blastn_hits,
-            "orfs":             [_orf_dict(o, include_details) for o in seq.orfs],
-            "viral_family_info": family_info,
+            "is_viral_flag":      seq.is_viral,
+            "salmon_quantification": salmon_quant,
+            "taxonomy":           taxonomy_dict,
+            "blastx_hits":        blastx_hits,
+            "blastn_hits":        blastn_hits,
+            "orfs":               [_orf_dict(o, include_details) for o in seq.orfs],
+            "viral_family_info":  family_info,
         }
 
 

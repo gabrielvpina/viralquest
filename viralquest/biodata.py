@@ -281,6 +281,20 @@ class ViralCluster:
 # ---------------------------------------------------------------------------
 
 @dataclass(slots=True)
+class PfamHkEntry:
+    """One assembled contig identified as a housekeeping gene via Pfam domain hit."""
+    seq_id:       str     # original contig ID
+    pfam_target:  str     # Pfam_TargetID  (plot label)
+    pfam_acc:     str     # e.g. PF00022
+    pfam_desc:    str     # Pfam_Description
+    pfam_details: str     # Pfam_Details (HTML, stripped for tooltips)
+    tpm:          float
+    num_reads:    float
+    score:        float   # HMM bit score
+    e_value:      float
+
+
+@dataclass(slots=True)
 class SalmonEntry:
     """One row from quant.sf, tagged by sequence origin."""
     name:       str
@@ -321,6 +335,7 @@ class SalmonQuantReport:
     conserved_quant: list[SalmonEntry]     # bundled HK (reference) or HK-matched contigs (de_novo)
     ref_hk_quant:    list[SalmonEntry]     # user-provided reference HK genes (reference pathway only)
     host_viral_hits: list[HostViralRecord] # host transcripts with similarity to viral seqs
+    pfam_hk_quant:   list[PfamHkEntry]    # contigs identified as HK genes via Pfam domains (de_novo)
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +371,10 @@ class NucSequence:
 
     # cluster membership
     cluster_id: str | None = field(default=None, init=False)
+
+    # Salmon quantification (populated before LLM scoring when --reads is given)
+    salmon_tpm:   float | None = field(default=None, init=False)
+    salmon_reads: float | None = field(default=None, init=False)
 
     # computed
     length:    int   = field(init=False)

@@ -136,6 +136,17 @@ function vqInitSalmon(salmonQuant, clusters) {
     </div>` : ''}
 
     ${_SQ.pathway === 'reference' ? _renderHostHits(salmonQuant.host_viral_hits || []) : ''}
+
+    ${(salmonQuant.pfam_hk_quant || []).length ? `
+    <div class="vq-card" style="margin-top:var(--vq-space-3)">
+      <div class="vq-card__header">
+        <div class="vq-card__title">Housekeeping Domains (Pfam)</div>
+        <span class="vq-panel__count" id="sq-pfamhk-count">0</span>
+      </div>
+      <div class="vq-card__body" style="padding:12px 14px">
+        <div id="sq-pfamhk-wrap" style="width:100%"></div>
+      </div>
+    </div>` : ''}
   `;
 
   // Min-value filter
@@ -218,6 +229,7 @@ function _setGroupMode(mode) {
     btn.setAttribute('aria-selected', String(active));
   });
   _drawViralPanel();
+  _drawPfamHkPanel();
 }
 
 function _setMetric(metric) {
@@ -238,6 +250,7 @@ function _draw() {
   _drawViralPanel();
   _drawConsPanel();
   if (_SQ.pathway === 'reference') _drawRefHkPanel();
+  _drawPfamHkPanel();
 }
 
 // ── Housekeeping medians per kingdom ───────────────────────────────────────
@@ -681,6 +694,195 @@ function _drawRefHkPanel() {
       .attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
       .attr('font-variant-numeric', 'tabular-nums')
       .text(val.toFixed(1));
+  });
+
+  wrap.appendChild(svg.node());
+}
+
+// ── Pfam HK panel ──────────────────────────────────────────────────────────
+
+function _stripHtml(html) {
+  return (html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function _drawPfamHkPanel() {
+  const wrap = document.getElementById('sq-pfamhk-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const raw    = (_SQ.data.pfam_hk_quant || []);
+  const metric = _SQ.metric;
+  const label  = metric === 'tpm' ? 'TPM' : 'Reads';
+
+  const minVal   = _SQ.minVal || 0;
+  const filtered = minVal > 0 ? raw.filter(e => (e[metric] ?? 0) >= minVal) : raw;
+
+  const countEl = document.getElementById('sq-pfamhk-count');
+  if (countEl) {
+    countEl.textContent = minVal > 0
+      ? `${filtered.length} of ${raw.length} domain${raw.length !== 1 ? 's' : ''}`
+      : `${raw.length} domain${raw.length !== 1 ? 's' : ''}`;
+  }
+
+  if (!filtered.length) return;
+
+  // Build groups: cluster mode → by pfam_target; individual → each seq alone
+  const groups = {};
+  if (_SQ.groupMode === 'individual') {
+    filtered.forEach(e => {
+      groups[e.seq_id] = {
+        label:       e.seq_id,
+        values:      [e[metric] ?? 0],
+        pfam_target: e.pfam_target,
+        pfam_desc:   e.pfam_desc,
+        pfam_details:e.pfam_details,
+        seqIds:      [e.seq_id],
+      };
+    });
+  } else {
+    filtered.forEach(e => {
+      const key = e.pfam_target;
+      if (!groups[key]) {
+        groups[key] = {
+          label:       key,
+          values:      [],
+          pfam_target: e.pfam_target,
+          pfam_desc:   e.pfam_desc,
+          pfam_details:e.pfam_details,
+          seqIds:      [],
+        };
+      }
+      groups[key].values.push(e[metric] ?? 0);
+      groups[key].seqIds.push(e.seq_id);
+    });
+  }
+
+  const keys = Object.keys(groups).sort((a, b) => {
+    const ma = d3.quantile(groups[a].values.slice().sort(d3.ascending), 0.5) ?? 0;
+    const mb = d3.quantile(groups[b].values.slice().sort(d3.ascending), 0.5) ?? 0;
+    return mb - ma;
+  });
+
+  const containerW = wrap.clientWidth || 700;
+  const W     = Math.max(containerW, 560);
+  const PAD_L = 200;
+  const PAD_R = 30;
+  const PAD_T = 26;
+  const ROW_H = 30;
+  const PAD_B = 48;
+  const drawW = W - PAD_L - PAD_R;
+
+  const allVals = filtered.map(e => e[metric] ?? 0);
+  const maxVal  = d3.max(allVals) || 1;
+  const xScale  = d3.scaleLinear([0, maxVal], [0, drawW]);
+  const H       = PAD_T + keys.length * ROW_H + PAD_B;
+
+  const COLOR = 'var(--vq-success)';
+
+  const svg = d3.create('svg')
+    .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  // X axis
+  const gridH = H - PAD_T - PAD_B;
+  const axG = svg.append('g')
+    .attr('transform', `translate(${PAD_L},${PAD_T})`)
+    .call(d3.axisTop(xScale).ticks(Math.max(4, Math.round(W / 140))).tickSize(0));
+  axG.selectAll('.tick line')
+    .attr('y1', 0).attr('y2', gridH)
+    .attr('stroke', '#dde3ec').attr('stroke-dasharray', '3,3');
+  axG.select('.domain').remove();
+  axG.selectAll('.tick text')
+    .style('font-size', '10px').style('fill', '#94a3b8');
+
+  svg.append('text')
+    .attr('x', PAD_L + drawW / 2).attr('y', H - 12)
+    .attr('text-anchor', 'middle').attr('font-size', 11)
+    .attr('fill', 'var(--vq-text-2)').text(label);
+
+  keys.forEach((key, i) => {
+    const grp  = groups[key];
+    const vals = grp.values.slice().sort(d3.ascending);
+    const y    = PAD_T + i * ROW_H + ROW_H / 2;
+    const gEl  = svg.append('g').attr('transform', `translate(${PAD_L},0)`);
+
+    // Label
+    const truncated = grp.label.length > 28 ? grp.label.slice(0, 27) + '…' : grp.label;
+    const detailText = _stripHtml(grp.pfam_details);
+    svg.append('text')
+      .attr('x', PAD_L - 8).attr('y', y + 4)
+      .attr('text-anchor', 'end').attr('font-size', 11)
+      .attr('fill', 'var(--vq-success)').attr('font-family', 'var(--vq-font-mono)')
+      .attr('cursor', 'help')
+      .text(truncated)
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${VQ.esc(grp.pfam_target)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Description</span>
+          <span>${VQ.esc(grp.pfam_desc)}</span>
+        </div>
+        ${detailText ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.15);
+                                    font-size:10px;color:rgba(255,255,255,.8);max-width:260px;line-height:1.45">
+          ${VQ.esc(detailText.slice(0, 240))}${detailText.length > 240 ? '…' : ''}
+        </div>` : ''}`, evt))
+      .on('mouseleave', VQ.tooltipHide);
+
+    if (vals.length === 1) {
+      gEl.append('circle')
+        .attr('cx', xScale(vals[0])).attr('cy', y).attr('r', 5)
+        .attr('fill', COLOR).attr('stroke', '#fff').attr('stroke-width', 1)
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${VQ.esc(grp.seqIds[0])}</div>
+          <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">${label}</span>
+            <span>${vals[0].toFixed(2)}</span>
+          </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+    } else {
+      const q1  = d3.quantile(vals, 0.25);
+      const med = d3.quantile(vals, 0.5);
+      const q3  = d3.quantile(vals, 0.75);
+      const iqr = q3 - q1;
+      const lo  = Math.max(d3.min(vals), q1 - 1.5 * iqr);
+      const hi  = Math.min(d3.max(vals), q3 + 1.5 * iqr);
+      const bh  = 14;
+
+      gEl.append('line')
+        .attr('x1', xScale(lo)).attr('x2', xScale(hi))
+        .attr('y1', y).attr('y2', y)
+        .attr('stroke', COLOR).attr('stroke-width', 1.5);
+      [lo, hi].forEach(x => {
+        gEl.append('line')
+          .attr('x1', xScale(x)).attr('x2', xScale(x))
+          .attr('y1', y - bh / 2).attr('y2', y + bh / 2)
+          .attr('stroke', COLOR).attr('stroke-width', 1.5);
+      });
+      gEl.append('rect')
+        .attr('x', xScale(q1)).attr('width', Math.max(xScale(q3) - xScale(q1), 2))
+        .attr('y', y - bh / 2).attr('height', bh).attr('rx', 2)
+        .attr('fill', COLOR).attr('opacity', 0.25)
+        .attr('stroke', COLOR).attr('stroke-width', 1.5)
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${VQ.esc(grp.label)}</div>
+          <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">Median ${label}</span><span>${med.toFixed(2)}</span>
+            <span class="vq-tooltip__key">Q1–Q3</span><span>${q1.toFixed(2)}–${q3.toFixed(2)}</span>
+            <span class="vq-tooltip__key">Sequences</span><span>${vals.length}</span>
+          </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+      gEl.append('line')
+        .attr('x1', xScale(med)).attr('x2', xScale(med))
+        .attr('y1', y - bh / 2).attr('y2', y + bh / 2)
+        .attr('stroke', 'var(--vq-primary)').attr('stroke-width', 2);
+
+      vals.filter(v => v < lo || v > hi).forEach(v => {
+        gEl.append('circle')
+          .attr('cx', xScale(v)).attr('cy', y).attr('r', 3)
+          .attr('fill', 'var(--vq-danger)').attr('opacity', 0.7);
+      });
+    }
   });
 
   wrap.appendChild(svg.node());

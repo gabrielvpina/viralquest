@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 import subprocess
@@ -9,9 +10,245 @@ from viralquest.biodata import (
     HostViralHit,
     HostViralRecord,
     NucSequence,
+    PfamHkEntry,
     SalmonEntry,
     SalmonQuantReport,
 )
+
+
+# ---------------------------------------------------------------------------
+# Codon table + 6-frame translation helpers
+# ---------------------------------------------------------------------------
+
+_CODON_TABLE: dict[str, str] = {
+    'TTT':'F','TTC':'F','TTA':'L','TTG':'L','CTT':'L','CTC':'L','CTA':'L','CTG':'L',
+    'ATT':'I','ATC':'I','ATA':'I','ATG':'M','GTT':'V','GTC':'V','GTA':'V','GTG':'V',
+    'TCT':'S','TCC':'S','TCA':'S','TCG':'S','CCT':'P','CCC':'P','CCA':'P','CCG':'P',
+    'ACT':'T','ACC':'T','ACA':'T','ACG':'T','GCT':'A','GCC':'A','GCA':'A','GCG':'A',
+    'TAT':'Y','TAC':'Y','TAA':'*','TAG':'*','CAT':'H','CAC':'H','CAA':'Q','CAG':'Q',
+    'AAT':'N','AAC':'N','AAA':'K','AAG':'K','GAT':'D','GAC':'D','GAA':'E','GAG':'E',
+    'TGT':'C','TGC':'C','TGA':'*','TGG':'W','CGT':'R','CGC':'R','CGA':'R','CGG':'R',
+    'AGT':'S','AGC':'S','AGA':'R','AGG':'R','GGT':'G','GGC':'G','GGA':'G','GGG':'G',
+}
+_RC_TABLE = str.maketrans('ATCGatcg', 'TAGCtagc')
+
+
+def _rev_comp(seq: str) -> str:
+    return seq.translate(_RC_TABLE)[::-1]
+
+
+def _sixframe_fragments(dna: str, min_aa: int = 30) -> list[tuple[str, str]]:
+    """
+    Return (name_suffix, aa_fragment) for all ORF-like fragments >= min_aa
+    from the 6 reading frames of *dna*.  The name suffix encodes frame so the
+    original contig ID can be recovered by splitting on '|'.
+    """
+    results: list[tuple[str, str]] = []
+    dna = dna.upper()
+    for strand_name, strand in (('f', dna), ('r', _rev_comp(dna))):
+        for frame in range(3):
+            subseq = strand[frame:]
+            aa = ''.join(
+                _CODON_TABLE.get(subseq[i:i+3], 'X')
+                for i in range(0, len(subseq) - 2, 3)
+            )
+            for frag_idx, frag in enumerate(aa.split('*')):
+                if len(frag) >= min_aa:
+                    results.append((f'|{strand_name}{frame}|{frag_idx}', frag))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# PfamHkFinder
+# ---------------------------------------------------------------------------
+
+class PfamHkFinder:
+    """
+    Identifies housekeeping-gene contigs in assembled FASTA by running a
+    targeted pyhmmer search against 22 high-confidence Pfam HK domain profiles,
+    then links hits to Salmon quantification data.
+
+    Only the de-novo pathway is supported (assembled contigs are small enough
+    for 6-frame translation + search to be fast).
+    """
+
+    _HK_FILE = Path(__file__).parent.parent / "data" / "salmon-quant" / "hk_pfam_domains.json"
+
+    def __init__(self, pfam_hmm_path: Path, threads: int = 4):
+        self.pfam_hmm_path = pfam_hmm_path
+        self.threads       = threads
+        self._hk_meta: dict[str, dict] = self._load_hk_meta()
+
+    # ── public ──────────────────────────────────────────────────────────────
+
+    def find(self, assembled_fasta: Path, quant_sf: Path) -> list[PfamHkEntry]:
+        if not self._hk_meta:
+            logger.debug("PfamHkFinder: HK domain file not found — skipping.")
+            return []
+        if not self.pfam_hmm_path.exists():
+            logger.debug("PfamHkFinder: Pfam-A HMM not found — skipping.")
+            return []
+
+        tpm_map = self._parse_quant_sf(quant_sf)
+        if not tpm_map:
+            return []
+
+        seq_block, name_map = self._build_seq_block(assembled_fasta)
+        if seq_block is None:
+            return []
+
+        profiles = self._load_profiles()
+        if not profiles:
+            return []
+
+        hits = self._search(profiles, seq_block, name_map)
+        entries = self._build_entries(hits, tpm_map)
+        logger.info(f"PfamHkFinder: {len(entries)} HK contig(s) identified via Pfam domains.")
+        return entries
+
+    # ── private ─────────────────────────────────────────────────────────────
+
+    @classmethod
+    def _load_hk_meta(cls) -> dict[str, dict]:
+        if not cls._HK_FILE.exists():
+            return {}
+        with open(cls._HK_FILE, encoding="utf-8") as fh:
+            entries = json.load(fh)
+        return {e["pfam_target_id"]: e for e in entries}
+
+    @staticmethod
+    def _parse_quant_sf(quant_sf: Path) -> dict[str, tuple[float, float]]:
+        """Returns {seq_id: (tpm, num_reads)}."""
+        result: dict[str, tuple[float, float]] = {}
+        if not quant_sf.exists():
+            return result
+        with open(quant_sf, encoding="utf-8") as fh:
+            next(fh)  # skip header
+            for line in fh:
+                parts = line.rstrip().split("\t")
+                if len(parts) < 5:
+                    continue
+                name = parts[0].removeprefix("VQ_VIRAL_").removeprefix("VQ_CONS_")
+                try:
+                    result[name] = (float(parts[3]), float(parts[4]))
+                except ValueError:
+                    continue
+        return result
+
+    def _build_seq_block(
+        self, fasta: Path
+    ) -> tuple["pyhmmer.easel.DigitalSequenceBlock | None", dict[str, str]]:
+        """
+        Translates every contig in *fasta* into 6-frame ORF fragments and
+        returns a pyhmmer DigitalSequenceBlock + a mapping from fragment name
+        back to original contig ID.
+        """
+        try:
+            import pyhmmer.easel
+        except ImportError:
+            logger.warning("PfamHkFinder: pyhmmer not available — skipping.")
+            return None, {}
+
+        alphabet   = pyhmmer.easel.Alphabet.amino()
+        digital    : list[pyhmmer.easel.DigitalSequence] = []
+        name_map   : dict[str, str] = {}   # fragment_name → contig_id
+
+        for seq_id, _desc, dna in _parse_fasta_iter(fasta):
+            for suffix, aa in _sixframe_fragments(dna):
+                full_name = seq_id + suffix
+                name_map[full_name] = seq_id
+                digital.append(
+                    pyhmmer.easel.TextSequence(
+                        name=full_name.encode(),
+                        sequence=aa,
+                    ).digitize(alphabet)
+                )
+
+        if not digital:
+            return None, {}
+
+        return pyhmmer.easel.DigitalSequenceBlock(alphabet, digital), name_map
+
+    def _load_profiles(self) -> list:
+        """Scan Pfam-A.hmm and return only the HK profiles."""
+        try:
+            import pyhmmer.plan7
+        except ImportError:
+            return []
+
+        hk_ids   = set(self._hk_meta.keys())
+        profiles = []
+        try:
+            with pyhmmer.plan7.HMMFile(str(self.pfam_hmm_path)) as hf:
+                for hmm in hf:
+                    if hmm.name.decode("utf-8", errors="replace") in hk_ids:
+                        profiles.append(hmm)
+        except Exception as exc:
+            logger.warning(f"PfamHkFinder: error loading Pfam profiles: {exc}")
+        logger.debug(f"PfamHkFinder: {len(profiles)}/{len(hk_ids)} HK profiles loaded.")
+        return profiles
+
+    def _search(
+        self,
+        profiles: list,
+        seq_block: "pyhmmer.easel.DigitalSequenceBlock",
+        name_map: dict[str, str],
+    ) -> dict[str, dict[str, tuple[float, float]]]:
+        """
+        Returns {contig_id: {pfam_target: (score, evalue)}} keeping the best
+        hit per contig per domain.  Only hits passing the GA inclusion threshold
+        are kept (``hit.included`` from pyhmmer).
+        """
+        try:
+            import pyhmmer
+        except ImportError:
+            return {}
+
+        results: dict[str, dict[str, tuple[float, float]]] = {}
+        try:
+            for top_hits in pyhmmer.hmmsearch(profiles, seq_block, cpus=self.threads):
+                profile_name = top_hits.query_name.decode("utf-8", errors="replace")
+                for hit in top_hits:
+                    if not hit.included:
+                        continue
+                    frag_name  = hit.name.decode("utf-8", errors="replace")
+                    contig_id  = name_map.get(frag_name, frag_name.split("|")[0])
+                    contig_hits = results.setdefault(contig_id, {})
+                    cur = contig_hits.get(profile_name)
+                    if cur is None or hit.score > cur[0]:
+                        contig_hits[profile_name] = (hit.score, hit.evalue)
+        except Exception as exc:
+            logger.warning(f"PfamHkFinder: search error: {exc}")
+        return results
+
+    def _build_entries(
+        self,
+        hits: dict[str, dict[str, tuple[float, float]]],
+        tpm_map: dict[str, tuple[float, float]],
+    ) -> list[PfamHkEntry]:
+        entries: list[PfamHkEntry] = []
+        for contig_id, domain_hits in hits.items():
+            tpm_data = tpm_map.get(contig_id)
+            if tpm_data is None:
+                continue
+            tpm, num_reads = tpm_data
+            # Use the domain with the best score for this contig
+            best_domain = max(domain_hits, key=lambda d: domain_hits[d][0])
+            score, evalue = domain_hits[best_domain]
+            meta = self._hk_meta.get(best_domain, {})
+            entries.append(PfamHkEntry(
+                seq_id       = contig_id,
+                pfam_target  = best_domain,
+                pfam_acc     = meta.get("pfam_accession", ""),
+                pfam_desc    = meta.get("pfam_description", ""),
+                pfam_details = meta.get("pfam_details", ""),
+                tpm          = tpm,
+                num_reads    = num_reads,
+                score        = score,
+                e_value      = evalue,
+            ))
+        entries.sort(key=lambda e: -e.tpm)
+        return entries
 
 
 # ---------------------------------------------------------------------------
@@ -687,22 +924,24 @@ class SalmonQuantPipeline:
 
     def __init__(
         self,
-        salmon_bin:  str   = "salmon",
-        blastn_bin:  str   = "blastn",
-        threads:     int   = 4,
-        cleanup:     bool  = True,
-        e_value:     float = 1e-5,
-        min_pident:  float = 70.0,
-        min_qcov:    int   = 20,
-        low_memory:  bool  = False,
+        salmon_bin:    str        = "salmon",
+        blastn_bin:    str        = "blastn",
+        threads:       int        = 4,
+        cleanup:       bool       = True,
+        e_value:       float      = 1e-5,
+        min_pident:    float      = 70.0,
+        min_qcov:      int        = 20,
+        low_memory:    bool       = False,
+        pfam_hmm_path: Path | None = None,
     ):
         self._index_builder = SalmonIndexBuilder(salmon_bin, threads, kmer_len=25 if low_memory else 31)
         self._quant_runner  = SalmonQuantRunner(salmon_bin, threads, low_memory=low_memory)
         self._aligner       = TranscriptomeViralAligner(
             blastn_bin, e_value, threads, min_pident, min_qcov,
         )
-        self._hk_blaster = ContigHkBlaster(blastn_bin, e_value, threads)
-        self.cleanup     = cleanup
+        self._hk_blaster  = ContigHkBlaster(blastn_bin, e_value, threads)
+        self._pfam_hk     = PfamHkFinder(pfam_hmm_path, threads) if pfam_hmm_path else None
+        self.cleanup      = cleanup
 
     # --- public ---------------------------------------------------------------
 
@@ -841,12 +1080,17 @@ class SalmonQuantPipeline:
 
             all_entries = QuantsfParser.parse(quant_sf, conserved_map)
 
+            pfam_hk: list[PfamHkEntry] = []
+            if self._pfam_hk is not None:
+                pfam_hk = self._pfam_hk.find(assembled_fasta, quant_sf)
+
             report = self._assemble(
                 reads        = reads,
                 mapping_rate = mapping_rate,
                 entries      = all_entries,
                 blast_hits   = [],
                 pathway      = "de_novo",
+                pfam_hk      = pfam_hk,
             )
 
         finally:
@@ -866,6 +1110,7 @@ class SalmonQuantPipeline:
         entries:      list[SalmonEntry],
         blast_hits:   list[HostViralHit],
         pathway:      str,
+        pfam_hk:      list[PfamHkEntry] | None = None,
     ) -> SalmonQuantReport:
         viral_quant     = [e for e in entries if e.seq_type == "viral"]
         conserved_quant = [e for e in entries if e.seq_type == "conserved"]
@@ -902,12 +1147,14 @@ class SalmonQuantPipeline:
 
         conserved_quant.sort(key=lambda e: (e.kingdom, -e.tpm))
 
+        pfam_hk_quant = pfam_hk or []
         logger.info(
             f"SalmonQuantReport assembled [{pathway}]: "
             f"{len(viral_quant)} viral | "
             f"{len(conserved_quant)} conserved | "
             f"{len(ref_hk_quant)} ref_hk | "
-            f"{len(host_viral_hits)} host-viral record(s)."
+            f"{len(host_viral_hits)} host-viral | "
+            f"{len(pfam_hk_quant)} pfam-hk record(s)."
         )
         return SalmonQuantReport(
             reads            = reads,
@@ -918,4 +1165,5 @@ class SalmonQuantPipeline:
             conserved_quant  = conserved_quant,
             ref_hk_quant     = ref_hk_quant,
             host_viral_hits  = host_viral_hits,
+            pfam_hk_quant    = pfam_hk_quant,
         )

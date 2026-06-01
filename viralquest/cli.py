@@ -452,12 +452,12 @@ def _build_steps(args) -> list[str]:
     steps.append("HMMsearch  —  Pfam  (functional annotation)")
     steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
-    if args.model_type:
-        token_tag = f"[{args.llm_tokens}]" if args.llm_tokens else ""
-        steps.append(f"LLM scoring  —  {args.model_type} / {args.model_name}  {token_tag}".rstrip())
     if args.reads:
         mode = "reference" if args.transcriptome else "de novo"
         steps.append(f"Salmon quantification  —  {mode}")
+    if args.model_type:
+        token_tag = f"[{args.llm_tokens}]" if args.llm_tokens else ""
+        steps.append(f"LLM scoring  —  {args.model_type} / {args.model_name}  {token_tag}".rstrip())
     steps.append("Export JSON report")
     steps.append("Build HTML report")
     return steps
@@ -620,25 +620,17 @@ def _run_pipeline(args):
     clusters     = tracker.track(viral_for_cl)
     yield from _tick(t)
 
-    # ── 10. LLM scoring ───────────────────────────────────────────────────────
-    if args.model_type and args.model_name:
-        t          = time.time()
-        viral_seqs = [s for s in seqs if s.blastx_nr_hits]
-        from .score_ai import SequenceScorer, LlmMode
-        mode = LlmMode.HIGH if args.llm_tokens == "high" else LlmMode.LOW
-        SequenceScorer(model_type=args.model_type,
-                       model_name=args.model_name,
-                       mode=mode,
-                       api_key=args.api_key).score(viral_seqs)
-        yield from _tick(t)
-
-    # ── 11. Salmon quantification ─────────────────────────────────────────────
+    # ── 10. Salmon quantification ─────────────────────────────────────────────
     salmon_report = None
     if args.reads:
         t = time.time()
         from .salmon_quant import SalmonQuantPipeline
         try:
-            salmon_report = SalmonQuantPipeline(threads=args.cpu, low_memory=args.low_memory).run(
+            salmon_report = SalmonQuantPipeline(
+                threads=args.cpu,
+                low_memory=args.low_memory,
+                pfam_hmm_path=Path(args._db["pfam"]),
+            ).run(
                 reads              = args.reads,
                 viral_seqs         = seqs,
                 outdir             = outdir / "salmon",
@@ -648,6 +640,30 @@ def _run_pipeline(args):
             )
         except Exception as exc:
             logger.error(f"Salmon quantification failed — skipping: {exc}")
+
+        # Populate salmon_tpm / salmon_reads on each viral sequence so the
+        # LLM scorer (step 11) can include expression data in its prompt.
+        if salmon_report:
+            tpm_map = {
+                e.name.removeprefix("VQ_VIRAL_"): (e.tpm, e.num_reads)
+                for e in salmon_report.viral_quant
+            }
+            for seq in seqs:
+                if seq.id in tpm_map:
+                    seq.salmon_tpm, seq.salmon_reads = tpm_map[seq.id]
+
+        yield from _tick(t)
+
+    # ── 11. LLM scoring ───────────────────────────────────────────────────────
+    if args.model_type and args.model_name:
+        t          = time.time()
+        viral_seqs = [s for s in seqs if s.blastx_nr_hits]
+        from .score_ai import SequenceScorer, LlmMode
+        mode = LlmMode.HIGH if args.llm_tokens == "high" else LlmMode.LOW
+        SequenceScorer(model_type=args.model_type,
+                       model_name=args.model_name,
+                       mode=mode,
+                       api_key=args.api_key).score(viral_seqs)
         yield from _tick(t)
 
     # ── 12. Export: viral FASTA + JSON ────────────────────────────────────────
