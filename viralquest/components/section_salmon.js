@@ -28,6 +28,36 @@ const _SQ = {
   resizeT:   null,
 };
 
+// Display helpers for kingdom names coming from conserved_quant entries.
+// Keys are the uppercase strings stored in the JSON (VQ_CONS_{KINGDOM}_*).
+const _KG_LABEL = {
+  MAMMALS:    'Mammals',
+  ARTHROPODS: 'Arthropods',
+  PLANTS:     'Plants',
+  FISH:       'Fish',
+  FUNGI:      'Fungi',
+  BACTERIA:   'Bacteria',
+  NEMATODES:  'Nematodes',
+  HUMAN:      'Human',
+  MOUSE:      'Mouse',
+};
+
+// Short abbreviations used on the viral-panel overlay (≤4 chars).
+const _KG_ABBR = {
+  MAMMALS:    'MAM',
+  ARTHROPODS: 'ART',
+  PLANTS:     'PLT',
+  FISH:       'FSH',
+  FUNGI:      'FNG',
+  BACTERIA:   'BAC',
+  NEMATODES:  'NEM',
+  HUMAN:      'HSA',   // Homo sapiens
+  MOUSE:      'MMU',   // Mus musculus
+};
+
+function _kgLabel(k) { return _KG_LABEL[k] || (k.charAt(0) + k.slice(1).toLowerCase()); }
+function _kgAbbr(k)  { return _KG_ABBR[k]  || k.slice(0, 3).toUpperCase(); }
+
 function vqInitSalmon(salmonQuant, clusters) {
   const el = document.getElementById('section-salmon');
   if (!el) return;
@@ -476,7 +506,7 @@ function _drawViralPanel() {
         .attr('stroke-width', 1.2)
         .attr('opacity', 0.7)
         .on('mousemove', evt => VQ.tooltipShow(`
-          <div class="vq-tooltip__title">${VQ.esc(h.kingdom)} housekeeping</div>
+          <div class="vq-tooltip__title">${VQ.esc(_kgLabel(h.kingdom))} housekeeping</div>
           <div class="vq-tooltip__row">
             <span class="vq-tooltip__key">Median ${label}</span><span>${h.median.toFixed(2)}</span>
             <span class="vq-tooltip__key">Genes</span><span>${h.values.length}</span>
@@ -488,7 +518,7 @@ function _drawViralPanel() {
         .attr('text-anchor', 'middle')
         .attr('font-size', 9.5)
         .attr('fill', 'var(--vq-success)')
-        .text(h.kingdom.slice(0, 3).toUpperCase());
+        .text(_kgAbbr(h.kingdom));
     });
 
     svg.append('text')
@@ -506,7 +536,7 @@ function _drawViralPanel() {
         .attr('x', lx + 22).attr('y', overlayY)
         .attr('font-size', 11)
         .attr('fill', 'var(--vq-text-3)')
-        .text(`${h.kingdom} (${h.median.toFixed(1)})`);
+        .text(`${_kgLabel(h.kingdom)} (${h.median.toFixed(1)})`);
       lx += 22 + (h.kingdom.length + 8) * 6.2;
     });
   }
@@ -576,7 +606,7 @@ function _drawConsPanel() {
       .attr('text-anchor', 'end')
       .attr('font-size', 11)
       .attr('fill', 'var(--vq-text-2)')
-      .text(row.k);
+      .text(_kgLabel(row.k));
 
     svg.append('rect')
       .attr('x', PAD_L).attr('y', y)
@@ -591,7 +621,7 @@ function _drawConsPanel() {
       .attr('rx', 2)
       .attr('fill', 'var(--vq-success)').attr('opacity', 0.85)
       .on('mousemove', evt => VQ.tooltipShow(`
-        <div class="vq-tooltip__title">${VQ.esc(row.k)}</div>
+        <div class="vq-tooltip__title">${VQ.esc(_kgLabel(row.k))}</div>
         <div class="vq-tooltip__row">
           <span class="vq-tooltip__key">Median ${label}</span><span>${row.median.toFixed(2)}</span>
           <span class="vq-tooltip__key">Genes</span><span>${row.vals.length}</span>
