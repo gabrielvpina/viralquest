@@ -335,7 +335,7 @@ function _renderTaxDonut(sequences, rank) {
     .attr('font-weight', 700)
     .attr('fill', 'var(--vq-primary)')
     .attr('y', 0)
-    .text(display.length);
+    .text(entries.length);
   labelG.append('text')
     .attr('text-anchor', 'middle')
     .attr('font-size', 10)
