@@ -735,22 +735,15 @@ function _genomeSVG(seq, containerWidth) {
 
     const g = svg.append('g');
 
-    // Build tooltip with AA sequence preview if available
-    const aa = orf.aa_sequence || '';
-    const aaPreview = aa.length > 60 ? aa.slice(0, 60) + '…' : aa;
-    const aaRow = aa
-      ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.12)">
-           <div class="vq-tooltip__key" style="margin-bottom:3px">Sequence (${aa.length} aa)</div>
-           <div style="font-family:var(--vq-font-mono);font-size:10px;word-break:break-all;
-                       max-width:240px;color:rgba(255,255,255,.92)">${VQ.esc(aaPreview)}</div>
-         </div>`
-      : '';
+    const aa        = orf.aa_sequence || '';
+    const copyHint  = aa ? `<div style="margin-top:5px;padding-top:5px;
+        border-top:1px solid rgba(255,255,255,.12);font-size:10px;
+        color:rgba(255,255,255,.55)">Click to copy AA sequence</div>` : '';
 
-    g.append('rect')
-      .attr('x', x1).attr('width', bw)
-      .attr('y', y).attr('height', ORF_H)
-      .attr('rx', 3)
+    g.append('polygon')
+      .attr('points', _orfArrowPoints(x1, x1 + bw, y, ORF_H, orf.strand))
       .attr('fill', col).attr('opacity', .88)
+      .style('cursor', aa ? 'pointer' : 'default')
       .on('mousemove', evt => VQ.tooltipShow(`
         <div class="vq-tooltip__title">${VQ.esc(orf.name)}</div>
         <div class="vq-tooltip__row">
@@ -760,19 +753,37 @@ function _genomeSVG(seq, containerWidth) {
           <span class="vq-tooltip__key">Position</span>
           <span>${orf.start_position}–${orf.stop_position}</span>
           <span class="vq-tooltip__key">Type</span><span>${VQ.esc(orf.orf_type)}</span>
-          <span class="vq-tooltip__key">Domains</span><span>${(orf.domains||[]).length}</span>
+          <span class="vq-tooltip__key">Domains</span><span>${(orf._domainLanes||[]).length}</span>
         </div>
-        ${aaRow}`, evt))
-      .on('mouseleave', VQ.tooltipHide);
+        ${copyHint}`, evt))
+      .on('mouseleave', VQ.tooltipHide)
+      .on('click', evt => {
+        if (!aa) return;
+        navigator.clipboard.writeText(aa).then(() => {
+          VQ.tooltipShow(`<div class="vq-tooltip__title">✓ AA sequence copied</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.6);margin-top:3px">${orf.length_aa} aa</div>`, evt);
+          setTimeout(VQ.tooltipHide, 1500);
+        }).catch(() => {
+          VQ.tooltipShow(`<div class="vq-tooltip__title">⚠ Copy not available</div>`, evt);
+          setTimeout(VQ.tooltipHide, 1500);
+        });
+      });
 
-    if (bw > 38) {
+    // Show label only when the full name fits in the body of the arrow (excluding tip)
+    const tip        = Math.min(ORF_H * 0.75, bw * 0.25);
+    const labelW     = bw - tip;
+    const estimatedW = orf.name.length * 6.2 + 10;
+    if (labelW > estimatedW) {
+      const labelX = orf.strand === '+'
+        ? x1 + (bw - tip) / 2
+        : x1 + tip + (bw - tip) / 2;
       g.append('text')
-        .attr('x', x1 + bw / 2).attr('y', y + ORF_H / 2 + 3.5)
+        .attr('x', labelX).attr('y', y + ORF_H / 2 + 3.5)
         .attr('text-anchor', 'middle')
         .attr('font-size', 9.5)
         .attr('fill', 'rgba(255,255,255,.92)')
         .attr('pointer-events', 'none')
-        .text((orf.strand === '+' ? '▶ ' : '◀ ') + orf.name);
+        .text(orf.name);
     }
 
     // HMM domains — lane-packed below the ORF bar within the same frame lane
@@ -793,26 +804,30 @@ function _genomeSVG(seq, containerWidth) {
         .on('mousemove', evt => VQ.tooltipShow(`
           <div class="vq-tooltip__title">${VQ.esc(d.dom.target)}</div>
           <div class="vq-tooltip__row">
-            <span class="vq-tooltip__key">In</span><span>${VQ.esc(orf.name)}</span>
-            <span class="vq-tooltip__key">DB</span><span>${VQ.esc(d.dom.database)}</span>
-            <span class="vq-tooltip__key">Description</span><span>${VQ.esc(d.dom.description)}</span>
+            <span class="vq-tooltip__key">Database</span><span>${VQ.esc(d.dom.database)}</span>
             <span class="vq-tooltip__key">Score</span><span>${d.dom.score}</span>
             <span class="vq-tooltip__key">E-value</span><span>${d.dom.e_value?.toExponential(2) ?? '—'}</span>
             <span class="vq-tooltip__key">aa range</span><span>${d.dom.start}–${d.dom.stop}</span>
-          </div>`, evt))
+          </div>
+          ${d.dom.description ? `<div style="margin-top:5px;padding-top:5px;
+              border-top:1px solid rgba(255,255,255,.12);font-size:10px;
+              color:rgba(255,255,255,.72)">${VQ.esc(d.dom.description)}</div>` : ''}`,
+          evt))
         .on('mouseleave', VQ.tooltipHide);
     });
   });
 
   // ── Legend ──────────────────────────────────────────────────────────────
   const legendG = svg.append('g').attr('transform', `translate(${PAD_L}, ${totalH - 18})`);
-  legendG.append('rect').attr('width', 12).attr('height', 9).attr('rx', 2)
+  legendG.append('polygon')
+    .attr('points', _orfArrowPoints(0, 18, 0, 9, '+'))
     .attr('fill', 'var(--vq-accent)');
-  legendG.append('text').attr('x', 18).attr('y', 8.5)
+  legendG.append('text').attr('x', 24).attr('y', 8.5)
     .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)').text('(+) ORF');
-  legendG.append('rect').attr('x', 70).attr('width', 12).attr('height', 9).attr('rx', 2)
+  legendG.append('polygon')
+    .attr('points', _orfArrowPoints(70, 88, 0, 9, '-'))
     .attr('fill', 'var(--vq-warning)');
-  legendG.append('text').attr('x', 88).attr('y', 8.5)
+  legendG.append('text').attr('x', 94).attr('y', 8.5)
     .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)').text('(−) ORF');
   legendG.append('rect').attr('x', 140).attr('width', 12).attr('height', 5).attr('rx', 1)
     .attr('fill', 'var(--vq-dom-1)').attr('y', 2);
@@ -828,6 +843,20 @@ function _genomeSVG(seq, containerWidth) {
 }
 
 // ── Domain helpers ─────────────────────────────────────────────────────────
+
+function _orfArrowPoints(x1, x2, y, h, strand) {
+  const tip = Math.min(h * 0.75, (x2 - x1) * 0.25);
+  const mid  = y + h / 2;
+  if (strand === '+') {
+    const ax = x2;
+    const bx = x2 - tip;
+    return `${x1},${y} ${bx},${y} ${ax},${mid} ${bx},${y + h} ${x1},${y + h}`;
+  } else {
+    const ax = x1;
+    const bx = x1 + tip;
+    return `${ax},${mid} ${bx},${y} ${x2},${y} ${x2},${y + h} ${bx},${y + h}`;
+  }
+}
 
 function _bestDomainPerTarget(domains) {
   const best = {};

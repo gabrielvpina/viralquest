@@ -924,10 +924,12 @@ body {
   line-height:   1.5;
   pointer-events: none;
   z-index:       9000;
-  max-width:     280px;
+  max-width:     380px;
+  width:         max-content;
   box-shadow:    var(--vq-shadow-lg);
   opacity:       0;
   transition:    opacity 100ms;
+  word-break:    break-word;
 }
 
 .vq-tooltip.visible { opacity: 1; }
