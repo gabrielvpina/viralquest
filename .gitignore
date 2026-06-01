@@ -13,6 +13,4 @@ wheels/
 !.pixi/config.toml
 
 # results
-testFast/
-devout/
-
+dev/
