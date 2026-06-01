@@ -243,7 +243,10 @@ class ReportExporter:
 
         # LLM — only from confirmed (LLM runs on viral seqs)
         scored = [s for s in confirmed if s.llm_output]
-        llm_scores = [s.llm_output.vq_score for s in scored if s.llm_output.vq_score is not None]
+        llm_scores = [
+            s.llm_output.vq_score for s in scored
+            if s.llm_output.classification != "api-error"
+        ]
 
         return {
             "blast": {
@@ -268,6 +271,7 @@ class ReportExporter:
                 "scored":        len(scored),
                 "viral_known":   sum(1 for s in scored if s.llm_output.classification == "viral-known"),
                 "viral_unknown": sum(1 for s in scored if s.llm_output.classification == "viral-unknown"),
+                "api_error":     sum(1 for s in scored if s.llm_output.classification == "api-error"),
                 "avg_score":     round(sum(llm_scores) / len(llm_scores), 1) if llm_scores else None,
             },
             "clusters": len(clusters),

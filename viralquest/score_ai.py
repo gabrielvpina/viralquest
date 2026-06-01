@@ -308,6 +308,10 @@ def _make_backend(model_type: str, model_name: str, api_key: str | None) -> _Llm
 
 _VALID_CLASSIFICATIONS = {"viral-known", "viral-unknown", "non-viral"}
 
+# HTTP / gRPC status codes that indicate a transient server overload and are
+# worth retrying (429 = rate-limit, 5xx = server-side errors).
+_RETRYABLE_RE = re.compile(r"\b(429|5\d{2})\b")
+
 
 class ResponseParser:
     """Parses the raw LLM text response into an LlmOutput dataclass."""
@@ -424,19 +428,37 @@ class SequenceScorer:
 
         return outputs
 
+    # Retry constants for transient backend failures.
+    _MAX_RETRIES  = 3
+    _RETRY_DELAYS = (15.0, 30.0, 60.0)   # seconds between successive attempts
+
     def _score_one(self, seq: NucSequence) -> LlmOutput:
-        try:
-            user_json = PromptBuilder.build_input(seq, self._mode)
-            raw       = self._backend.call(self._system_prompt, user_json)
-            return ResponseParser.parse(raw, seq.id, self._model_name, self._mode.value)
-        except Exception as exc:
-            logger.error(f"Backend call failed for {seq.id}: {exc}")
-            return LlmOutput(
-                seq_id=seq.id,
-                model=self._model_name,
-                mode=self._mode.value,
-                vq_score=0,
-                classification="non-viral",
-                analysis="",
-                error=str(exc),
-            )
+        last_exc: Exception | None = None
+        for attempt in range(self._MAX_RETRIES + 1):
+            try:
+                user_json = PromptBuilder.build_input(seq, self._mode)
+                raw       = self._backend.call(self._system_prompt, user_json)
+                return ResponseParser.parse(raw, seq.id, self._model_name, self._mode.value)
+            except Exception as exc:
+                last_exc = exc
+                if _RETRYABLE_RE.search(str(exc)) and attempt < self._MAX_RETRIES:
+                    delay = self._RETRY_DELAYS[attempt]
+                    logger.warning(
+                        f"Backend transient error for {seq.id} "
+                        f"(attempt {attempt + 1}/{self._MAX_RETRIES}): {exc} — "
+                        f"retrying in {delay:.0f}s ..."
+                    )
+                    time.sleep(delay)
+                else:
+                    break
+
+        logger.error(f"Backend call failed for {seq.id}: {last_exc}")
+        return LlmOutput(
+            seq_id=seq.id,
+            model=self._model_name,
+            mode=self._mode.value,
+            vq_score=0,
+            classification="api-error",
+            analysis="",
+            error=str(last_exc),
+        )

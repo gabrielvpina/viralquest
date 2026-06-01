@@ -119,7 +119,7 @@ def _build_llm_stats(seqs: list[dict], ps: dict) -> dict:
     scores = [
         s["llm_output"]["vq_score"]
         for s in scored
-        if s["llm_output"].get("vq_score") is not None
+        if s["llm_output"].get("classification") != "api-error"
     ]
     first = scored[0]["llm_output"]
     return {
@@ -129,6 +129,7 @@ def _build_llm_stats(seqs: list[dict], ps: dict) -> dict:
         "scored":        len(scored),
         "viral_known":   sum(1 for s in scored if s["llm_output"].get("classification") == "viral-known"),
         "viral_unknown": sum(1 for s in scored if s["llm_output"].get("classification") == "viral-unknown"),
+        "api_error":     sum(1 for s in scored if s["llm_output"].get("classification") == "api-error"),
         "avg_score":     round(sum(scores) / len(scores), 1) if scores else None,
     }
 
