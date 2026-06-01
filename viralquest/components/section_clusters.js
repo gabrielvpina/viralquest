@@ -74,8 +74,12 @@ function _renderCluster(cluster) {
   let lastW = 0;
   let rzTimer = null;
   const wrapEl = card.querySelector('#clu-wrap-' + safe);
-  _wireExportMenu(card, 'clu-menu-' + safe, () => card.querySelector('svg'),
-                  `cluster_${cluster.cluster_id}`);
+  _wireExportMenu(
+    card, 'clu-menu-' + safe,
+    () => card.querySelector('.vq-genome-wrap svg'),
+    `cluster_${cluster.cluster_id}`,
+    () => _clusterFasta(cluster),
+  );
 
   const render = () => {
     const w = wrapEl.clientWidth;
@@ -109,20 +113,20 @@ function _exportMenu(id) {
         </svg>
       </button>
       <div class="vq-menu__panel" role="menu">
-        <button class="vq-menu__item" data-fmt="png" role="menuitem" type="button">PNG image</button>
-        <button class="vq-menu__item" data-fmt="svg" role="menuitem" type="button">SVG vector</button>
-        <button class="vq-menu__item" data-fmt="pdf" role="menuitem" type="button">PDF (print)</button>
+        <button class="vq-menu__item" data-fmt="png"   role="menuitem" type="button">PNG image</button>
+        <button class="vq-menu__item" data-fmt="svg"   role="menuitem" type="button">SVG vector</button>
+        <button class="vq-menu__item" data-fmt="pdf"   role="menuitem" type="button">PDF (print)</button>
+        <button class="vq-menu__item" data-fmt="fasta" role="menuitem" type="button">FASTA sequences</button>
       </div>
     </div>`;
 }
 
-function _wireExportMenu(root, menuId, getSvg, baseName) {
+function _wireExportMenu(root, menuId, getSvg, baseName, getFasta) {
   const menu   = root.querySelector('#' + menuId);
   if (!menu) return;
   const toggle = menu.querySelector('[data-menu-toggle]');
   toggle?.addEventListener('click', e => {
     e.stopPropagation();
-    // Close any other open menus
     document.querySelectorAll('.vq-menu.open').forEach(m => {
       if (m !== menu) m.classList.remove('open');
     });
@@ -132,14 +136,27 @@ function _wireExportMenu(root, menuId, getSvg, baseName) {
     item.addEventListener('click', e => {
       e.stopPropagation();
       menu.classList.remove('open');
-      const svg = getSvg();
       const fmt = item.dataset.fmt;
+
+      if (fmt === 'fasta') {
+        if (getFasta) VQ.downloadText(getFasta(), baseName + '.fasta');
+        return;
+      }
+
+      const svg = getSvg();
       if (!svg) return;
       if (fmt === 'png') VQ.exportPNG(svg, baseName + '.png');
       if (fmt === 'svg') VQ.exportSVG(svg, baseName + '.svg');
       if (fmt === 'pdf') VQ.exportPDF(svg, baseName);
     });
   });
+}
+
+function _clusterFasta(cluster) {
+  const allSeqs  = (typeof VQ_REPORT !== 'undefined' ? VQ_REPORT.sequences : null) || [];
+  const memberIds = new Set(cluster.members.map(m => m.seq_id));
+  const seqs = allSeqs.filter(s => memberIds.has(s.id));
+  return VQ.buildFasta(seqs);
 }
 
 // Global click closes any open menu
@@ -156,21 +173,39 @@ function _clusterSVG(cluster, repLen, containerWidth) {
   const GAP   = 6;
   const TRACK = 14;
 
+  const W     = Math.max(containerWidth || 0, 720);
+  const drawW = W - PAD_L - PAD_R;
+
+  // ── Global coordinate system ─────────────────────────────────────────────
+  // offsetNt[i]: where member i's position 0 falls in representative nt-space
+  // (0-based). Negative means the member extends to the LEFT of the representative.
+  const offsets = cluster.members.map(m => {
+    const qStart = m.is_representative ? 1 : (m.query_start ?? 1);
+    return (m.aln_start - 1) - (qStart - 1);   // = aln_start - qStart
+  });
+
+  // Span covering every sequence's full extent
+  const globalMinNt = Math.min(0, ...offsets);
+  const globalMaxNt = Math.max(repLen, ...cluster.members.map((m, i) => offsets[i] + m.length));
+  const spanNt      = globalMaxNt - globalMinNt;
+
+  // shiftNt: how many nt to add to any representative-space coordinate so that
+  // the leftmost sequence starts at pixel 0.
+  const shiftNt = -globalMinNt;
+
+  const xScale = d3.scaleLinear([0, spanNt], [0, drawW]);
+
   const totalH = cluster.members.length * (ROW_H + GAP) + 40;
-  const W      = Math.max(containerWidth || 0, 720);
-  const drawW  = W - PAD_L - PAD_R;
 
   const svg = d3.create('svg')
     .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
     .attr('viewBox', `0 0 ${W} ${totalH}`)
     .attr('preserveAspectRatio', 'xMinYMin meet')
-    .style('width',  '100%')
+    .style('width', '100%')
     .style('height', 'auto')
     .attr('height',  totalH);
 
-  const xScale = d3.scaleLinear([0, repLen], [0, drawW]);
-
-  // --- axis (gridlines extend DOWN into the chart) ---
+  // ── Axis (labels in global nt-space, 0 = leftmost sequence start) ────────
   const axisG = svg.append('g')
     .attr('transform', `translate(${PAD_L}, 20)`)
     .call(d3.axisTop(xScale).ticks(8).tickSize(-(totalH - 30)));
@@ -181,20 +216,19 @@ function _clusterSVG(cluster, repLen, containerWidth) {
   axisG.selectAll('.tick text')
     .style('font-size', '10px').style('fill', '#94a3b8');
 
-  // --- members ---
+  // ── Rows ─────────────────────────────────────────────────────────────────
   cluster.members.forEach((m, i) => {
-    const y   = 30 + i * (ROW_H + GAP);
-    const col = _identityColor(m.identity);
-    const g   = svg.append('g').attr('transform', `translate(${PAD_L}, ${y})`);
+    const offsetNt = offsets[i];
+    const y        = 30 + i * (ROW_H + GAP);
+    const col      = _identityColor(m.identity);
+    const g        = svg.append('g').attr('transform', `translate(${PAD_L}, ${y})`);
 
-    // Label — appended to the row group, not the root svg, for consistency.
+    // Label
     const labelText = m.seq_id;
     const truncated = labelText.length > 18 ? labelText.slice(0, 17) + '…' : labelText;
     const label = g.append('text')
-      .attr('x', -8)
-      .attr('y', TRACK / 2 + 4)
-      .attr('text-anchor', 'end')
-      .attr('font-size', 11)
+      .attr('x', -8).attr('y', TRACK / 2 + 4)
+      .attr('text-anchor', 'end').attr('font-size', 11)
       .attr('fill', m.is_representative ? 'var(--vq-primary)' : 'var(--vq-text-2)')
       .attr('font-weight', m.is_representative ? '600' : '400')
       .attr('font-family', 'var(--vq-font-mono)')
@@ -207,24 +241,15 @@ function _clusterSVG(cluster, repLen, containerWidth) {
         .on('mouseleave', VQ.tooltipHide);
     }
 
-    // Full representative backbone (light gray, always full width)
+    // Full-span backbone (light gray, always the whole drawing width)
     g.append('rect')
       .attr('x', 0).attr('y', TRACK / 2 - 1)
       .attr('width', drawW).attr('height', 2)
-      .attr('rx', 1)
-      .attr('fill', '#dde3ec');
+      .attr('rx', 1).attr('fill', '#dde3ec');
 
-    // Member actual-length backbone (dark line showing the real sequence length)
-    const memberW = Math.min(xScale(m.length), drawW);
-    g.append('rect')
-      .attr('x', 0).attr('y', TRACK / 2 - 3)
-      .attr('width', Math.max(memberW, 2)).attr('height', 6)
-      .attr('rx', 2)
-      .attr('fill', 'var(--vq-primary)').attr('opacity', 0.18);
-
-    // Alignment bar
-    const x1 = xScale(m.aln_start - 1);
-    const x2 = xScale(m.aln_end);
+    // Alignment bar: representative-space coordinates shifted into global space
+    const x1 = xScale((m.aln_start - 1) + shiftNt);
+    const x2 = xScale(m.aln_end       + shiftNt);
     const bw = Math.max(x2 - x1, 2);
 
     g.append('rect')
@@ -245,24 +270,36 @@ function _clusterSVG(cluster, repLen, containerWidth) {
       .on('mouseleave', VQ.tooltipHide)
       .on('click', () => VQ.jumpToViewer(m.seq_id));
 
+    // Member full-length outline drawn on top — no clamping needed because the
+    // global coordinate shift guarantees barX >= 0 and barEnd <= drawW.
+    if (!m.is_representative) {
+      const barX = xScale(offsetNt + shiftNt);
+      const barW = xScale(offsetNt + m.length + shiftNt) - barX;
+      if (barW > 1) {
+        g.append('rect')
+          .attr('x', barX).attr('y', 0)
+          .attr('width', barW).attr('height', TRACK)
+          .attr('rx', 3)
+          .attr('fill', 'none')
+          .attr('stroke', 'var(--vq-primary)')
+          .attr('stroke-width', 1.5)
+          .attr('opacity', 0.5)
+          .attr('pointer-events', 'none');
+      }
+    }
+
     // In-bar label
     if (m.is_representative) {
       g.append('text')
-        .attr('x', x1 + bw / 2)
-        .attr('y', TRACK / 2 + 4)
-        .attr('text-anchor', 'middle')
-        .attr('font-size', 10)
-        .attr('fill', 'rgba(255,255,255,.95)')
-        .attr('pointer-events', 'none')
+        .attr('x', x1 + bw / 2).attr('y', TRACK / 2 + 4)
+        .attr('text-anchor', 'middle').attr('font-size', 10)
+        .attr('fill', 'rgba(255,255,255,.95)').attr('pointer-events', 'none')
         .text('representative · ' + m.length.toLocaleString() + ' nt');
     } else if (bw > 50) {
       g.append('text')
-        .attr('x', x1 + bw / 2)
-        .attr('y', TRACK / 2 + 4)
-        .attr('text-anchor', 'middle')
-        .attr('font-size', 10)
-        .attr('fill', 'rgba(255,255,255,.9)')
-        .attr('pointer-events', 'none')
+        .attr('x', x1 + bw / 2).attr('y', TRACK / 2 + 4)
+        .attr('text-anchor', 'middle').attr('font-size', 10)
+        .attr('fill', 'rgba(255,255,255,.9)').attr('pointer-events', 'none')
         .text(m.identity.toFixed(0) + '%');
     }
   });

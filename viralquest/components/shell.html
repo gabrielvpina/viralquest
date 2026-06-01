@@ -18,6 +18,17 @@
     </div>
 
     <div class="vq-nav__tabs" role="tablist" aria-label="Report sections">
+      <button class="vq-nav__tab vq-nav__tab--about" data-section="about" role="tab"
+              id="tab-about"    aria-controls="section-about"    aria-selected="false" tabindex="-1">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        About
+      </button>
       <button class="vq-nav__tab active" data-section="stats"    role="tab"
               id="tab-stats"    aria-controls="section-stats"    aria-selected="true"  tabindex="0">General Stats</button>
       <button class="vq-nav__tab"        data-section="clusters" role="tab"
@@ -40,6 +51,7 @@
   <!-- ── Sections ───────────────────────────────────────────── -->
   <main class="vq-main">
 
+    <section class="vq-section"        id="section-about"   role="tabpanel" aria-labelledby="tab-about"    hidden></section>
     <section class="vq-section active" id="section-stats"    role="tabpanel" aria-labelledby="tab-stats"></section>
     <section class="vq-section"        id="section-clusters" role="tabpanel" aria-labelledby="tab-clusters"    hidden></section>
     <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-labelledby="tab-viewer"      hidden></section>
@@ -59,6 +71,7 @@
 
   <!-- ── Component scripts (inlined by html_report.py) ──────── -->
   <script>{{VQ_EXPORT}}</script>
+  <script>{{VQ_ABOUT}}</script>
   <script>{{VQ_STATS}}</script>
   <script>{{VQ_CLUSTERS}}</script>
   <script>{{VQ_VIEWER}}</script>
@@ -129,6 +142,7 @@
       : '';
 
     // --- Init all sections ------------------------------------------
+    vqInitAbout();
     vqInitStats(VQ_REPORT);
     vqInitClusters(VQ_REPORT.clusters || []);
     vqInitViewer(VQ_REPORT.sequences || []);

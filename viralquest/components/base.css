@@ -543,6 +543,44 @@ body {
 .vq-select { width: auto; min-width: 130px; border-radius: var(--vq-radius-sm); }
 
 /* ============================================================
+   Taxonomy family pills (multi-select filter)
+   ============================================================ */
+
+.vq-tax-pill {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           5px;
+  padding:       4px 11px;
+  border:        1.5px solid var(--pill-color, var(--vq-border));
+  border-radius: 999px;
+  background:    transparent;
+  font:          inherit;
+  font-size:     var(--vq-text-xs);
+  color:         var(--vq-text-2);
+  white-space:   nowrap;
+  cursor:        pointer;
+  opacity:       0.55;
+  transition:    opacity      var(--vq-dur) var(--vq-ease),
+                 background   var(--vq-dur) var(--vq-ease),
+                 font-weight  var(--vq-dur) var(--vq-ease);
+}
+
+.vq-tax-pill:hover { opacity: 0.8; }
+
+.vq-tax-pill.active {
+  opacity:     1;
+  background:  color-mix(in srgb, var(--pill-color, var(--vq-accent)) 14%, transparent);
+  font-weight: 600;
+}
+
+.vq-tax-pill__dot {
+  width:         8px;
+  height:        8px;
+  border-radius: 50%;
+  flex-shrink:   0;
+}
+
+/* ============================================================
    Filter row (BLAST identity / coverage + sequence length)
    ============================================================ */
 
@@ -1236,6 +1274,171 @@ body {
 ::-webkit-scrollbar-track   { background: transparent; }
 ::-webkit-scrollbar-thumb   { background: var(--vq-border-dark); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--vq-muted); }
+
+/* ============================================================
+   About page
+   ============================================================ */
+
+.vq-about {
+  max-width:      760px;
+  margin:         0 auto;
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--vq-space-8);
+  padding-top:    var(--vq-space-4);
+}
+
+.vq-about__hero {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  gap:            var(--vq-space-3);
+  text-align:     center;
+  padding:        var(--vq-space-8) var(--vq-space-4);
+}
+
+.vq-about__logo {
+  height:     72px;
+  width:      auto;
+  object-fit: contain;
+}
+
+.vq-about__title {
+  font-size:      var(--vq-text-2xl);
+  font-weight:    700;
+  color:          var(--vq-primary);
+  letter-spacing: -.03em;
+  margin:         0;
+}
+
+.vq-about__tagline {
+  font-size:  var(--vq-text-base);
+  color:      var(--vq-text-2);
+  max-width:  480px;
+  line-height: 1.55;
+  margin:     0;
+}
+
+.vq-about__version {
+  display:       inline-block;
+  padding:       3px 12px;
+  border-radius: 999px;
+  background:    var(--vq-accent-subtle);
+  color:         var(--vq-accent-dark);
+  font-size:     var(--vq-text-xs);
+  font-weight:   600;
+  border:        1px solid #c8dff4;
+}
+
+/* Link cards grid */
+.vq-about__links {
+  display: flex;
+  gap:     var(--vq-space-3);
+}
+
+@media (max-width: 640px) {
+  .vq-about__links { flex-direction: column; }
+}
+
+.vq-about__card {
+  flex:           1;
+  display:        flex;
+  align-items:    center;
+  gap:            var(--vq-space-3);
+  padding:        var(--vq-space-4);
+  background:     var(--vq-surface);
+  border:         1px solid var(--vq-border);
+  border-radius:  var(--vq-radius);
+  box-shadow:     var(--vq-shadow-sm);
+  text-decoration: none;
+  color:          var(--vq-text);
+  transition:     box-shadow var(--vq-dur) var(--vq-ease),
+                  border-color var(--vq-dur) var(--vq-ease),
+                  transform    var(--vq-dur) var(--vq-ease);
+}
+
+.vq-about__card:hover {
+  box-shadow:   var(--vq-shadow);
+  border-color: var(--vq-accent);
+  transform:    translateY(-2px);
+  color:        var(--vq-text);
+}
+
+.vq-about__card-icon {
+  flex-shrink:   0;
+  width:         52px;
+  height:        52px;
+  border-radius: var(--vq-radius-sm);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+}
+
+.vq-about__card-icon--paper  { background: #edf4ff; color: var(--vq-accent-dark); }
+.vq-about__card-icon--github { background: #f0f0f0; color: #24292e; }
+.vq-about__card-icon--pypi   { background: #fff8e6; color: #c8962a; }
+
+.vq-about__card-body  { flex: 1; min-width: 0; }
+
+.vq-about__card-title {
+  font-size:   var(--vq-text-sm);
+  font-weight: 600;
+  color:       var(--vq-primary);
+}
+
+.vq-about__card-sub {
+  font-size:  var(--vq-text-xs);
+  color:      var(--vq-text-3);
+  margin-top: 2px;
+}
+
+.vq-about__card-arrow {
+  flex-shrink: 0;
+  color:       var(--vq-text-3);
+  transition:  color var(--vq-dur) var(--vq-ease);
+}
+
+.vq-about__card:hover .vq-about__card-arrow { color: var(--vq-accent); }
+
+.vq-about__code {
+  font-family: var(--vq-font-mono);
+  font-size:   var(--vq-text-xs);
+  color:       var(--vq-text-2);
+}
+
+/* Citation block */
+.vq-about__cite-wrap { width: 100%; }
+
+.vq-about__citation {
+  margin:      0;
+  padding:     var(--vq-space-3) var(--vq-space-4);
+  background:  var(--vq-surface-2);
+  border-left: 3px solid var(--vq-accent);
+  border-radius: 0 var(--vq-radius-sm) var(--vq-radius-sm) 0;
+  font-size:   var(--vq-text-sm);
+  color:       var(--vq-text-2);
+  line-height: 1.65;
+}
+
+.vq-about__doi {
+  display:    block;
+  margin-top: var(--vq-space-2);
+  color:      var(--vq-accent-dark);
+  word-break: break-all;
+}
+
+.vq-about__doi:hover { text-decoration: underline; }
+
+/* About nav tab — slightly quieter than active data tabs */
+.vq-nav__tab--about {
+  display:      inline-flex;
+  align-items:  center;
+  gap:          5px;
+  font-size:    var(--vq-text-xs);
+  border-right: 1px solid rgba(255,255,255,.1);
+  padding-right: calc(var(--vq-space-4) + 2px);
+  margin-right: var(--vq-space-2);
+}
 
 /* ============================================================
    Print

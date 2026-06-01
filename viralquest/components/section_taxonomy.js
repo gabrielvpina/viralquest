@@ -10,9 +10,9 @@
    ============================================================ */
 
 const _TAX = {
-  tree:    null,
-  family:  '',   // current family filter
-  resizeT: null,
+  tree:     null,
+  families: new Set(),   // currently selected family filters (empty = show all)
+  resizeT:  null,
 };
 
 const _TAX_PALETTE = [
@@ -47,11 +47,6 @@ function vqInitTaxonomy(tree, sequences) {
         </div>
       </div>
       <div class="vq-section-actions">
-        <select class="vq-select vq-select--inline" id="tax-family-filter"
-                aria-label="Filter by family" style="min-width:160px">
-          <option value="">All families</option>
-          ${families.map(f => `<option value="${VQ.esc(f)}">${VQ.esc(f)}</option>`).join('')}
-        </select>
         <div class="vq-menu" id="tax-export-menu">
           <button class="vq-btn vq-btn--sm vq-btn--ghost" data-menu-toggle type="button">
             Export
@@ -68,10 +63,23 @@ function vqInitTaxonomy(tree, sequences) {
       </div>
     </div>
 
+    <div class="vq-toolbar__filter-row" style="margin-bottom:var(--vq-space-3)">
+      <span class="vq-filter-label">Families</span>
+      ${families.map(f => `
+        <button class="vq-tax-pill" data-fam="${VQ.esc(f)}" type="button"
+                style="--pill-color:${_familyColor(f)}">
+          <span class="vq-tax-pill__dot" style="background:${_familyColor(f)}"></span>
+          ${VQ.esc(f)}
+        </button>`).join('')}
+      <button class="vq-btn vq-btn--sm vq-btn--ghost" id="tax-clear-filter"
+              type="button" style="display:none;margin-left:auto">
+        Clear filter
+      </button>
+    </div>
+
     <div class="vq-card">
       <div class="vq-card__header">
-        <div class="vq-card__title">Phylogeny</div>
-        <div id="tax-legend" class="vq-legend" style="margin:0;flex:1;justify-content:flex-end"></div>
+        <div class="vq-card__title">Viral Taxonomy</div>
       </div>
       <div class="vq-card__body" style="padding:0;min-height:520px;display:flex;">
         <div id="tax-wrap" style="width:100%;overflow:auto;display:flex;align-items:stretch"></div>
@@ -79,9 +87,15 @@ function vqInitTaxonomy(tree, sequences) {
     </div>
   `;
 
-  // Filter
-  document.getElementById('tax-family-filter')?.addEventListener('change', e => {
-    _TAX.family = e.target.value;
+  // Family pill toggle
+  el.querySelectorAll('.vq-tax-pill[data-fam]').forEach(btn => {
+    btn.addEventListener('click', () => _toggleFamily(btn.dataset.fam));
+  });
+
+  // Clear all
+  document.getElementById('tax-clear-filter')?.addEventListener('click', () => {
+    _TAX.families.clear();
+    _updatePills();
     _draw();
   });
 
@@ -172,11 +186,10 @@ function _allFamilies(tree) {
 // ── Filter ─────────────────────────────────────────────────────────────────
 
 function _filteredTree() {
-  if (!_TAX.family) return _TAX.tree;
-  // Deep-clone with pruning: keep only branches that lead to leaves with this family.
+  if (!_TAX.families.size) return _TAX.tree;
   function prune(node) {
     if (node.is_leaf) {
-      return node.family === _TAX.family ? { ...node } : null;
+      return _TAX.families.has(node.family) ? { ...node } : null;
     }
     const kids = (node.children || []).map(prune).filter(Boolean);
     if (!kids.length && node !== _TAX.tree) return null;
@@ -184,6 +197,21 @@ function _filteredTree() {
   }
   const pruned = prune(_TAX.tree);
   return pruned || { name: 'Viruses', children: [] };
+}
+
+function _toggleFamily(fam) {
+  if (_TAX.families.has(fam)) _TAX.families.delete(fam);
+  else                         _TAX.families.add(fam);
+  _updatePills();
+  _draw();
+}
+
+function _updatePills() {
+  document.querySelectorAll('.vq-tax-pill[data-fam]').forEach(btn => {
+    btn.classList.toggle('active', _TAX.families.has(btn.dataset.fam));
+  });
+  const clearBtn = document.getElementById('tax-clear-filter');
+  if (clearBtn) clearBtn.style.display = _TAX.families.size ? '' : 'none';
 }
 
 // ── Family colour ──────────────────────────────────────────────────────────
@@ -219,7 +247,6 @@ function _drawInner() {
   const leaves = _countLeaves(data);
   if (!leaves) {
     wrap.innerHTML = '<div class="vq-empty">No leaves match the filter.</div>';
-    _renderLegend([]);
     return;
   }
 
@@ -362,43 +389,11 @@ function _drawInner() {
       .text(d => d.data.name);
 
   wrap.appendChild(svg.node());
-
-  // Legend
-  const families = [...new Set(
-    hierarchy.leaves().map(l => l.data.family).filter(Boolean)
-  )].sort();
-  _renderLegend(families);
 }
 
 function _countLeaves(node) {
   if (node.is_leaf) return 1;
   return (node.children || []).reduce((a, c) => a + _countLeaves(c), 0);
-}
-
-function _renderLegend(families) {
-  const el = document.getElementById('tax-legend');
-  if (!el) return;
-  if (!families.length) { el.innerHTML = ''; return; }
-  el.innerHTML = families.map(f => `
-    <button class="vq-legend__item" type="button"
-            data-fam="${VQ.esc(f)}"
-            style="border:none;background:transparent;padding:0;cursor:pointer;font:inherit;color:inherit;">
-      <span class="vq-legend__swatch"
-            style="background:${_familyColor(f)};border-radius:50%"></span>
-      <span>${VQ.esc(f)}</span>
-    </button>`).join('');
-
-  // Clicking a legend swatch toggles the filter
-  el.querySelectorAll('[data-fam]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const fam = btn.dataset.fam;
-      const sel = document.getElementById('tax-family-filter');
-      if (!sel) return;
-      sel.value = _TAX.family === fam ? '' : fam;
-      _TAX.family = sel.value;
-      _draw();
-    });
-  });
 }
 
 
