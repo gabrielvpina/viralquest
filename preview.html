@@ -4017,11 +4017,11 @@ function _genomeSVG(seq, containerWidth) {
   }
   const nLanes = 6;
 
-  // Pack domains into sub-lanes per ORF
+  // Pack domains into sub-lanes per ORF (deduplicated: best score per target)
   const orfsWithFrame = orfs.map(o => ({
     ...o,
     frameLane:    frameLane(o),
-    _domainLanes: _assignDomainLanes(o.domains || []),
+    _domainLanes: _assignDomainLanes(_bestDomainPerTarget(o.domains || [])),
   }));
   orfsWithFrame.forEach(o => {
     o._nDomLanes = Math.max(0, ...o._domainLanes.map(d => d.lane + 1));
@@ -4202,7 +4202,16 @@ function _genomeSVG(seq, containerWidth) {
   return svg.node();
 }
 
-// ── Domain lane assignment (within an ORF) ─────────────────────────────────
+// ── Domain helpers ─────────────────────────────────────────────────────────
+
+function _bestDomainPerTarget(domains) {
+  const best = {};
+  domains.forEach(d => {
+    const t = d.target || '';
+    if (!best[t] || d.score > best[t].score) best[t] = d;
+  });
+  return Object.values(best);
+}
 
 function _assignDomainLanes(domains) {
   const sorted = [...domains].sort((a, b) => a.start - b.start);

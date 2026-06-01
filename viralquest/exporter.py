@@ -190,7 +190,7 @@ class ReportExporter:
             "gc_content":     seq.gc_content,
             "is_viral":       seq.is_viral,
             "cluster_id":     seq.cluster_id,
-            "orfs":           [_to_serializable(o) for o in seq.orfs],
+            "orfs":           [self._orf_to_dict(o) for o in seq.orfs],
             "blastx_hits":    [_to_serializable(h) for h in seq.blastx_hits],
             "blastx_nr_hits": [_to_serializable(h) for h in seq.blastx_nr_hits],
             "blastn_hits":    [_to_serializable(h) for h in seq.blastn_hits],
@@ -198,6 +198,18 @@ class ReportExporter:
         }
         if self.include_llm:
             d["llm_output"] = _to_serializable(seq.llm_output) if seq.llm_output else None
+        return d
+
+    @staticmethod
+    def _orf_to_dict(orf) -> dict:
+        """Serialize one Orf, keeping only the best-scoring hit per HMM target."""
+        d = _to_serializable(orf)
+        best: dict[str, dict] = {}
+        for dom in d.get("domains", []):
+            t = dom.get("target", "")
+            if t not in best or dom.get("score", 0) > best[t].get("score", 0):
+                best[t] = dom
+        d["domains"] = list(best.values())
         return d
 
     @staticmethod
