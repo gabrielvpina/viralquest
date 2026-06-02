@@ -25,6 +25,7 @@ const _SQ = {
   showHK:    false,
   groupMode: 'cluster',
   minVal:    0,
+  maxVal:    null,
   resizeT:   null,
 };
 
@@ -132,7 +133,14 @@ function vqInitSalmon(salmonQuant, clusters) {
         <input class="vq-input vq-input--sm" type="number" id="sq-min-val"
                min="0" step="0.01" placeholder="0"
                aria-label="Minimum value threshold">
-        <span class="vq-filter-sub">— hide viral rows below this value</span>
+        <span class="vq-filter-sub">— hide rows below this value</span>
+      </div>
+      <div class="vq-filter-group">
+        <span class="vq-filter-label" id="sq-max-label">Max TPM</span>
+        <input class="vq-input vq-input--sm" type="number" id="sq-max-val"
+               min="0" step="0.01" placeholder="—"
+               aria-label="Maximum value threshold">
+        <span class="vq-filter-sub">— hide rows above this value &amp; cap scale</span>
       </div>
     </div>
 
@@ -184,6 +192,15 @@ function vqInitSalmon(salmonQuant, clusters) {
     const v = parseFloat(e.target.value);
     _SQ.minVal = isNaN(v) || v < 0 ? 0 : v;
     _drawViralPanel();
+    _drawPfamHkPanel();
+  });
+
+  // Max-value filter
+  document.getElementById('sq-max-val')?.addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    _SQ.maxVal = isNaN(v) || v <= 0 ? null : v;
+    _drawViralPanel();
+    _drawPfamHkPanel();
   });
 
   // Wire group-mode toggle
@@ -271,8 +288,12 @@ function _setMetric(metric) {
   });
   const lbl  = document.getElementById('sq-min-label');
   const inp  = document.getElementById('sq-min-val');
-  if (lbl) lbl.textContent = metric === 'tpm' ? 'Min TPM' : 'Min Reads';
-  if (inp) inp.step = metric === 'tpm' ? '0.01' : '1';
+  const lbl2 = document.getElementById('sq-max-label');
+  const inp2 = document.getElementById('sq-max-val');
+  if (lbl)  lbl.textContent  = metric === 'tpm' ? 'Min TPM' : 'Min Reads';
+  if (lbl2) lbl2.textContent = metric === 'tpm' ? 'Max TPM' : 'Max Reads';
+  if (inp)  inp.step  = metric === 'tpm' ? '0.01' : '1';
+  if (inp2) inp2.step = metric === 'tpm' ? '0.01' : '1';
   _draw();
 }
 
@@ -311,22 +332,25 @@ function _drawViralPanel() {
   const metric = _SQ.metric;
   const label  = metric === 'tpm' ? 'TPM' : 'Reads';
 
-  // Apply min-value filter
-  const minVal  = _SQ.minVal || 0;
-  const viralFiltered = minVal > 0
-    ? viral.filter(v => (v[metric] ?? 0) >= minVal)
-    : viral;
+  // Apply min/max-value filters
+  const minVal    = _SQ.minVal || 0;
+  const maxFilter = _SQ.maxVal;
+  const viralFiltered = viral.filter(v => {
+    const val = v[metric] ?? 0;
+    return val >= minVal && (maxFilter == null || val <= maxFilter);
+  });
 
   const countEl = document.getElementById('sq-viral-count');
   if (countEl) {
-    countEl.textContent = minVal > 0
+    const filtered = minVal > 0 || maxFilter != null;
+    countEl.textContent = filtered
       ? `${viralFiltered.length} of ${viral.length} sequence${viral.length !== 1 ? 's' : ''}`
       : `${viral.length} sequence${viral.length !== 1 ? 's' : ''}`;
   }
 
   if (!viralFiltered.length) {
     wrap.innerHTML = viral.length
-      ? `<div class="vq-empty">All ${viral.length} sequence${viral.length !== 1 ? 's' : ''} hidden by the minimum ${label} filter.</div>`
+      ? `<div class="vq-empty">All ${viral.length} sequence${viral.length !== 1 ? 's' : ''} hidden by the active ${label} filter.</div>`
       : '<div class="vq-empty">No viral quantification data.</div>';
     return;
   }
@@ -370,11 +394,12 @@ function _drawViralPanel() {
   const ROW_H = 30;
   const drawW = W - PAD_L - PAD_R;
 
-  const allVals = viral.map(v => v[metric] ?? 0).slice();
+  const allVals = viralFiltered.map(v => v[metric] ?? 0).slice();
   if (_SQ.showHK) _hkMedians().forEach(h => allVals.push(h.median));
-  const maxVal = d3.max(allVals) || 1;
+  const dataMax  = d3.max(allVals) || 1;
+  const scaleMax = maxFilter != null ? maxFilter : dataMax;
 
-  const xScale = d3.scaleLinear([0, maxVal], [0, drawW]);
+  const xScale = d3.scaleLinear([0, scaleMax], [0, drawW]);
 
   const HK      = _SQ.showHK ? _hkMedians() : [];
   const overlayH = HK.length ? 24 : 0;
@@ -744,12 +769,17 @@ function _drawPfamHkPanel() {
   const metric = _SQ.metric;
   const label  = metric === 'tpm' ? 'TPM' : 'Reads';
 
-  const minVal   = _SQ.minVal || 0;
-  const filtered = minVal > 0 ? raw.filter(e => (e[metric] ?? 0) >= minVal) : raw;
+  const minVal    = _SQ.minVal || 0;
+  const maxFilter = _SQ.maxVal;
+  const filtered  = raw.filter(e => {
+    const val = e[metric] ?? 0;
+    return val >= minVal && (maxFilter == null || val <= maxFilter);
+  });
 
   const countEl = document.getElementById('sq-pfamhk-count');
   if (countEl) {
-    countEl.textContent = minVal > 0
+    const isFiltered = minVal > 0 || maxFilter != null;
+    countEl.textContent = isFiltered
       ? `${filtered.length} of ${raw.length} domain${raw.length !== 1 ? 's' : ''}`
       : `${raw.length} domain${raw.length !== 1 ? 's' : ''}`;
   }
@@ -802,9 +832,10 @@ function _drawPfamHkPanel() {
   const PAD_B = 48;
   const drawW = W - PAD_L - PAD_R;
 
-  const allVals = filtered.map(e => e[metric] ?? 0);
-  const maxVal  = d3.max(allVals) || 1;
-  const xScale  = d3.scaleLinear([0, maxVal], [0, drawW]);
+  const allVals  = filtered.map(e => e[metric] ?? 0);
+  const dataMax  = d3.max(allVals) || 1;
+  const scaleMax = maxFilter != null ? maxFilter : dataMax;
+  const xScale   = d3.scaleLinear([0, scaleMax], [0, drawW]);
   const H       = PAD_T + keys.length * ROW_H + PAD_B;
 
   const COLOR = 'var(--vq-success)';
