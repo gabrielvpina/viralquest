@@ -16,6 +16,18 @@
   --vq-danger:         #d24a3d;
   --vq-muted:          #7f8c8d;
 
+  /* --- Chart colour system (consolidated) --- */
+  --vq-c-track:       var(--vq-bg);             /* bar chart background track    */
+  --vq-c-grid:        var(--vq-border);          /* axis / grid lines             */
+  --vq-c-grid-dash:   var(--vq-border);          /* dashed histogram grid lines   */
+  --vq-c-tick:        var(--vq-text-3);          /* axis tick labels              */
+  --vq-c-baseline:    var(--vq-border-dark);     /* x/y baseline stroke           */
+  --vq-c-dark-bg:     var(--vq-primary);         /* dark-themed card background   */
+  --vq-c-dark-bar:    rgba(255,255,255,.82);     /* bars on dark background       */
+  --vq-c-dark-grid:   rgba(255,255,255,.14);     /* grid lines on dark background */
+  --vq-c-dark-tick:   rgba(255,255,255,.55);     /* tick labels on dark bg        */
+  --vq-c-dark-base:   rgba(255,255,255,.30);     /* baseline on dark background   */
+
   /* --- Taxonomy family colours (calmer categorical palette) --- */
   --vq-tax-flaviviridae:   #c46a2a;
   --vq-tax-parvoviridae:   #6b4d99;
@@ -291,11 +303,19 @@ body {
 .vq-stat-chip--warn::before    { background: var(--vq-warning); }
 
 .vq-stat-chip__label {
-  font-size:    11px;
-  font-weight:  500;
+  font-size:    13px;
+  font-weight:  600;
   color:        var(--vq-text-3);
   letter-spacing: .02em;
 }
+
+.vq-stat-chip--blob {
+  padding:         12px 8px;
+  min-height:      194px;
+  align-items:     center;
+  justify-content: center;
+}
+.vq-stat-chip--blob::before { display: none; }
 
 .vq-stat-chip__value {
   font-size:    1.5rem;
@@ -1046,8 +1066,8 @@ body {
 }
 
 .vq-chart-card__title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--vq-text);
   letter-spacing: -.01em;
 }
@@ -1449,9 +1469,13 @@ body {
 @media print {
   .vq-nav, .vq-toolbar, .vq-btn, .vq-checkbox, .vq-menu { display: none !important; }
   .vq-section { display: block !important; padding: 1cm; }
+  /* When printing from the stats section button, hide all other sections */
+  body.vq-print-stats .vq-section { display: none !important; }
+  body.vq-print-stats #section-stats { display: block !important; padding: 1cm; }
   .vq-card { box-shadow: none !important; border: 1px solid #ccc; }
   body { background: #fff; }
   .vq-genome-wrap { overflow: visible; }
+  .vq-stat-chip--blob svg { max-width: 140px; }
 }
 
 /* ============================================================
