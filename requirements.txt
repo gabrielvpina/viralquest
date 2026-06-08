@@ -23,5 +23,6 @@ pooch==1.9.0
 python-dateutil==2.9.0.post0
 requests==2.33.1
 six==1.17.0
+gdown>=5.0
 tqdm==4.67.3
 urllib3==2.6.3

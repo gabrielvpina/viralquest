@@ -32,28 +32,27 @@ Paper: [https://link.springer.com/article/10.1186/s12859-026-06391-6](https://li
 
 ## Installation
 
-### 1. Install pixi
+### 1. Create a conda environment
 
-[pixi](https://pixi.sh) manages the isolated environment and all bioinformatics binaries.
+Create a new conda environment to manage all required packages.
 
 ```bash
-curl -fsSL https://pixi.sh/install.sh | bash
+conda create -n viralquest python
 ```
 
-Reload your shell or run `source ~/.bashrc` / `source ~/.zshrc` before continuing.
+After create the new env, use `conda activate viralquest` to run the next steps.
 
 ### 2. Clone the repository and install the environment
 
 ```bash
 git clone https://github.com/gabrielvpina/viralquest.git
 cd viralquest
-pixi install
 pip install -e .
 ```
 
-`pixi install` resolves and installs all tool dependencies (Diamond, BLAST, Salmon, CAP3, HMMer) into an isolated `.pixi/envs/default` environment. `pip install -e .` installs the Python package and registers the CLI entry points.
+`pip install -e .` installs the Python package and registers the CLI entry points.
 
-### 3. Install databases
+### 3. Install dependencies and databases
 
 ```bash
 viralquest-setup
@@ -65,7 +64,7 @@ viralquest-setup
 2. Runs `pixi install` if the environment is not yet built.
 3. Downloads reference databases from Zenodo into `data/` (HMM profiles: RVDB, Vfam, EggNOG, Pfam; viral Diamond filter DB).
 
-To update or re-download databases independently:
+To update or re-download databases **independently**:
 
 ```bash
 viralquest-download           # skips files already present

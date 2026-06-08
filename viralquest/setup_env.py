@@ -38,9 +38,29 @@ _PIXI_TOML_NAME    = "pixi.toml"
 # Public helpers (also imported by cli.py for the startup check)
 # ---------------------------------------------------------------------------
 
+def _pixi_env_bin() -> Path | None:
+    """Return the pixi default-env bin dir if it exists."""
+    pixi_toml = _find_pixi_toml()
+    if pixi_toml is None:
+        return None
+    candidate = pixi_toml.parent / ".pixi" / "envs" / "default" / "bin"
+    return candidate if candidate.exists() else None
+
+
 def missing_tools() -> list[str]:
-    """Return names of required binaries not found on PATH."""
-    return [name for name, _ in _REQUIRED_TOOLS if not shutil.which(name)]
+    """Return names of required binaries not found on PATH or the pixi env."""
+    pixi_bin = _pixi_env_bin()
+
+    def available(name: str) -> bool:
+        if shutil.which(name):
+            return True
+        if pixi_bin and (pixi_bin / name).exists():
+            # found in pixi env — add it to PATH for this session
+            os.environ["PATH"] = str(pixi_bin) + ":" + os.environ.get("PATH", "")
+            return True
+        return False
+
+    return [name for name, _ in _REQUIRED_TOOLS if not available(name)]
 
 
 # ---------------------------------------------------------------------------
@@ -178,8 +198,10 @@ def setup() -> None:
             print()
 
         if answer in ("", "y", "yes"):
+            from viralquest.download_dbs import prompt_source
+            source = prompt_source()
             print()
-            download_all(force=False)
+            download_all(force=False, source=source)
         else:
             print()
             print("  Skipped. You can download later with:")
@@ -205,7 +227,7 @@ def download() -> None:
 
     parser = argparse.ArgumentParser(
         prog="viralquest-download",
-        description="Download ViralQuest reference databases from Zenodo.",
+        description="Download ViralQuest reference databases from Zenodo or Google Drive.",
     )
     parser.add_argument(
         "--force", "-f",
@@ -220,13 +242,21 @@ def download() -> None:
         help="Directory where databases will be stored "
              "(default: data/ inside the package).",
     )
+    parser.add_argument(
+        "--source",
+        choices=["zenodo", "gdrive"],
+        default=None,
+        metavar="SOURCE",
+        help="Download source: 'zenodo' (default) or 'gdrive' (Google Drive). "
+             "If omitted, you will be prompted interactively.",
+    )
     args = parser.parse_args()
 
     db_dir = Path(args.db_dir) if args.db_dir else None
     flat   = db_dir is not None   # custom dir → flat layout (no hmm-dbs/ subdir)
 
     _print_header("ViralQuest — database download")
-    from viralquest.download_dbs import check_databases, download_all
+    from viralquest.download_dbs import check_databases, download_all, prompt_source
 
     db_status = check_databases(db_dir=db_dir, flat=flat)
     for name, ok in db_status.items():
@@ -238,5 +268,6 @@ def download() -> None:
         print("\n  All databases already present. Use --force to re-download.\n")
         return
 
+    source = args.source if args.source else prompt_source()
     print()
-    download_all(force=args.force, db_dir=db_dir, flat=flat)
+    download_all(force=args.force, db_dir=db_dir, flat=flat, source=source)
