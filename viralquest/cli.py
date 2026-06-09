@@ -400,6 +400,11 @@ def _validate_args(args, console) -> None:
         console.print(f"[bold red]ERROR:[/bold red] {msg}")
     if errors:
         sys.exit(1)
+    if args.model_type and not args.nr_db:
+        console.print(
+            "[bold yellow]WARNING:[/bold yellow] --model-type is set but --nr-db was not provided. "
+            "LLM scoring requires NR-confirmed sequences and will be skipped."
+        )
 
 
 # ── Live-mode display helpers ─────────────────────────────────────────────────
