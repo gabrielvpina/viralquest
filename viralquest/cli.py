@@ -669,7 +669,12 @@ def _run_pipeline(args):
 
     # ── 12. Export: viral FASTA + JSON ────────────────────────────────────────
     t             = time.time()
-    viral_fasta   = organizer.save_viral_contigs(seqs)
+    fasta_seqs    = (
+        [s for s in seqs if s.blastx_nr_hits]
+        if args.nr_db
+        else [s for s in seqs if s.is_viral]
+    )
+    viral_fasta   = organizer.save_viral_contigs(fasta_seqs)
     json_path     = outdir / f"{stem}_viralquest.json"
     exporter      = ReportExporter(force=args.force)
     report        = exporter.export(

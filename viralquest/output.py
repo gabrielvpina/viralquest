@@ -101,12 +101,11 @@ class OutputOrganizer:
 
     def save_viral_contigs(self, seqs: list[NucSequence]) -> Path:
         """Write confirmed viral sequences to {stem}_viral_contigs.fasta."""
-        out   = self.outdir / f"{self.stem}_viral_contigs.fasta"
-        viral = [s for s in seqs if s.is_viral]
+        out = self.outdir / f"{self.stem}_viral_contigs.fasta"
         with open(out, "w", encoding="utf-8") as fh:
-            for seq in viral:
+            for seq in seqs:
                 fh.write(f">{seq.id}\n{seq.sequence}\n")
-        logger.info(f"Viral contigs FASTA ({len(viral)} seqs) → {out}")
+        logger.info(f"Viral contigs FASTA ({len(seqs)} seqs) → {out}")
         return out
 
     # ── Log file ──────────────────────────────────────────────────────────────
