@@ -219,6 +219,8 @@ class DiamondResultAttacher:
         hits: list[BlastxResult],
         nuc_seqs: list[NucSequence],
         phase: DiamondPhase,
+        min_identity: float = 0.0,
+        min_coverage: float = 0.0,
     ) -> int:
         seq_map = {seq.id: seq for seq in nuc_seqs}
 
@@ -248,7 +250,8 @@ class DiamondResultAttacher:
 
             if phase == DiamondPhase.REFSEQ_FILTER:
                 seq.blastx_hits.extend(query_hits)
-                seq.is_viral = True          # RefSeq db is already viral-only
+                if best_hit.pct_identity >= min_identity and best_hit.query_coverage >= min_coverage:
+                    seq.is_viral = True
 
             else:
                 # NR phase: only keep hits whose subject title looks viral

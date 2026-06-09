@@ -534,7 +534,11 @@ def _run_pipeline(args):
         tsvs.append(tsv)
         hits.extend(DiamondOutputParser.parse(tsv))
         yield ("batch", step, batch_num, n_batches)
-    DiamondResultAttacher.attach(hits, seqs, DiamondPhase.REFSEQ_FILTER)
+    DiamondResultAttacher.attach(
+        hits, seqs, DiamondPhase.REFSEQ_FILTER,
+        min_identity = 0.0  if args.nr_db else 50.0,
+        min_coverage = 0.0  if args.nr_db else 40.0,
+    )
     organizer.finalize_diamond_refseq(tsvs)
     yield from _tick(t)
 
