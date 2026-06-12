@@ -173,6 +173,13 @@ def _build_parser():
     sal.add_argument("--reads", dest="reads", nargs="+", type=str,
         metavar="READS.fastq",
         help="FASTQ file(s) for Salmon: one = single-end, two = paired-end.")
+    sal.add_argument("--read-type", dest="read_type", type=str,
+        choices=["sr", "ont", "pb", "hifi"],
+        metavar="TYPE",
+        help="Sequencing technology of the reads supplied to --reads. "
+             "Required when --reads is used. "
+             "Choices: sr (Illumina short reads), ont (Oxford Nanopore), "
+             "pb (PacBio CLR), hifi (PacBio HiFi/CCS).")
     sal.add_argument("--hk-genes", dest="hk_genes", type=str,
         default=None, metavar="IDS.txt",
         help="Text file with reference housekeeping gene IDs (one per line) for "
@@ -297,6 +304,10 @@ def _show_rich_help() -> None:
     console.print(Panel(
         "[bold cyan]--reads[/]          [dim]R1.fastq [R2.fastq][/]\n"
         "  FASTQ file(s): one = single-end, two = paired-end.\n\n"
+        "[bold cyan]--read-type[/]      [dim]sr | ont | pb | hifi[/]\n"
+        "  Sequencing technology. Required when --reads is used.\n"
+        "  sr = Illumina short reads, ont = Oxford Nanopore,\n"
+        "  pb = PacBio CLR, hifi = PacBio HiFi/CCS.\n\n"
         "[bold cyan]--transcriptome[/]  [dim]HOST.fasta[/]\n"
         "  Host transcriptome FASTA. When provided, runs the [bold]reference pathway[/bold]:\n"
         "  viral + bundled HK + ref-HK + transcriptome as a combined Salmon index.\n"
@@ -388,6 +399,10 @@ def _validate_args(args, console) -> None:
         errors.append("--hk-genes requires --transcriptome.")
     if args.reads and len(args.reads) > 2:
         errors.append("--reads accepts at most two files (R1 and R2).")
+    if args.reads and not args.read_type:
+        errors.append("--read-type is required when --reads is used (choices: sr, ont, pb, hifi).")
+    if args.read_type and not args.reads:
+        errors.append("--read-type requires --reads.")
     if args.model_type and not args.model_name:
         errors.append("--model-name is required when --model-type is set.")
     if args.model_type and not args.llm_tokens:
@@ -662,6 +677,25 @@ def _run_pipeline(args):
                 if seq.id in tpm_map:
                     seq.salmon_tpm, seq.salmon_reads = tpm_map[seq.id]
 
+        yield from _tick(t)
+
+        # ── 10b. Read coverage (per-base depth track) ─────────────────────────
+        # Profile exactly the sequences that will appear in the report, so the
+        # coverage set matches the viewer in every mode (--nr-db, no --nr-db, --force).
+        t = time.time()
+        from .coverage import CoveragePipeline
+        from .exporter import select_confirmed_sequences
+        viral_for_cov = select_confirmed_sequences(seqs, force=args.force)
+        cov_map = CoveragePipeline(
+            threads=args.cpu, low_memory=args.low_memory,
+            read_type=args.read_type,
+        ).run(
+            reads      = args.reads,
+            viral_seqs = viral_for_cov,
+            outdir     = outdir / "coverage",
+        )
+        for seq in seqs:
+            seq.coverage = cov_map.get(seq.id)
         yield from _tick(t)
 
     # ── 11. LLM scoring ───────────────────────────────────────────────────────

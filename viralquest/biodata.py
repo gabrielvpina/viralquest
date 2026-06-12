@@ -325,6 +325,27 @@ class HostViralRecord:
 
 
 @dataclass(slots=True)
+class CoverageProfile:
+    """
+    Per-base read-coverage profile of one viral sequence.
+
+    Produced by aligning the input reads to the confirmed viral sequences
+    (minimap2) and computing per-base depth (samtools depth).  Used by the
+    genome viewer to draw a coverage track aligned with the ORF/HMM lanes;
+    a coverage discontinuity or internal drop flags a possible mis-assembly
+    (chimeric contig).
+    """
+    seq_id:          str
+    length:          int
+    mean_depth:      float
+    max_depth:       float
+    cv:              float              # stdev/mean — coverage uniformity (lower = more uniform)
+    breadth_1x:      float              # fraction of bases with depth >= 1
+    bins:            list[float]        # downsampled mean depth per bin (<= N_BINS points)
+    low_cov_regions: list[list[int]]    # internal [start, end] runs below the drop threshold
+
+
+@dataclass(slots=True)
 class SalmonQuantReport:
     """Full Salmon quantification result, attached as an optional pipeline section."""
     reads:           list[str]             # read file(s) passed to salmon quant
@@ -375,6 +396,9 @@ class NucSequence:
     # Salmon quantification (populated before LLM scoring when --reads is given)
     salmon_tpm:   float | None = field(default=None, init=False)
     salmon_reads: float | None = field(default=None, init=False)
+
+    # Read-coverage profile (populated when --reads is given)
+    coverage: "CoverageProfile | None" = field(default=None, init=False)
 
     # computed
     length:    int   = field(init=False)

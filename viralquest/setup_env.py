@@ -24,10 +24,12 @@ from pathlib import Path
 # Binaries provided by conda/bioconda that pip cannot install.
 # Note: HMM searches use pyhmmer (Python binding) — no hmmer binary needed.
 _REQUIRED_TOOLS: list[tuple[str, str]] = [
-    ("diamond", "diamond  >=2.1.24  (bioconda)"),
-    ("blastn",  "blast    >=2.16    (bioconda)"),
-    ("salmon",  "salmon   >=1.11.4  (bioconda)"),
-    ("cap3",    "cap3     >=10.2011 (bioconda)"),
+    ("diamond",  "diamond   >=2.1.24  (bioconda)"),
+    ("blastn",   "blast     >=2.16    (bioconda)"),
+    ("salmon",   "salmon    >=1.11.4  (bioconda)"),
+    ("cap3",     "cap3      >=10.2011 (bioconda)"),
+    ("minimap2", "minimap2  >=2.28    (bioconda)"),
+    ("samtools", "samtools  >=1.21    (bioconda)"),
 ]
 
 _PIXI_INSTALL_CMD  = "curl -fsSL https://pixi.sh/install.sh | bash"
@@ -130,7 +132,7 @@ def setup() -> None:
                 "Could not find pixi.toml. Install the missing tools manually:\n\n"
                 "  conda install -c conda-forge -c bioconda \\\n"
                 "    'diamond>=2.1.24' 'blast>=2.16' 'salmon>=1.11.4' \\\n"
-                "    'cap3>=10.2011'   'hmmer>=3.4'\n"
+                "    'cap3>=10.2011'   'minimap2>=2.28' 'samtools>=1.21'\n"
             )
             sys.exit(1)
 

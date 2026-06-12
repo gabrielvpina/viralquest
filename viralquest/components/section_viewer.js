@@ -628,6 +628,11 @@ function _genomeSVG(seq, containerWidth) {
   const drawW = W - PAD_L - PAD_R;
   const SCALE = d3.scaleLinear([0, seqLen], [0, drawW]);
 
+  // ── Read-coverage band (only when --reads produced a profile) ───────────
+  const cov        = (seq.coverage && (seq.coverage.bins || []).length) ? seq.coverage : null;
+  const COV_AREA_H = 36;                 // height of the filled coverage area
+  const COV_H      = cov ? COV_AREA_H + 18 : 0;   // total vertical room reserved
+
   // ── Frame-based lane assignment ─────────────────────────────────────────
   const FRAME_INDEX = { '+1': 0, '+2': 1, '+3': 2, '-1': 3, '-2': 4, '-3': 5 };
   const FRAME_LABEL = ['+1','+2','+3','-1','-2','-3'];
@@ -666,7 +671,7 @@ function _genomeSVG(seq, containerWidth) {
   });
   const laneHeights = laneDomMax.map(n => ORF_H + n * (DOM_H + DOM_G) + LANE_G);
   const laneYs      = [];
-  let cy = AXIS_Y + 14;
+  let cy = AXIS_Y + 14 + COV_H;
   laneHeights.forEach((h, i) => {
     laneYs.push(cy);
     cy += h;
@@ -696,6 +701,9 @@ function _genomeSVG(seq, containerWidth) {
   axisG.select('.domain').attr('stroke', 'var(--vq-border-dark)');
   axisG.selectAll('.tick text')
     .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)');
+
+  // ── Read-coverage track ─────────────────────────────────────────────────
+  if (cov) _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, COV_AREA_H);
 
   // ── Frame labels (left gutter) + lane backgrounds ───────────────────────
   laneYs.forEach((y, i) => {
@@ -833,13 +841,104 @@ function _genomeSVG(seq, containerWidth) {
     .attr('fill', 'var(--vq-dom-1)').attr('y', 2);
   legendG.append('text').attr('x', 158).attr('y', 8.5)
     .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)').text('HMM domain');
+  let legendX = 240;
+  if (cov) {
+    legendG.append('rect').attr('x', legendX).attr('width', 12).attr('height', 5).attr('rx', 1)
+      .attr('fill', 'var(--vq-accent)').attr('opacity', 0.35).attr('y', 2);
+    legendG.append('text').attr('x', legendX + 18).attr('y', 8.5)
+      .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)').text('Read coverage');
+    legendX += 120;
+  }
   if (!fluidMode) {
-    legendG.append('text').attr('x', 230).attr('y', 8.5)
+    legendG.append('text').attr('x', legendX).attr('y', 8.5)
       .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)')
       .text(`↔ ${seqLen.toLocaleString()} nt · scroll horizontally`);
   }
 
   return svg.node();
+}
+
+// ── Read-coverage track ─────────────────────────────────────────────────────
+
+function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH) {
+  const top    = AXIS_Y + 12;
+  const bottom = top + areaH;
+  const bins   = cov.bins;
+  const nb     = bins.length;
+  const maxD   = cov.max_depth > 0 ? cov.max_depth : 1;
+
+  const binNt  = i => ((i + 0.5) / nb) * seqLen;       // bin centre in nt
+  const xOf    = i => PAD_L + SCALE(binNt(i));
+  const yScale = d3.scaleLinear([0, maxD], [bottom, top]);
+
+  const g = svg.append('g').attr('class', 'vq-cov-track');
+
+  // Filled coverage area.
+  const area = d3.area()
+    .x((d, i) => xOf(i))
+    .y0(bottom)
+    .y1(d => yScale(d))
+    .curve(d3.curveMonotoneX);
+  g.append('path')
+    .datum(bins)
+    .attr('d', area)
+    .attr('fill', 'var(--vq-accent)').attr('opacity', 0.30);
+
+  // Outline on top of the area.
+  const line = d3.line()
+    .x((d, i) => xOf(i))
+    .y(d => yScale(d))
+    .curve(d3.curveMonotoneX);
+  g.append('path')
+    .datum(bins)
+    .attr('d', line)
+    .attr('fill', 'none')
+    .attr('stroke', 'var(--vq-accent)').attr('stroke-width', 1).attr('opacity', 0.85);
+
+  // Baseline.
+  g.append('line')
+    .attr('x1', PAD_L).attr('x2', PAD_L + drawW)
+    .attr('y1', bottom).attr('y2', bottom)
+    .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1);
+
+  // Left-gutter label + max-depth tick.
+  g.append('text')
+    .attr('x', PAD_L - 8).attr('y', top + areaH / 2 - 3)
+    .attr('text-anchor', 'end').attr('font-size', 9)
+    .attr('font-family', 'var(--vq-font-mono)').attr('fill', 'var(--vq-text-3)')
+    .text('Cov');
+  g.append('text')
+    .attr('x', PAD_L - 8).attr('y', top + areaH / 2 + 8)
+    .attr('text-anchor', 'end').attr('font-size', 8)
+    .attr('fill', 'var(--vq-text-3)')
+    .text(`${Math.round(maxD)}×`);
+
+  // Summary caption (top-right of the band).
+  g.append('text')
+    .attr('x', PAD_L + drawW).attr('y', top - 2)
+    .attr('text-anchor', 'end').attr('font-size', 9)
+    .attr('fill', 'var(--vq-text-3)')
+    .text(`mean ${cov.mean_depth.toFixed(1)}× · breadth ${(cov.breadth_1x * 100).toFixed(0)}% · CV ${cov.cv.toFixed(2)}`);
+
+  // Hover overlay → depth tooltip at the pointer position.
+  g.append('rect')
+    .attr('x', PAD_L).attr('y', top - 2)
+    .attr('width', drawW).attr('height', areaH + 4)
+    .attr('fill', 'transparent').style('cursor', 'crosshair')
+    .on('mousemove', evt => {
+      const [mx] = d3.pointer(evt);
+      const nt   = Math.max(0, Math.min(seqLen, SCALE.invert(mx - PAD_L)));
+      const bi   = Math.max(0, Math.min(nb - 1, Math.floor((nt / seqLen) * nb)));
+      VQ.tooltipShow(`
+        <div class="vq-tooltip__title">Read coverage</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Position</span><span>~${Math.round(nt).toLocaleString()} nt</span>
+          <span class="vq-tooltip__key">Depth</span><span>${bins[bi].toFixed(1)}×</span>
+          <span class="vq-tooltip__key">Mean</span><span>${cov.mean_depth.toFixed(1)}×</span>
+          <span class="vq-tooltip__key">Max</span><span>${cov.max_depth.toFixed(0)}×</span>
+        </div>`, evt);
+    })
+    .on('mouseleave', VQ.tooltipHide);
 }
 
 // ── Domain helpers ─────────────────────────────────────────────────────────

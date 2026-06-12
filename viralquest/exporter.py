@@ -47,6 +47,26 @@ def _to_serializable(obj: Any) -> Any:
     return obj
 
 
+def select_confirmed_sequences(nuc_seqs: list, force: bool = False) -> list:
+    """
+    The set of sequences that appear in the final report — single source of truth.
+
+    Mirrors the viral-confirmation rule used when building the report:
+      - force        → every sequence (no filtering)
+      - NR was run   → is_viral AND has NR BLASTx hits  (the --nr-db pathway)
+      - NR not run   → is_viral                         (RefSeq / HMM only)
+
+    "NR was run" is detected data-driven (any sequence carries NR hits) rather
+    than from the CLI flag, so the report and any per-sequence side computations
+    (e.g. read coverage) always agree on which sequences are final.
+    """
+    if force:
+        return list(nuc_seqs)
+    if any(s.blastx_nr_hits for s in nuc_seqs):
+        return [s for s in nuc_seqs if s.is_viral and s.blastx_nr_hits]
+    return [s for s in nuc_seqs if s.is_viral]
+
+
 # ---------------------------------------------------------------------------
 # ReportExporter
 # ---------------------------------------------------------------------------
@@ -110,21 +130,19 @@ class ReportExporter:
         version       : viralquest version string embedded in meta
         salmon_report : if given, a ``salmon_quant`` key is added to the JSON
         """
+        confirmed = select_confirmed_sequences(nuc_seqs, force=self.force)
         if self.force:
-            confirmed          = nuc_seqs
             confirmed_clusters = clusters
             logger.warning(
                 f"Force mode: exporting all {len(nuc_seqs)} sequence(s) "
                 f"without viral confirmation filters."
             )
         else:
-            nr_was_run = any(s.blastx_nr_hits for s in nuc_seqs)
-            if nr_was_run:
-                confirmed = [s for s in nuc_seqs if s.is_viral and s.blastx_nr_hits]
-                filter_label = "NR BLASTx viral confirmation"
-            else:
-                confirmed = [s for s in nuc_seqs if s.is_viral]
-                filter_label = "RefSeq / HMM viral confirmation (NR not run)"
+            filter_label = (
+                "NR BLASTx viral confirmation"
+                if any(s.blastx_nr_hits for s in nuc_seqs)
+                else "RefSeq / HMM viral confirmation (NR not run)"
+            )
             dropped = len(nuc_seqs) - len(confirmed)
             if dropped:
                 logger.info(
@@ -195,6 +213,7 @@ class ReportExporter:
             "blastx_nr_hits": [_to_serializable(h) for h in seq.blastx_nr_hits],
             "blastn_hits":    [_to_serializable(h) for h in seq.blastn_hits],
             "taxonomy":       self._taxonomy_to_dict(seq.taxonomy) if seq.taxonomy else None,
+            "coverage":       _to_serializable(seq.coverage) if seq.coverage else None,
         }
         if self.include_llm:
             d["llm_output"] = _to_serializable(seq.llm_output) if seq.llm_output else None
