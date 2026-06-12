@@ -323,7 +323,9 @@ def _show_rich_help() -> None:
         "  from the index. Viral and HK-matched contigs are always included\n"
         "  regardless of length. Both changes reduce the SSHash index footprint.\n"
         "  Recommended when [dim]salmon index[/dim] runs out of memory.\n\n"
-        "[bold]Note:[/] --reads alone triggers de-novo mode. --transcriptome requires --reads.",
+        "[bold]Note:[/] --reads alone triggers de-novo mode. --transcriptome requires --reads.\n"
+        "[bold]Note:[/] For metagenomics or metatranscriptomics samples, omit --transcriptome — "
+        "the de-novo pathway is the appropriate mode and no host reference is needed.",
         title="[bold cyan]SALMON QUANTIFICATION (optional)[/bold cyan]",
         border_style="cyan", width=85, box=box.ROUNDED,
     ))
