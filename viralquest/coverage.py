@@ -114,6 +114,7 @@ class CoveragePipeline:
                 for p in (ref_fasta, bam, bam.with_suffix(".bam.bai")):
                     p.unlink(missing_ok=True)
 
+        self._export_tsv(profiles, outdir)
         logger.success(f"Coverage profiles built for {len(profiles)}/{len(seqs)} viral sequence(s).")
         return profiles
 
@@ -216,6 +217,21 @@ class CoveragePipeline:
                 low_cov_regions = low_runs,
             )
         return profiles
+
+    @staticmethod
+    def _export_tsv(profiles: "dict[str, CoverageProfile]", outdir: Path) -> None:
+        """Write one TSV per sequence with bin index, genomic position and mean depth."""
+        import re
+        _safe = re.compile(r'[^\w\-.]')
+        for profile in profiles.values():
+            safe_name = _safe.sub('_', profile.seq_id)
+            tsv_path  = outdir / f"{safe_name}.tsv"
+            nb        = len(profile.bins)
+            with open(tsv_path, "w", encoding="utf-8") as fh:
+                fh.write("bin\tposition_nt\tmean_depth\n")
+                for i, depth in enumerate(profile.bins):
+                    pos = int(((i + 0.5) / nb) * profile.length)
+                    fh.write(f"{i + 1}\t{pos}\t{depth}\n")
 
     @classmethod
     def _downsample(cls, arr: np.ndarray) -> list[float]:
