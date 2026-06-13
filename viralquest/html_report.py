@@ -145,7 +145,7 @@ def _build_salmon_stats(salmon_quant: dict | None) -> dict:
         "pathway":         salmon_quant.get("pathway", "reference"),
         "mapping_rate":    salmon_quant.get("mapping_rate"),
         "total_reads":     salmon_quant.get("total_reads"),
-        "host_viral_hits": len(salmon_quant.get("host_viral_hits") or []),
+        "viral_expressed": sum(1 for e in (salmon_quant.get("viral_quant") or []) if (e.get("tpm") or 0) > 0),
         "ref_hk_count":    len(salmon_quant.get("ref_hk_quant") or []),
     }
 

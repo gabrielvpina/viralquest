@@ -176,9 +176,22 @@ function vqInitStats(report) {
           </div>
         </div>
 
-        <!-- 8. Salmon Quantification — only when salmon was run -->
+        <!-- 8. NR Classification: Virus vs Phage — always -->
+        <div class="vq-chart-card" id="stats-nrclass-card" style="min-height:auto;align-self:start">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title" id="stats-nrclass-title">NR Classification</div>
+              <div class="vq-chart-card__sub" id="stats-nrclass-sub">virus · phage breakdown</div>
+            </div>
+          </div>
+          <div class="vq-chart-card__body" style="justify-content:flex-start">
+            <div id="stats-nrclass-legend" style="width:100%"></div>
+          </div>
+        </div>
+
+        <!-- 9. Salmon Quantification — only when salmon was run -->
         ${salmon.present ? `
-        <div class="vq-chart-card" id="stats-salmon-card" style="min-height:auto">
+        <div class="vq-chart-card" id="stats-salmon-card" style="min-height:auto;align-self:start">
           <div class="vq-chart-card__head">
             <div>
               <div class="vq-chart-card__title">Salmon Quantification</div>
@@ -188,14 +201,15 @@ function vqInitStats(report) {
               </div>
             </div>
           </div>
-          <div class="vq-chart-card__body">
+          <div class="vq-chart-card__body" style="flex-direction:column;justify-content:flex-start;gap:0">
             <div id="stats-salmon-svg" style="width:100%"></div>
+            <div id="stats-salmon-rows" style="width:100%;padding:0 4px 4px"></div>
           </div>
         </div>` : ''}
 
-        <!-- 9. LLM Scoring — only when LLM was used -->
+        <!-- 10. LLM Scoring — only when LLM was used -->
         ${llm.present ? `
-        <div class="vq-chart-card" id="stats-llm-card" style="min-height:auto">
+        <div class="vq-chart-card" id="stats-llm-card" style="min-height:auto;align-self:start">
           <div class="vq-chart-card__head">
             <div>
               <div class="vq-chart-card__title">LLM Scoring</div>
@@ -203,7 +217,7 @@ function vqInitStats(report) {
             </div>
             <div class="vq-chart-card__big">${llm.avg_score != null ? Number(llm.avg_score).toFixed(1) : '—'}</div>
           </div>
-          <div class="vq-chart-card__body" style="padding-top:8px">
+          <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
             ${_miniRow('Scored',        fmtNum(llm.scored))}
             ${_miniRow('Viral known',   fmtNum(llm.viral_known))}
             ${_miniRow('Viral unknown', fmtNum(llm.viral_unknown))}
@@ -211,13 +225,13 @@ function vqInitStats(report) {
           </div>
         </div>` : ''}
 
-        <!-- 10. CAP3 Assembly — only when CAP3 was used -->
+        <!-- 11. CAP3 Assembly — only when CAP3 was used -->
         ${sum.cap3_used ? `
-        <div class="vq-chart-card" id="stats-cap3-card" style="min-height:auto">
+        <div class="vq-chart-card" id="stats-cap3-card" style="min-height:auto;align-self:start">
           <div class="vq-chart-card__head">
             <div class="vq-chart-card__title">CAP3 Assembly</div>
           </div>
-          <div class="vq-chart-card__body" style="padding-top:8px">
+          <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
             ${_miniRow('Contigs',  fmtNum(sum.cap3_contigs))}
             ${_miniRow('Singlets', fmtNum(sum.cap3_singlets))}
           </div>
@@ -249,10 +263,11 @@ function vqInitStats(report) {
   // Salmon (card only exists in DOM when salmon.present)
   if (salmon.present) _renderSalmonChart(salmon);
 
-  // Pipeline funnel + length + species
+  // Pipeline funnel + length + species + NR classification
   _renderFunnel(blast);
   _renderLengthHistogram(seqs);
   _renderTopSpecies(seqs);
+  _renderNRClassification(seqs);
 
   // BLAST toggles — both cards share the same metric state and stay in sync.
   // Either toggle drives both charts simultaneously.
@@ -304,6 +319,7 @@ function vqInitStats(report) {
     _renderFunnel(blast);
     _drawBlast();
     _renderLengthHistogram(seqs);
+    _renderNRClassification(seqs);
   });
   ro.observe(el);
 }
@@ -601,39 +617,51 @@ function _renderSalmonChart(salmon) {
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  const W   = Math.max(wrap.clientWidth || 0, 240);
-  const H   = 195;
+  const W    = Math.max(wrap.clientWidth || 0, 200);
+  const H    = 72;
   const rate = Math.max(0, Math.min(100, salmon.mapping_rate ?? 0));
 
-  // Geometry: semicircle gauge, big number in the middle.
-  const cx     = W / 2;
-  const cy     = 128;
-  const rOuter = 96;
-  const rInner = 72;
+  const rateColor = rate >= 30 ? 'var(--vq-success)'
+                  : rate >= 15 ? 'var(--vq-accent)'
+                              : 'var(--vq-warning)';
 
-  const arcBg = d3.arc()
-    .innerRadius(rInner).outerRadius(rOuter)
-    .startAngle(-Math.PI / 2).endAngle(Math.PI / 2)
-    .cornerRadius(4);
-  const arcVal = d3.arc()
-    .innerRadius(rInner).outerRadius(rOuter)
-    .startAngle(-Math.PI / 2)
-    .endAngle(-Math.PI / 2 + (rate / 100) * Math.PI)
-    .cornerRadius(4);
+  const PAD_L = 4;
+  const PAD_R = 4;
+  const BAR_Y = 46;
+  const BAR_H = 12;
+  const drawW = W - PAD_L - PAD_R;
+  const fillW = Math.max(drawW * rate / 100, 4);
 
   const svg = d3.create('svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
     .attr('preserveAspectRatio', 'xMidYMin meet')
     .style('width', '100%').style('height', 'auto');
 
-  const g = svg.append('g').attr('transform', `translate(${cx}, ${cy})`);
+  // Large rate % + label
+  svg.append('text')
+    .attr('x', PAD_L).attr('y', 22)
+    .attr('font-size', 26).attr('font-weight', 700)
+    .attr('letter-spacing', '-0.02em')
+    .attr('fill', 'var(--vq-primary)')
+    .text(rate.toFixed(1) + '%');
+  svg.append('text')
+    .attr('x', PAD_L).attr('y', 33)
+    .attr('font-size', 11).attr('fill', 'var(--vq-text-3)')
+    .text('mapping rate');
 
-  g.append('path').attr('d', arcBg()).attr('fill', 'var(--vq-bg)');
+  // Track
+  svg.append('rect')
+    .attr('x', PAD_L).attr('y', BAR_Y)
+    .attr('width', drawW).attr('height', BAR_H)
+    .attr('rx', BAR_H / 2)
+    .attr('fill', 'var(--vq-bg)');
 
-  const rateColor = rate >= 30 ? 'var(--vq-success)'
-                  : rate >= 15 ? 'var(--vq-accent)'
-                              : 'var(--vq-warning)';
-  g.append('path').attr('d', arcVal()).attr('fill', rateColor)
+  // Fill — grows left to right
+  svg.append('rect')
+    .attr('x', PAD_L).attr('y', BAR_Y)
+    .attr('width', fillW).attr('height', BAR_H)
+    .attr('rx', BAR_H / 2)
+    .attr('fill', rateColor).attr('opacity', 0.9)
     .on('mousemove', evt => VQ.tooltipShow(`
       <div class="vq-tooltip__title">Mapping rate</div>
       <div class="vq-tooltip__row">
@@ -641,29 +669,36 @@ function _renderSalmonChart(salmon) {
       </div>`, evt))
     .on('mouseleave', VQ.tooltipHide);
 
-  // Inner number — large
-  g.append('text')
-    .attr('text-anchor', 'middle')
-    .attr('font-size', 40)
-    .attr('font-weight', 700)
-    .attr('letter-spacing', '-0.02em')
-    .attr('fill', 'var(--vq-primary)')
-    .attr('y', -6)
-    .text(rate.toFixed(1) + '%');
-  g.append('text')
-    .attr('text-anchor', 'middle')
-    .attr('font-size', 11)
-    .attr('fill', 'var(--vq-text-3)')
-    .attr('y', 14)
-    .text('mapping rate');
-
-  // Gauge end labels
-  svg.append('text').attr('x', cx - rOuter - 4).attr('y', cy + 10)
-    .attr('text-anchor', 'end').attr('font-size', 9).attr('fill', 'var(--vq-text-3)').text('0');
-  svg.append('text').attr('x', cx + rOuter + 4).attr('y', cy + 10)
-    .attr('font-size', 9).attr('fill', 'var(--vq-text-3)').text('100%');
+  // End labels
+  svg.append('text')
+    .attr('x', PAD_L).attr('y', H - 3)
+    .attr('font-size', 9).attr('fill', 'var(--vq-text-3)').text('0');
+  svg.append('text')
+    .attr('x', W - PAD_R).attr('y', H - 3)
+    .attr('text-anchor', 'end').attr('font-size', 9)
+    .attr('fill', 'var(--vq-text-3)').text('100%');
 
   wrap.appendChild(svg.node());
+
+  // Mini-rows below the gauge
+  const rows = document.getElementById('stats-salmon-rows');
+  if (rows) {
+    const _fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString();
+    const mappedReads = salmon.total_reads != null && salmon.mapping_rate != null
+      ? Math.round(salmon.total_reads * salmon.mapping_rate / 100)
+      : null;
+    rows.innerHTML = [
+      mappedReads != null
+        ? _miniRow('Mapped reads',         _fmt(mappedReads))
+        : '',
+      salmon.viral_expressed != null
+        ? _miniRow('Viral seqs expressed', _fmt(salmon.viral_expressed))
+        : '',
+      salmon.ref_hk_count
+        ? _miniRow('HK ref genes',         _fmt(salmon.ref_hk_count))
+        : '',
+    ].join('');
+  }
 }
 
 function _renderSalmonEmpty() {
@@ -818,7 +853,7 @@ function _renderIdentityHistogram(sequences, mode = 'identity') {
   const drawW = W - PAD_L - PAD_R;
   const drawH = H - PAD_T - PAD_B;
 
-  const bins   = d3.bin().domain([0, 100]).thresholds([0,10,20,30,40,50,60,70,80,90,100])(values);
+  const bins   = d3.bin().domain([0, 100]).thresholds([10,20,30,40,50,60,70,80,90])(values);
   const yMax   = d3.max(bins, b => b.length) || 1;
   const xScale = d3.scaleLinear([0, 100], [0, drawW]);
   const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
@@ -1014,7 +1049,7 @@ function _renderBLAstnHistogram(sequences, mode) {
   const drawW = W - PAD_L - PAD_R;
   const drawH = H - PAD_T - PAD_B;
 
-  const bins   = d3.bin().domain([0, 100]).thresholds([0,10,20,30,40,50,60,70,80,90,100])(values);
+  const bins   = d3.bin().domain([0, 100]).thresholds([10,20,30,40,50,60,70,80,90])(values);
   const yMax   = d3.max(bins, b => b.length) || 1;
   const xScale = d3.scaleLinear([0, 100], [0, drawW]);
   const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
@@ -1093,13 +1128,23 @@ function _renderTopSpecies(sequences) {
     counts[sp].count++;
   });
 
+  const TOP_N  = 8;
   const entries = Object.entries(counts)
     .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 3);
+    .slice(0, TOP_N);
+
+  // Hide card when no species has more than one sequence — data is trivial
+  const multiSeqSpecies = Object.values(counts).filter(d => d.count > 1).length;
+  const card = document.getElementById('stats-species-card');
+  if (multiSeqSpecies <= 1) {
+    if (card) card.style.display = 'none';
+    return;
+  }
+  if (card) card.style.display = '';
 
   if (sub) {
     const uniq = Object.keys(counts).length;
-    sub.textContent = `top 3 of ${uniq} species`;
+    sub.textContent = `top ${Math.min(TOP_N, uniq)} of ${uniq} species`;
   }
 
   if (!entries.length) {
@@ -1141,6 +1186,68 @@ function _renderTopSpecies(sequences) {
       </tbody>
     </table>
   `;
+}
+
+
+// ────────────────────────────────────────────────────────────────────────
+//  Chart 8 — NR classification: Virus vs Phage (bars only)
+// ────────────────────────────────────────────────────────────────────────
+
+const _NR_CLASS_COLORS = {
+  'Virus': 'var(--vq-accent)',
+  'Phage': 'var(--vq-accent-dark)',
+};
+
+function _renderNRClassification(sequences) {
+  const lgd   = document.getElementById('stats-nrclass-legend');
+  const sub   = document.getElementById('stats-nrclass-sub');
+  const title = document.getElementById('stats-nrclass-title');
+  if (!lgd) return;
+  lgd.innerHTML = '';
+
+  const viral  = sequences.filter(s => s.is_viral);
+  const nrUsed = viral.some(s => s.blastx_nr_hits && s.blastx_nr_hits.length > 0);
+  if (title) title.textContent = nrUsed ? 'NR Classification' : 'BLASTx Classification';
+
+  let virus = 0, phage = 0;
+  viral.forEach(s => {
+    const hit = (s.blastx_nr_hits && s.blastx_nr_hits[0]) || (s.blastx_hits && s.blastx_hits[0]);
+    if (!hit) return;
+    if (/phage|bacteriophage/i.test(hit.subject_title)) phage++;
+    else virus++;
+  });
+
+  const total   = virus + phage;
+  const display = [['Virus', virus], ['Phage', phage]].filter(([, n]) => n > 0);
+
+  if (sub) sub.textContent = `${total} classified sequence${total !== 1 ? 's' : ''}`;
+
+  if (!total) {
+    lgd.innerHTML = '<div class="vq-empty" style="padding:20px">No BLASTx hits.</div>';
+    return;
+  }
+
+  const color = name => _NR_CLASS_COLORS[name] || _TAX_DONUT_PALETTE[0];
+  display.forEach(([name, n]) => {
+    const pct = (n / total * 100).toFixed(1);
+    const col = color(name);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed var(--vq-border)';
+    row.innerHTML = `
+      <span style="width:14px;height:14px;border-radius:50%;background:${col};flex-shrink:0"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:15px;font-weight:600;color:var(--vq-text)">${VQ.esc(name)}</div>
+        <div style="height:4px;background:var(--vq-bg);border-radius:2px;margin-top:5px">
+          <div style="height:100%;width:${pct}%;background:${col};border-radius:2px;opacity:.85"></div>
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--vq-text)">${n}</div>
+        <div style="font-size:12px;color:var(--vq-text-3)">${pct}%</div>
+      </div>
+    `;
+    lgd.appendChild(row);
+  });
 }
 
 
