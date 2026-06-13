@@ -1516,16 +1516,60 @@ body {
    Print
    ============================================================ */
 
+/* A4 page setup — applies only during printing */
+@page {
+  size: A4 portrait;
+  margin: 1.2cm 1.5cm;
+}
+
 @media print {
-  .vq-nav, .vq-toolbar, .vq-btn, .vq-checkbox, .vq-menu { display: none !important; }
-  .vq-section { display: block !important; padding: 1cm; }
-  /* When printing from the stats section button, hide all other sections */
-  body.vq-print-stats .vq-section { display: none !important; }
-  body.vq-print-stats #section-stats { display: block !important; padding: 1cm; }
-  .vq-card { box-shadow: none !important; border: 1px solid #ccc; }
-  body { background: #fff; }
+  /* ── Global print resets ── */
+  body { background: #fff !important; color: #000 !important; }
+  .vq-nav, .vq-toolbar, .vq-btn, .vq-checkbox, .vq-menu,
+  .vq-back-top { display: none !important; }
+  .vq-section  { display: block !important; padding: 0; }
+  .vq-card     { box-shadow: none !important; border: 1px solid #ccc; }
   .vq-genome-wrap { overflow: visible; }
   .vq-stat-chip--blob svg { max-width: 140px; }
+
+  /* ── Stats-only print (triggered by "Print / Save PDF" button) ── */
+  body.vq-print-stats .vq-section              { display: none !important; }
+  body.vq-print-stats #section-stats           { display: block !important; }
+  body.vq-print-stats #stats-print-pdf         { display: none !important; }
+
+  /* Section header spacing */
+  body.vq-print-stats .vq-section-header       { margin-bottom: .4cm; }
+  body.vq-print-stats .vq-stats-page           { gap: .4cm; }
+
+  /* Hero KPI row — force single row */
+  body.vq-print-stats .vq-stats-row--top {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  /* Masonry: 2 columns fit A4 width without crowding */
+  body.vq-print-stats .vq-masonry {
+    columns: 2;
+    column-gap: .5cm;
+  }
+
+  /* Cards: no shadow, thin border, no page-break inside */
+  body.vq-print-stats .vq-chart-card {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: .4cm;
+  }
+
+  /* Dark length-distribution card — adapt for print */
+  body.vq-print-stats #stats-length-card {
+    background: #eef2f7 !important;
+    border-color: #ccc !important;
+  }
+  body.vq-print-stats #stats-length-card .vq-chart-card__title,
+  body.vq-print-stats #stats-length-card .vq-chart-card__sub {
+    color: #1a2e42 !important;
+  }
 }
 
 /* ============================================================
