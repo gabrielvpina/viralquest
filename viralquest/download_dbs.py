@@ -223,6 +223,20 @@ def download_all(
     if source not in ("zenodo", "gdrive"):
         raise ValueError(f"Unknown source '{source}'. Choose 'zenodo' or 'gdrive'.")
 
+    # Google Drive needs the optional 'gdown' package. If it's missing, fall
+    # back to Zenodo (curl/requests only) instead of failing every download.
+    if source == "gdrive":
+        try:
+            import gdown  # noqa: F401
+        except ImportError:
+            print(
+                "  Google Drive source requires the 'gdown' package, which is not "
+                "installed.\n"
+                "  Install it with:  pip install gdown\n"
+                "  Falling back to Zenodo (no extra dependency needed).\n"
+            )
+            source = "zenodo"
+
     databases = _get_databases(db_dir, flat=flat)
     if flat:
         db_dir.mkdir(parents=True, exist_ok=True)
