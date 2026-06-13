@@ -1045,6 +1045,24 @@ body {
   .vq-stats-row--charts { grid-template-columns: 1fr; }
 }
 
+.vq-masonry {
+  columns: 3;
+  column-gap: var(--vq-space-3);
+}
+
+.vq-masonry > * {
+  break-inside: avoid;
+  margin-bottom: var(--vq-space-3);
+}
+
+@media (max-width: 1100px) {
+  .vq-masonry { columns: 2; }
+}
+
+@media (max-width: 640px) {
+  .vq-masonry { columns: 1; }
+}
+
 .vq-chart-card {
   display: flex;
   flex-direction: column;

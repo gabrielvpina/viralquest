@@ -70,7 +70,7 @@ function vqInitStats(report) {
       <!-- Uniform 3-column card grid — every card is 1/3 of the row.
            Conditional cards (Salmon, LLM, CAP3) only enter the DOM when
            their data is present; the grid reflows automatically. -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--vq-space-3)">
+      <div class="vq-masonry">
 
         <!-- 1. Detection Pipeline — always -->
         <div class="vq-chart-card" id="stats-funnel-card" style="min-height:auto">
@@ -177,7 +177,7 @@ function vqInitStats(report) {
         </div>
 
         <!-- 8. NR Classification: Virus vs Phage — always -->
-        <div class="vq-chart-card" id="stats-nrclass-card" style="min-height:auto;align-self:start">
+        <div class="vq-chart-card" id="stats-nrclass-card" style="min-height:auto">
           <div class="vq-chart-card__head">
             <div>
               <div class="vq-chart-card__title" id="stats-nrclass-title">NR Classification</div>
@@ -191,7 +191,7 @@ function vqInitStats(report) {
 
         <!-- 9. Salmon Quantification — only when salmon was run -->
         ${salmon.present ? `
-        <div class="vq-chart-card" id="stats-salmon-card" style="min-height:auto;align-self:start">
+        <div class="vq-chart-card" id="stats-salmon-card" style="min-height:auto">
           <div class="vq-chart-card__head">
             <div>
               <div class="vq-chart-card__title">Salmon Quantification</div>
@@ -209,7 +209,7 @@ function vqInitStats(report) {
 
         <!-- 10. LLM Scoring — only when LLM was used -->
         ${llm.present ? `
-        <div class="vq-chart-card" id="stats-llm-card" style="min-height:auto;align-self:start">
+        <div class="vq-chart-card" id="stats-llm-card" style="min-height:auto">
           <div class="vq-chart-card__head">
             <div>
               <div class="vq-chart-card__title">LLM Scoring</div>
@@ -227,7 +227,7 @@ function vqInitStats(report) {
 
         <!-- 11. CAP3 Assembly — only when CAP3 was used -->
         ${sum.cap3_used ? `
-        <div class="vq-chart-card" id="stats-cap3-card" style="min-height:auto;align-self:start">
+        <div class="vq-chart-card" id="stats-cap3-card" style="min-height:auto">
           <div class="vq-chart-card__head">
             <div class="vq-chart-card__title">CAP3 Assembly</div>
           </div>
