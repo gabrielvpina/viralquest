@@ -1220,12 +1220,14 @@ function _renderNRClassification(sequences) {
   const total   = virus + phage;
   const display = [['Virus', virus], ['Phage', phage]].filter(([, n]) => n > 0);
 
-  if (sub) sub.textContent = `${total} classified sequence${total !== 1 ? 's' : ''}`;
-
-  if (!total) {
-    lgd.innerHTML = '<div class="vq-empty" style="padding:20px">No BLASTx hits.</div>';
+  const card = document.getElementById('stats-nrclass-card');
+  if (display.length < 2) {
+    if (card) card.style.display = 'none';
     return;
   }
+  if (card) card.style.display = '';
+
+  if (sub) sub.textContent = `${total} classified sequence${total !== 1 ? 's' : ''}`;
 
   const color = name => _NR_CLASS_COLORS[name] || _TAX_DONUT_PALETTE[0];
   display.forEach(([name, n]) => {
