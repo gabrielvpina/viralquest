@@ -63,6 +63,15 @@
   <!-- ── Shared tooltip ─────────────────────────────────────── -->
   <div class="vq-tooltip" id="vq-tooltip" role="tooltip" aria-live="polite"></div>
 
+  <!-- ── Back to top ──────────────────────────────────────────── -->
+  <button class="vq-back-top" id="vq-back-top" aria-label="Back to top" title="Back to top">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2.5"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="18 15 12 9 6 15"/>
+    </svg>
+  </button>
+
   <!-- ── Report data (injected by html_report.py) ───────────── -->
   <script>const VQ_REPORT = {{VQ_DATA}};</script>
 
@@ -131,6 +140,32 @@
     if (!VQ_REPORT.salmon_quant) {
       document.getElementById('tab-salmon').style.display = 'none';
     }
+
+    // --- Back to top ------------------------------------------------
+    const backTop = document.getElementById('vq-back-top');
+    let activeSection = 'stats';
+
+    function updateBackTop() {
+      const show = window.scrollY > 300 && activeSection !== 'stats';
+      backTop?.classList.toggle('visible', show);
+    }
+
+    const _origActivate = activate;
+    function activateWithScroll(tab) {
+      activeSection = tab.dataset.section;
+      _origActivate(tab);
+      updateBackTop();
+    }
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => { activeSection = tab.dataset.section; updateBackTop(); });
+    });
+
+    window.addEventListener('scroll', updateBackTop, { passive: true });
+
+    backTop?.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
 
     // --- Nav meta ---------------------------------------------------
     const meta = VQ_REPORT.meta || {};

@@ -954,6 +954,38 @@ body {
 
 .vq-tooltip.visible { opacity: 1; }
 
+/* ── Back-to-top button ──────────────────────────────────────────── */
+.vq-back-top {
+  position:        fixed;
+  bottom:          28px;
+  right:           28px;
+  width:           40px;
+  height:          40px;
+  border-radius:   50%;
+  background:      var(--vq-primary);
+  color:           #fff;
+  border:          none;
+  cursor:          pointer;
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  box-shadow:      var(--vq-shadow-md);
+  opacity:         0;
+  pointer-events:  none;
+  transition:      opacity .2s var(--vq-ease), transform .2s var(--vq-ease);
+  z-index:         900;
+}
+
+.vq-back-top.visible {
+  opacity:        1;
+  pointer-events: auto;
+}
+
+.vq-back-top:hover {
+  transform:  translateY(-3px);
+  background: var(--vq-primary-light);
+}
+
 .vq-tooltip__title {
   font-weight:   600;
   margin-bottom: 4px;
