@@ -169,12 +169,55 @@ class HmmResultAttacher:
     """Attaches raw hit tuples onto ORF objects and optionally flags viral sequences."""
 
     @staticmethod
+    def _dedup_by_position(hits: list[tuple]) -> list[tuple]:
+        """
+        FILTER-database de-duplication, per ORF.
+
+        Within a single database, drop any hit whose envelope is positionally
+        redundant with a higher-scoring hit on the same ORF — i.e. identical
+        start/stop, or one envelope fully contained in the other. Hits at
+        distinct positions, or that only partially overlap, are all kept.
+
+        Tuple layout: (query_name, target_name, score, i_evalue, env_from, env_to).
+        """
+        by_orf: dict[str, list[tuple]] = {}
+        for h in hits:
+            by_orf.setdefault(h[1], []).append(h)
+
+        kept: list[tuple] = []
+        for orf_hits in by_orf.values():
+            # Highest score first, so the best hit of any nested group wins.
+            orf_hits.sort(key=lambda h: h[2], reverse=True)
+            accepted: list[tuple] = []
+            for h in orf_hits:
+                a_from, a_to = h[4], h[5]
+                redundant = any(
+                    (k[4] <= a_from and a_to <= k[5]) or   # h contained in kept
+                    (a_from <= k[4] and k[5] <= a_to)       # kept contained in h
+                    for k in accepted
+                )
+                if not redundant:
+                    accepted.append(h)
+            kept.extend(accepted)
+        return kept
+
+    @staticmethod
     def attach(
         hits: list[tuple],
         orf_map: dict[str, Orf],
         metadata: dict[str, dict],
         db_name: str,
     ) -> int:
+        # FILTER banks (RVDB/Vfam/EggNOG) collapse positionally redundant hits;
+        # Pfam (CHARACTERIZE) keeps every domain so multi-domain ORFs stay intact.
+        if HMM_ROLES.get(db_name, HmmRole.CHARACTERIZE) is HmmRole.FILTER:
+            before = len(hits)
+            hits = HmmResultAttacher._dedup_by_position(hits)
+            if before != len(hits):
+                logger.debug(
+                    f"{db_name}: positional de-dup kept {len(hits)}/{before} hit(s)."
+                )
+
         attached = 0
         for query_name, target_name, score, e_value, env_from, env_to in hits:
             orf = orf_map.get(target_name)
