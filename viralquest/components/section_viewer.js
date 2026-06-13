@@ -41,6 +41,7 @@ function vqInitViewer(sequences) {
   const phyla    = [...new Set(sequences.map(s => s.taxonomy?.phylum).filter(Boolean))].sort();
   const families = [...new Set(sequences.map(s => s.taxonomy?.family).filter(Boolean))].sort();
   const genera   = [...new Set(sequences.map(s => s.taxonomy?.genus).filter(Boolean))].sort();
+  const hasHeur  = sequences.some(s => s.heuristic_output != null);
   const hasLlm   = sequences.some(s => s.llm_output != null);
 
   el.innerHTML = `
@@ -118,15 +119,28 @@ function vqInitViewer(sequences) {
           <option value="">All genera</option>
           ${genera.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
         </select>
-        ${hasLlm ? `
-        <select class="vq-select" id="viewer-score" aria-label="Filter by VQ score">
-          <option value="">Any VQ score</option>
-          <option value="80">VQ ≥ 80</option>
-          <option value="60">VQ ≥ 60</option>
-          <option value="40">VQ ≥ 40</option>
+        ${hasHeur ? `
+        <select class="vq-select" id="viewer-heur-score" aria-label="Filter by heuristic VQ score">
+          <option value="">Any heuristic score</option>
+          <option value="80">Heuristic ≥ 80</option>
+          <option value="60">Heuristic ≥ 60</option>
+          <option value="40">Heuristic ≥ 40</option>
         </select>
-        <select class="vq-select" id="viewer-classification" aria-label="Filter by classification">
-          <option value="">Any classification</option>
+        <select class="vq-select" id="viewer-heur-class" aria-label="Filter by heuristic classification">
+          <option value="">Any heuristic class</option>
+          <option value="viral-known">Viral known</option>
+          <option value="viral-unknown">Viral unknown</option>
+          <option value="non-viral">Non-viral</option>
+        </select>` : ''}
+        ${hasLlm ? `
+        <select class="vq-select" id="viewer-llm-score" aria-label="Filter by LLM VQ score">
+          <option value="">Any LLM score</option>
+          <option value="80">LLM ≥ 80</option>
+          <option value="60">LLM ≥ 60</option>
+          <option value="40">LLM ≥ 40</option>
+        </select>
+        <select class="vq-select" id="viewer-llm-class" aria-label="Filter by LLM classification">
+          <option value="">Any LLM class</option>
           <option value="viral-known">Viral known</option>
           <option value="viral-unknown">Viral unknown</option>
           <option value="non-viral">Non-viral</option>
@@ -172,7 +186,8 @@ function vqInitViewer(sequences) {
     <div id="viewer-list"></div>
   `;
 
-  ['viewer-search','viewer-phylum','viewer-family','viewer-genus','viewer-score','viewer-classification',
+  ['viewer-search','viewer-phylum','viewer-family','viewer-genus',
+   'viewer-heur-score','viewer-heur-class','viewer-llm-score','viewer-llm-class',
    'viewer-ident-min','viewer-ident-max','viewer-cov-min','viewer-cov-max',
    'viewer-len-min','viewer-len-max']
     .forEach(id => document.getElementById(id)?.addEventListener('input', _applyFilters));
@@ -235,8 +250,10 @@ function _applyFilters() {
   const phylum   = document.getElementById('viewer-phylum')?.value || '';
   const family   = document.getElementById('viewer-family')?.value || '';
   const genus    = document.getElementById('viewer-genus')?.value  || '';
-  const cls      = document.getElementById('viewer-classification')?.value || '';
-  const minScore = parseInt(document.getElementById('viewer-score')?.value || '0', 10);
+  const heurCls   = document.getElementById('viewer-heur-class')?.value || '';
+  const heurScore = parseInt(document.getElementById('viewer-heur-score')?.value || '0', 10);
+  const llmCls    = document.getElementById('viewer-llm-class')?.value || '';
+  const llmScore  = parseInt(document.getElementById('viewer-llm-score')?.value || '0', 10);
 
   const identMinRaw = document.getElementById('viewer-ident-min')?.value;
   const identMaxRaw = document.getElementById('viewer-ident-max')?.value;
@@ -262,8 +279,10 @@ function _applyFilters() {
     if (phylum && s.taxonomy?.phylum !== phylum) return false;
     if (family && s.taxonomy?.family !== family) return false;
     if (genus  && s.taxonomy?.genus  !== genus)  return false;
-    if (cls    && s.llm_output?.classification !== cls) return false;
-    if (minScore && (s.llm_output?.vq_score ?? 0) < minScore) return false;
+    if (heurCls   && s.heuristic_output?.classification !== heurCls) return false;
+    if (heurScore && (s.heuristic_output?.vq_score ?? 0) < heurScore) return false;
+    if (llmCls    && s.llm_output?.classification !== llmCls) return false;
+    if (llmScore  && (s.llm_output?.vq_score ?? 0) < llmScore) return false;
     if (lenMin !== null && (s.length ?? 0) < lenMin) return false;
     if (lenMax !== null && (s.length ?? 0) > lenMax) return false;
     if (hasBlastFilter) {

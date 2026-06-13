@@ -208,6 +208,14 @@ class HmmResultAttacher:
         metadata: dict[str, dict],
         db_name: str,
     ) -> int:
+        # Quantitative raw count: how many threshold-passing hits each ORF got
+        # from this database, recorded BEFORE positional de-dup so the heuristic
+        # scorer can use hit multiplicity as a complementary signal.
+        for h in hits:
+            orf = orf_map.get(h[1])
+            if orf is not None:
+                orf.raw_hmm_counts[db_name] = orf.raw_hmm_counts.get(db_name, 0) + 1
+
         # FILTER banks (RVDB/Vfam/EggNOG) collapse positionally redundant hits;
         # Pfam (CHARACTERIZE) keeps every domain so multi-domain ORFs stay intact.
         if HMM_ROLES.get(db_name, HmmRole.CHARACTERIZE) is HmmRole.FILTER:

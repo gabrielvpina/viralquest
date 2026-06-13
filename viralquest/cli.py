@@ -478,6 +478,8 @@ def _build_steps(args) -> list[str]:
     if args.reads:
         mode = "reference" if args.transcriptome else "de novo"
         steps.append(f"Salmon quantification  —  {mode}")
+        steps.append("Read coverage profiling")
+    steps.append("Heuristic scoring  —  rule-based vq_score")
     if args.model_type:
         token_tag = f"[{args.llm_tokens}]" if args.llm_tokens else ""
         steps.append(f"LLM scoring  —  {args.model_type} / {args.model_name}  {token_tag}".rstrip())
@@ -700,7 +702,16 @@ def _run_pipeline(args):
             seq.coverage = cov_map.get(seq.id)
         yield from _tick(t)
 
-    # ── 11. LLM scoring ───────────────────────────────────────────────────────
+    # ── 11. Heuristic scoring (always; no LLM, no NR, no API key) ─────────────
+    # Scores exactly the sequences the exporter will emit, so the report's
+    # mandatory heuristic field is populated for every exported sequence.
+    t = time.time()
+    from .exporter import select_confirmed_sequences
+    from .score_heuristic import HeuristicScorer
+    HeuristicScorer().score(select_confirmed_sequences(seqs, force=args.force))
+    yield from _tick(t)
+
+    # ── 12. LLM scoring (optional) ────────────────────────────────────────────
     if args.model_type and args.model_name:
         t          = time.time()
         viral_seqs = [s for s in seqs if s.blastx_nr_hits]
@@ -712,7 +723,7 @@ def _run_pipeline(args):
                        api_key=args.api_key).score(viral_seqs)
         yield from _tick(t)
 
-    # ── 12. Export: viral FASTA + JSON ────────────────────────────────────────
+    # ── 13. Export: viral FASTA + JSON ────────────────────────────────────────
     t             = time.time()
     fasta_seqs    = (
         [s for s in seqs if s.blastx_nr_hits]
@@ -732,7 +743,7 @@ def _run_pipeline(args):
     )
     yield from _tick(t)
 
-    # ── 13. HTML report ───────────────────────────────────────────────────────
+    # ── 14. HTML report ───────────────────────────────────────────────────────
     t         = time.time()
     html_path = outdir / f"{stem}_viralquest.html"
     write_report(report, html_path)

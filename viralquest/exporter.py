@@ -214,6 +214,8 @@ class ReportExporter:
             "blastn_hits":    [_to_serializable(h) for h in seq.blastn_hits],
             "taxonomy":       self._taxonomy_to_dict(seq.taxonomy) if seq.taxonomy else None,
             "coverage":       _to_serializable(seq.coverage) if seq.coverage else None,
+            # Heuristic score always runs, so the field is always present.
+            "heuristic_output": _to_serializable(seq.heuristic_output) if seq.heuristic_output else None,
         }
         if self.include_llm:
             d["llm_output"] = _to_serializable(seq.llm_output) if seq.llm_output else None
@@ -279,6 +281,10 @@ class ReportExporter:
             if s.llm_output.classification != "api-error"
         ]
 
+        # Heuristic — runs on every confirmed sequence
+        heur = [s for s in confirmed if s.heuristic_output]
+        heur_scores = [s.heuristic_output.vq_score for s in heur]
+
         return {
             "blast": {
                 "refseq_unique_seqs": refseq_seqs,
@@ -304,6 +310,14 @@ class ReportExporter:
                 "viral_unknown": sum(1 for s in scored if s.llm_output.classification == "viral-unknown"),
                 "api_error":     sum(1 for s in scored if s.llm_output.classification == "api-error"),
                 "avg_score":     round(sum(llm_scores) / len(llm_scores), 1) if llm_scores else None,
+            },
+            "heuristic": {
+                "present":       bool(heur),
+                "scored":        len(heur),
+                "viral_known":   sum(1 for s in heur if s.heuristic_output.classification == "viral-known"),
+                "viral_unknown": sum(1 for s in heur if s.heuristic_output.classification == "viral-unknown"),
+                "non_viral":     sum(1 for s in heur if s.heuristic_output.classification == "non-viral"),
+                "avg_score":     round(sum(heur_scores) / len(heur_scores), 1) if heur_scores else None,
             },
             "clusters": len(clusters),
         }

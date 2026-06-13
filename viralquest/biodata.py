@@ -88,6 +88,10 @@ class Orf:
     uid: uuid.UUID = field(default_factory=uuid.uuid4, init=False)
     # hmm data - composition
     domains: list[HmmDomain] = field(default_factory=list, init=False)
+    # raw HMM hit count per database (score >= threshold, before positional
+    # de-dup) — quantitative signal for the heuristic scorer. Keyed by database
+    # name ("RVDB", "Vfam", "EggNOG", "Pfam").
+    raw_hmm_counts: dict[str, int] = field(default_factory=dict, init=False)
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +250,44 @@ class LlmOutput:
 
 
 # ---------------------------------------------------------------------------
+# Heuristic (non-LLM) scoring output
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class ScoreComponents:
+    """
+    Per-component breakdown of a HeuristicScore.
+
+    Each component is on the same 0-100 scale as the final vq_score. A value of
+    None means the component was absent (e.g. BLASTn not run) and was therefore
+    excluded from the weighted average — distinct from a present-but-zero value.
+    """
+    blastn:  float | None       # None when no viral BLASTn evidence is present
+    blastx:  float | None       # None when no BLASTx hit is present
+    hmm:     float | None       # None when no FILTER-database domain is present
+    weights: dict[str, float]   # weights actually applied after renormalisation
+    penalty: float = 1.0        # multiplicative factor applied after the weighted
+                                # sum (1.0 = none; < 1.0 = false-positive damping)
+
+
+@dataclass(slots=True)
+class HeuristicScore:
+    """
+    Deterministic, rule-based score produced by score_heuristic.HeuristicScorer.
+
+    Mirrors the shape of LlmOutput so the report, stats, and viewer can treat
+    the two scoring engines symmetrically — the numeric metric is named
+    `vq_score` in both.
+    """
+    seq_id:         str
+    vq_score:       int          # 0-100
+    classification: str          # "viral-known" | "viral-unknown" | "non-viral"
+    blastn_species: str = ""
+    analysis:       str = ""     # plain-text, template-generated breakdown
+    components:     ScoreComponents | None = None
+
+
+# ---------------------------------------------------------------------------
 # Sequence clustering
 # ---------------------------------------------------------------------------
 
@@ -390,6 +432,9 @@ class NucSequence:
     # LLM scoring result
     llm_output: LlmOutput | None = field(default=None, init=False)
 
+    # heuristic (non-LLM) scoring result
+    heuristic_output: HeuristicScore | None = field(default=None, init=False)
+
     # cluster membership
     cluster_id: str | None = field(default=None, init=False)
 
@@ -429,3 +474,16 @@ class NucSequence:
     def hmm_domains(self) -> list[HmmDomain]:
         """Flat list of all domains across all ORFs."""
         return [d for orf in self.orfs for d in orf.domains]
+
+    @property
+    def hmm_raw_counts(self) -> dict[str, int]:
+        """
+        Raw HMM hit counts (score >= threshold, before positional de-dup)
+        aggregated across all ORFs, keyed by database name. Quantitative
+        complement to hmm_domains for the heuristic scorer.
+        """
+        out: dict[str, int] = {}
+        for orf in self.orfs:
+            for db, n in orf.raw_hmm_counts.items():
+                out[db] = out.get(db, 0) + n
+        return out
