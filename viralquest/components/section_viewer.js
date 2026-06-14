@@ -119,6 +119,13 @@ function vqInitViewer(sequences) {
           <option value="">All genera</option>
           ${genera.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
         </select>
+        <select class="vq-select" id="viewer-sort" aria-label="Sort sequences">
+          <option value="score-desc">Score: high → low</option>
+          <option value="score-asc">Score: low → high</option>
+          <option value="len-desc">Length: long → short</option>
+          <option value="len-asc">Length: short → long</option>
+          <option value="id-asc">Sequence ID (A→Z)</option>
+        </select>
         ${hasHeur ? `
         <select class="vq-select" id="viewer-heur-score" aria-label="Filter by heuristic VQ score">
           <option value="">Any heuristic score</option>
@@ -186,7 +193,7 @@ function vqInitViewer(sequences) {
     <div id="viewer-list"></div>
   `;
 
-  ['viewer-search','viewer-phylum','viewer-family','viewer-genus',
+  ['viewer-search','viewer-phylum','viewer-family','viewer-genus','viewer-sort',
    'viewer-heur-score','viewer-heur-class','viewer-llm-score','viewer-llm-class',
    'viewer-ident-min','viewer-ident-max','viewer-cov-min','viewer-cov-max',
    'viewer-len-min','viewer-len-max']
@@ -230,7 +237,111 @@ function vqInitViewer(sequences) {
     });
   });
 
+  _sortFiltered();
   _renderList();
+}
+
+// ── Scoring helpers ─────────────────────────────────────────────────────────
+
+/* Heuristic-primary: the rule-based score leads; the LLM score is the
+   fallback only when no heuristic score is present. */
+function _primaryScore(seq) {
+  const h = seq.heuristic_output, l = seq.llm_output;
+  if (h) return { score: h.vq_score, cls: h.classification, src: 'heur' };
+  if (l) return { score: l.vq_score, cls: l.classification, src: 'llm'  };
+  return null;
+}
+
+/* Compact header chip: number + a meter whose WIDTH encodes magnitude (0–100)
+   and whose COLOUR encodes classification (reuses the badge palette). */
+function _scoreChip(srcLabel, score, cls) {
+  const esc = VQ.esc;
+  const w   = Math.max(0, Math.min(100, score ?? 0));
+  return `
+    <span class="vq-score-chip" title="${esc(srcLabel)} VQ score ${score} · ${esc(cls)}">
+      <span class="vq-score-chip__src">${esc(srcLabel)}</span>
+      <span class="vq-score-chip__val">${score}</span>
+      <span class="vq-score-chip__meter">
+        <span class="vq-fill--${esc(cls)}" style="width:${w}%"></span>
+      </span>
+    </span>`;
+}
+
+function _scoreChips(seq) {
+  const esc = VQ.esc;
+  const h = seq.heuristic_output, l = seq.llm_output;
+  if (!h && !l) return '';
+  const chips = [];
+  if (h) chips.push(_scoreChip('H',  h.vq_score, h.classification));
+  if (l) chips.push(_scoreChip('AI', l.vq_score, l.classification));
+  const disagree = (h && l && h.classification !== l.classification)
+    ? `<span class="vq-score-disagree" title="Heuristic and AI disagree: ${esc(h.classification)} vs ${esc(l.classification)}">⚠</span>`
+    : '';
+  return `<span class="vq-score-chips">${chips.join('')}${disagree}</span>`;
+}
+
+/* One heuristic component sub-score bar (width = magnitude; null = absent). */
+function _compBar(label, val, weight) {
+  if (val == null) {
+    return `<div class="vq-comp"><span class="vq-comp__lbl">${label}</span>
+      <span class="vq-comp__na">not present</span></div>`;
+  }
+  const w  = Math.max(0, Math.min(100, val));
+  const wt = weight != null ? ` title="weight ${(weight * 100).toFixed(0)}%"` : '';
+  return `
+    <div class="vq-comp"${wt}>
+      <span class="vq-comp__lbl">${label}</span>
+      <span class="vq-comp__track"><span style="width:${w}%"></span></span>
+      <span class="vq-comp__val">${Math.round(val)}</span>
+    </div>`;
+}
+
+function _heurColumn(h) {
+  const esc = VQ.esc;
+  const c   = h.components || null;
+  const wt  = c?.weights || {};
+  const comps = c ? `
+    ${_compBar('BLASTn', c.blastn, wt.blastn)}
+    ${_compBar('BLASTx', c.blastx, wt.blastx)}
+    ${_compBar('HMM',    c.hmm,    wt.hmm)}` : '';
+  const penalty = (c && c.penalty != null && c.penalty < 1)
+    ? `<div class="vq-score-col__penalty">Score penalty ×${c.penalty.toFixed(2)} — see analysis</div>`
+    : '';
+  return `
+    <div class="vq-score-col">
+      <div class="vq-score-col__head">
+        <span class="vq-score-col__title">Heuristic · rule-based</span>
+        <span class="vq-badge vq-badge--${esc(h.classification)}">${esc(h.classification)}</span>
+      </div>
+      <div class="vq-score-col__num">${h.vq_score}<small> / 100</small></div>
+      ${comps}
+      ${penalty}
+      ${h.analysis ? `<div class="vq-score-col__analysis">${esc(h.analysis)}</div>` : ''}
+    </div>`;
+}
+
+function _llmColumn(l) {
+  const esc = VQ.esc;
+  return `
+    <div class="vq-score-col">
+      <div class="vq-score-col__head">
+        <span class="vq-score-col__title">AI · LLM analysis</span>
+        <span class="vq-badge vq-badge--${esc(l.classification)}">${esc(l.classification)}</span>
+      </div>
+      <div class="vq-score-col__num">${l.vq_score}<small> / 100</small></div>
+      ${l.analysis ? `<div class="vq-score-col__analysis">${esc(l.analysis)}</div>` : ''}
+    </div>`;
+}
+
+function _scorePanel(seq) {
+  const h = seq.heuristic_output, l = seq.llm_output;
+  if (!h && !l) return '';
+  const cols = [];
+  if (h) cols.push(_heurColumn(h));   // heuristic-primary: rule-based leads
+  if (l) cols.push(_llmColumn(l));
+  return `
+    <div class="vq-body-label">VQ scores</div>
+    <div class="vq-score-panel">${cols.join('')}</div>`;
 }
 
 // ── Filtering ──────────────────────────────────────────────────────────────
@@ -302,7 +413,26 @@ function _applyFilters() {
   if (countEl) countEl.textContent =
     `${_VW.filtered.length} of ${_VW.sequences.length} sequence${_VW.sequences.length !== 1 ? 's' : ''}`;
 
+  _sortFiltered();
   _renderList();
+}
+
+// ── Sorting ──────────────────────────────────────────────────────────────────
+
+function _sortFiltered() {
+  const mode = document.getElementById('viewer-sort')?.value || 'score-desc';
+  const score = s => _primaryScore(s)?.score ?? -1;
+  const len   = s => s.length ?? 0;
+  // Stable, deterministic ordering: ties on the primary key fall back to id.
+  const byId  = (a, b) => a.id.localeCompare(b.id);
+  const cmp = {
+    'score-desc': (a, b) => score(b) - score(a) || byId(a, b),
+    'score-asc':  (a, b) => score(a) - score(b) || byId(a, b),
+    'len-desc':   (a, b) => len(b) - len(a)     || byId(a, b),
+    'len-asc':    (a, b) => len(a) - len(b)     || byId(a, b),
+    'id-asc':     byId,
+  }[mode] || ((a, b) => score(b) - score(a) || byId(a, b));
+  _VW.filtered.sort(cmp);
 }
 
 // ── List rendering ─────────────────────────────────────────────────────────
@@ -333,9 +463,7 @@ function _seqCard(seq) {
   card.dataset.seqId = seq.id;
   card.style.marginBottom = '6px';
 
-  const llm = seq.llm_output;
   const tax = seq.taxonomy;
-  const cls = llm?.classification || 'non-viral';
 
   const orfCount     = (seq.orfs || []).length;
   const blastnCount  = (seq.blastn_hits || []).length;
@@ -367,7 +495,7 @@ function _seqCard(seq) {
           ${orfCount} ORF${orfCount !== 1 ? 's' : ''}
         </span>
         ${seq.cluster_id ? `<span class="vq-badge vq-badge--cluster">${esc(seq.cluster_id)}</span>` : ''}
-        ${llm ? `<span class="vq-badge vq-badge--${esc(cls)}">${esc(cls)} · ${llm.vq_score}</span>` : ''}
+        ${_scoreChips(seq)}
       </div>
       <div class="vq-section-actions" style="margin-left:auto;">
         ${_seqExportMenu(safe)}
@@ -379,6 +507,8 @@ function _seqCard(seq) {
     </div>
 
     <div class="vq-seq-card__body" id="body-${safe}">
+
+      ${_scorePanel(seq)}
 
       <div class="vq-body-label">Genome map</div>
       <div class="vq-genome-wrap" id="genome-wrap-${safe}"></div>
@@ -398,17 +528,6 @@ function _seqCard(seq) {
         </div>
         <div class="vq-panel__body" id="blast-body-${safe}"></div>
       </div>
-
-      ${llm?.analysis ? `
-        <div class="vq-body-label">LLM analysis</div>
-        <div style="font-size:12.5px;color:var(--vq-text-2);line-height:1.55;
-                    background:var(--vq-surface-2);border:1px solid var(--vq-border);
-                    border-radius:var(--vq-radius-sm);padding:10px 12px">
-          <div style="font-size:11px;color:var(--vq-text-3);margin-bottom:4px">
-            ${esc(llm.classification)} · score ${llm.vq_score}
-          </div>
-          ${esc(llm.analysis)}
-        </div>` : ''}
 
       ${(seq.sequence || seq.sequence_nt) ? `
         <div class="vq-body-label">FASTA preview</div>

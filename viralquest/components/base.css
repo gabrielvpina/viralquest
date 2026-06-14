@@ -772,6 +772,172 @@ body {
 }
 
 /* ============================================================
+   VQ score chips (card header) & score panel (card body)
+   Visual language: meter WIDTH encodes magnitude (0–100);
+   meter COLOUR encodes classification (reuses the badge palette).
+   ============================================================ */
+
+.vq-score-chips {
+  display:     inline-flex;
+  align-items: center;
+  gap:         6px;
+}
+
+.vq-score-chip {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           5px;
+  padding:       2px 7px 2px 6px;
+  border:        1px solid var(--vq-border);
+  border-radius: 999px;
+  background:    var(--vq-surface);
+  white-space:   nowrap;
+}
+
+.vq-score-chip__src {
+  font-size:      9px;
+  font-weight:    700;
+  letter-spacing: .04em;
+  color:          var(--vq-text-3);
+  text-transform: uppercase;
+}
+
+.vq-score-chip__val {
+  font-family: var(--vq-font-mono);
+  font-size:   12px;
+  font-weight: 700;
+  color:       var(--vq-text);
+  line-height: 1;
+  min-width:   18px;
+  text-align:  right;
+}
+
+.vq-score-chip__meter {
+  position:      relative;
+  width:         34px;
+  height:        5px;
+  border-radius: 999px;
+  background:    var(--vq-border);
+  overflow:      hidden;
+}
+.vq-score-chip__meter > span {
+  position: absolute;
+  inset:    0 auto 0 0;
+  height:   100%;
+  border-radius: 999px;
+}
+
+/* Classification → meter colour (mirrors .vq-badge--* palette) */
+.vq-fill--viral-known   { background: #1f7a3c; }
+.vq-fill--viral-unknown { background: #9b6a09; }
+.vq-fill--non-viral     { background: #a8302b; }
+
+.vq-score-disagree {
+  display:       inline-flex;
+  align-items:   center;
+  font-size:     11px;
+  color:         var(--vq-warning);
+  cursor:        default;
+}
+
+/* ── Body score panel ──────────────────────────────────────── */
+
+.vq-score-panel {
+  display:               grid;
+  /* Two columns when both score sources exist; a single full-width column
+     when only one does (e.g. heuristic-only reports run without --llm). */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap:                   10px;
+}
+
+.vq-score-col {
+  background:    var(--vq-surface-2);
+  border:        1px solid var(--vq-border);
+  border-radius: var(--vq-radius-sm);
+  padding:       10px 12px;
+}
+
+.vq-score-col__head {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             8px;
+  margin-bottom:   8px;
+}
+.vq-score-col__title {
+  font-size:      11px;
+  font-weight:    600;
+  color:          var(--vq-text-3);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.vq-score-col__num {
+  font-family: var(--vq-font-mono);
+  font-size:   18px;
+  font-weight: 700;
+  color:       var(--vq-text);
+  line-height: 1;
+}
+.vq-score-col__num small {
+  font-size:   11px;
+  font-weight: 500;
+  color:       var(--vq-text-3);
+}
+
+.vq-score-col__analysis {
+  font-size:   12.5px;
+  color:       var(--vq-text-2);
+  line-height: 1.55;
+  margin-top:  8px;
+}
+
+/* component sub-score bars (heuristic breakdown) */
+.vq-comp {
+  display:       grid;
+  grid-template-columns: 58px 1fr 30px;
+  align-items:   center;
+  gap:           8px;
+  margin-top:    5px;
+}
+.vq-comp__lbl {
+  font-size:      10.5px;
+  color:          var(--vq-text-3);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.vq-comp__track {
+  position:      relative;
+  height:        6px;
+  border-radius: 999px;
+  background:    var(--vq-border);
+  overflow:      hidden;
+}
+.vq-comp__track > span {
+  position:      absolute;
+  inset:         0 auto 0 0;
+  height:        100%;
+  background:    var(--vq-accent);
+  border-radius: 999px;
+}
+.vq-comp__val {
+  font-family: var(--vq-font-mono);
+  font-size:   11px;
+  color:       var(--vq-text-2);
+  text-align:  right;
+}
+.vq-comp__na {
+  grid-column: 2 / 4;
+  font-size:   11px;
+  font-style:  italic;
+  color:       var(--vq-text-3);
+}
+.vq-score-col__penalty {
+  font-size:  11px;
+  color:      var(--vq-danger);
+  margin-top: 8px;
+}
+
+/* ============================================================
    Genome viewer — sequence card
    ============================================================ */
 

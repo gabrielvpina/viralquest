@@ -164,6 +164,27 @@ function _makeSequences() {
                   `include canonical replication-associated proteins; domain coverage ` +
                   `is consistent with the expected polyprotein layout.`,
       },
+      heuristic_output: (() => {
+        const hScore = Math.max(0, Math.min(100, score + _randi(-12, 12)));
+        // Every 5th sequence disagrees with the LLM to exercise the ⚠ marker.
+        const hCls = i % 5 === 0
+          ? (cls === 'non-viral' ? 'viral-unknown' : 'non-viral')
+          : cls;
+        const omit = i % 4;   // rotate which component is absent (tests the null branch)
+        return {
+          classification: hCls,
+          vq_score: hScore,
+          analysis: `Rule-based score from weighted BLASTn / BLASTx / HMM evidence; ` +
+                    `${hCls === 'non-viral' ? 'weak' : 'consistent'} viral signal.`,
+          components: {
+            blastn:  omit === 1 ? null : _randi(20, 95),
+            blastx:  omit === 2 ? null : _randi(20, 95),
+            hmm:     omit === 3 ? null : _randi(20, 95),
+            weights: { blastn: 0.4, blastx: 0.4, hmm: 0.2 },
+            penalty: i % 6 === 0 ? 0.7 : 1.0,
+          },
+        };
+      })(),
       is_viral:     cls !== 'non-viral',
       sequence_nt:  _fasta(id, Math.min(seqLen, 600)),  // truncated preview
       blastn_hits:  _blastHits(seqLen, 'blastn', family),

@@ -15,13 +15,18 @@ function vqInitStats(report) {
   if (!el) return;
 
   const esc    = VQ.esc;
-  const meta   = report.meta         || {};
-  const sum    = report.summary      || {};
-  const blast  = report.blast_stats  || {};
-  const hmm    = report.hmm_stats    || {};
-  const llm    = report.llm_stats    || {};
-  const salmon = report.salmon_stats || {};
-  const seqs   = report.sequences    || [];
+  const meta   = report.meta             || {};
+  const sum    = report.summary          || {};
+  const blast  = report.blast_stats      || {};
+  const hmm    = report.hmm_stats        || {};
+  const llm    = report.llm_stats        || {};
+  const heur   = report.heuristic_stats  || {};
+  const salmon = report.salmon_stats     || {};
+  const seqs   = report.sequences        || [];
+
+  // Derived presence flags — computed directly from sequence data so old
+  // report files without the pre-aggregated stats keys still work correctly.
+  const hasBlastn = seqs.some(s => (s.blastn_hits || []).length > 0);
 
   // ── Aggregates ─────────────────────────────────────────────────────────
   const totalSeqs      = sum.total_sequences ?? seqs.length;
@@ -126,7 +131,8 @@ function vqInitStats(report) {
           </div>
         </div>
 
-        <!-- 5. BLASTn — always -->
+        <!-- 5. BLASTn — only when BLASTn was run -->
+        ${hasBlastn ? `
         <div class="vq-chart-card" id="stats-blastn-card" style="min-height:auto">
           <div class="vq-chart-card__head">
             <div class="vq-chart-card__title" id="stats-blastn-title">BLASTn Identity</div>
@@ -138,7 +144,7 @@ function vqInitStats(report) {
           <div class="vq-chart-card__body" style="padding-top:4px">
             <div id="stats-blastn-svg" style="width:100%"></div>
           </div>
-        </div>
+        </div>` : ''}
 
         <!-- 6. Viral Length Distribution — always -->
         <div class="vq-chart-card" id="stats-length-card"
@@ -216,7 +222,26 @@ function vqInitStats(report) {
           </div>
         </div>` : ''}
 
-        <!-- 11. CAP3 Assembly — only when CAP3 was used -->
+        <!-- 11. Heuristic Scoring — only when heuristic has run -->
+        ${heur.present ? `
+        <div class="vq-chart-card" id="stats-heur-card" style="min-height:auto">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Heuristic Scoring</div>
+              <div class="vq-chart-card__sub">rule-based · deterministic</div>
+            </div>
+            <div class="vq-chart-card__big">${heur.avg_score != null ? Number(heur.avg_score).toFixed(1) : '—'}</div>
+          </div>
+          <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start;gap:0">
+            <div id="stats-heur-gauge" style="width:100%;margin-bottom:10px"></div>
+            ${_miniRow('Scored',        fmtNum(heur.scored))}
+            ${_miniRow('Viral known',   fmtNum(heur.viral_known))}
+            ${_miniRow('Viral unknown', fmtNum(heur.viral_unknown))}
+            ${heur.non_viral ? _miniRow('Non-viral', fmtNum(heur.non_viral)) : ''}
+          </div>
+        </div>` : ''}
+
+        <!-- 12. CAP3 Assembly — only when CAP3 was used -->
         ${sum.cap3_used ? `
         <div class="vq-chart-card" id="stats-cap3-card" style="min-height:auto">
           <div class="vq-chart-card__head">
@@ -253,6 +278,9 @@ function vqInitStats(report) {
 
   // Salmon (card only exists in DOM when salmon.present)
   if (salmon.present) _renderSalmonChart(salmon);
+
+  // Heuristic gauge (card only exists when heur.present)
+  if (heur.present) _renderHeuristicGauge(heur);
 
   // Pipeline funnel + length + species + NR classification
   _renderFunnel(blast);
@@ -298,6 +326,7 @@ function vqInitStats(report) {
     renderTax();
     _renderHMMBars(hmm);
     if (salmon.present) _renderSalmonChart(salmon);
+    if (heur.present)   _renderHeuristicGauge(heur);
     _renderFunnel(blast);
     _drawBlast();
     _renderLengthHistogram(seqs);
@@ -1235,6 +1264,112 @@ function _renderNRClassification(sequences) {
     `;
     lgd.appendChild(row);
   });
+}
+
+
+// ────────────────────────────────────────────────────────────────────────
+//  Heuristic score gauge — stacked classification bar + avg score track
+// ────────────────────────────────────────────────────────────────────────
+
+function _renderHeuristicGauge(heur) {
+  const wrap = document.getElementById('stats-heur-gauge');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const total   = heur.scored || 1;
+  const known   = heur.viral_known   || 0;
+  const unknown = heur.viral_unknown || 0;
+  const nonvir  = heur.non_viral     || 0;
+  const avg     = heur.avg_score     ?? 0;
+
+  const W    = Math.max(wrap.clientWidth || 0, 180);
+  const H    = 62;
+  const BAR_Y = 6;
+  const BAR_H = 10;
+
+  // Colour-code the avg-score track
+  const scoreColor = avg >= 70 ? 'var(--vq-success)'
+                   : avg >= 40 ? 'var(--vq-accent)'
+                               : 'var(--vq-warning)';
+
+  const svg = d3.create('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  // ── Top: stacked classification bar ──────────────────────────────────
+  const segments = [
+    { label: 'Viral known',   n: known,   color: 'var(--vq-success)'      },
+    { label: 'Viral unknown', n: unknown, color: 'var(--vq-accent)'       },
+    { label: 'Non-viral',     n: nonvir,  color: 'var(--vq-warning)'      },
+  ].filter(s => s.n > 0);
+
+  let cx = 0;
+  segments.forEach(seg => {
+    const segW = Math.max((seg.n / total) * W, 2);
+    svg.append('rect')
+      .attr('x', cx).attr('y', BAR_Y)
+      .attr('width', segW).attr('height', BAR_H)
+      .attr('fill', seg.color).attr('opacity', 0.85)
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${VQ.esc(seg.label)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Sequences</span><span>${seg.n}</span>
+          <span class="vq-tooltip__key">Share</span>
+          <span>${(seg.n / total * 100).toFixed(1)}%</span>
+        </div>`, evt))
+      .on('mouseleave', VQ.tooltipHide);
+    cx += segW;
+  });
+
+  // Rounded caps on the stacked bar
+  svg.append('rect')
+    .attr('x', 0).attr('y', BAR_Y)
+    .attr('width', W).attr('height', BAR_H)
+    .attr('rx', BAR_H / 2)
+    .attr('fill', 'none')
+    .attr('stroke', 'var(--vq-surface)')
+    .attr('stroke-width', 1.5);
+
+  // ── Bottom: avg score track ───────────────────────────────────────────
+  const TRACK_Y = BAR_Y + BAR_H + 10;
+  const fillW   = Math.max((avg / 100) * W, 3);
+
+  svg.append('text')
+    .attr('x', 0).attr('y', TRACK_Y - 2)
+    .attr('font-size', 9).attr('fill', 'var(--vq-text-3)')
+    .text('avg score');
+
+  // Track background
+  svg.append('rect')
+    .attr('x', 0).attr('y', TRACK_Y + 4)
+    .attr('width', W).attr('height', BAR_H)
+    .attr('rx', BAR_H / 2)
+    .attr('fill', 'var(--vq-bg)');
+
+  // Fill
+  svg.append('rect')
+    .attr('x', 0).attr('y', TRACK_Y + 4)
+    .attr('width', fillW).attr('height', BAR_H)
+    .attr('rx', BAR_H / 2)
+    .attr('fill', scoreColor).attr('opacity', 0.9)
+    .on('mousemove', evt => VQ.tooltipShow(`
+      <div class="vq-tooltip__title">Average heuristic score</div>
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Score</span><span>${avg.toFixed(1)}</span>
+      </div>`, evt))
+    .on('mouseleave', VQ.tooltipHide);
+
+  // End labels
+  svg.append('text')
+    .attr('x', 0).attr('y', TRACK_Y + BAR_H + 14)
+    .attr('font-size', 9).attr('fill', 'var(--vq-text-3)').text('0');
+  svg.append('text')
+    .attr('x', W).attr('y', TRACK_Y + BAR_H + 14)
+    .attr('text-anchor', 'end').attr('font-size', 9)
+    .attr('fill', 'var(--vq-text-3)').text('100');
+
+  wrap.appendChild(svg.node());
 }
 
 
