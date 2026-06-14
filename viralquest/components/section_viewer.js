@@ -21,7 +21,37 @@ const _VW = {
   selected:  new Set(),
   domainMap: {},
   colourIdx: 0,
+  // Multi-select taxonomy filter state (checkbox dropdowns)
+  tax: { family: new Set(), phylum: new Set(), genus: new Set() },
 };
+
+/* Build a checkbox-dropdown filter field (multi-select).
+   Lives inside the retractable filter panel; toggling is handled by the
+   global .vq-menu open/close logic, with stopPropagation inside the panel
+   so checking several boxes doesn't dismiss the dropdown. */
+function _msField(id, label, allLabel, values) {
+  const esc = VQ.esc;
+  const items = values.length
+    ? values.map(v =>
+        `<label class="vq-ms__item">
+           <input type="checkbox" value="${esc(v)}">${esc(v)}
+         </label>`).join('')
+    : '<div class="vq-ms__empty">None available</div>';
+  return `
+    <div class="vq-filter-field">
+      <span class="vq-filter-field__label">${esc(label)}</span>
+      <div class="vq-menu vq-ms" id="${id}">
+        <button class="vq-ms__toggle" data-menu-toggle type="button">
+          <span class="vq-ms__value" data-ms-label data-all-label="${esc(allLabel)}">${esc(allLabel)}</span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        <div class="vq-menu__panel vq-ms__panel" role="menu">${items}</div>
+      </div>
+    </div>`;
+}
 
 const _DOM_COLOURS = [
   'var(--vq-dom-1)','var(--vq-dom-2)','var(--vq-dom-3)','var(--vq-dom-4)',
@@ -37,6 +67,7 @@ function vqInitViewer(sequences) {
 
   _VW.sequences = sequences;
   _VW.filtered  = [...sequences];
+  _VW.tax = { family: new Set(), phylum: new Set(), genus: new Set() };
 
   const phyla    = [...new Set(sequences.map(s => s.taxonomy?.phylum).filter(Boolean))].sort();
   const families = [...new Set(sequences.map(s => s.taxonomy?.family).filter(Boolean))].sort();
@@ -104,102 +135,139 @@ function vqInitViewer(sequences) {
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
         <input class="vq-input" id="viewer-search" type="search"
-               placeholder="Search sequence ID or species…" aria-label="Search sequences">
+               placeholder="Search ID, species, family, genus, phylum…"
+               aria-label="Search sequences">
       </div>
-      <div class="vq-toolbar__filters">
-        <select class="vq-select" id="viewer-phylum" aria-label="Filter by phylum">
-          <option value="">All phyla</option>
-          ${phyla.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
-        </select>
-        <select class="vq-select" id="viewer-family" aria-label="Filter by family">
-          <option value="">All families</option>
-          ${families.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('')}
-        </select>
-        <select class="vq-select" id="viewer-genus" aria-label="Filter by genus">
-          <option value="">All genera</option>
-          ${genera.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}
-        </select>
-        <select class="vq-select" id="viewer-sort" aria-label="Sort sequences">
-          <option value="score-desc">Score: high → low</option>
-          <option value="score-asc">Score: low → high</option>
-          <option value="len-desc">Length: long → short</option>
-          <option value="len-asc">Length: short → long</option>
-          <option value="id-asc">Sequence ID (A→Z)</option>
-        </select>
+      <select class="vq-select" id="viewer-sort" aria-label="Sort sequences">
+        <option value="score-desc">Score: high → low</option>
+        <option value="score-asc">Score: low → high</option>
+        <option value="len-desc">Length: long → short</option>
+        <option value="len-asc">Length: short → long</option>
+        <option value="id-asc">Sequence ID (A→Z)</option>
+      </select>
+      <button class="vq-btn vq-btn--ghost vq-btn--sm" id="viewer-filter-toggle"
+              type="button" aria-expanded="false" aria-controls="viewer-filter-panel">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/>
+          <line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/>
+          <line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="18" r="2"/>
+        </svg>
+        Filters
+        <span class="vq-filter-badge" id="viewer-filter-badge" hidden>0</span>
+      </button>
+    </div>
+
+    <div class="vq-filter-panel" id="viewer-filter-panel" hidden>
+      <div class="vq-filter-panel__grid">
+
+        <div class="vq-filter-field">
+          <span class="vq-filter-field__label">Length (nt)</span>
+          <div class="vq-range">
+            <input class="vq-input vq-input--sm" type="number" id="viewer-len-min"
+                   min="0" step="1" placeholder="min" aria-label="Min sequence length">
+            <span class="vq-filter-sep">–</span>
+            <input class="vq-input vq-input--sm" type="number" id="viewer-len-max"
+                   min="0" step="1" placeholder="max" aria-label="Max sequence length">
+          </div>
+        </div>
+
+        <div class="vq-filter-field vq-filter-field--wide">
+          <span class="vq-filter-field__label">BLAST hits</span>
+          <div class="vq-blast-filter">
+            <span class="vq-filter-sub">Identity&nbsp;%</span>
+            <div class="vq-range">
+              <input class="vq-input vq-input--sm" type="number" id="viewer-ident-min"
+                     min="0" max="100" step="0.1" placeholder="min" aria-label="Min identity %">
+              <span class="vq-filter-sep">–</span>
+              <input class="vq-input vq-input--sm" type="number" id="viewer-ident-max"
+                     min="0" max="100" step="0.1" placeholder="max" aria-label="Max identity %">
+            </div>
+            <span class="vq-filter-sub">Coverage&nbsp;%</span>
+            <div class="vq-range">
+              <input class="vq-input vq-input--sm" type="number" id="viewer-cov-min"
+                     min="0" max="100" step="0.1" placeholder="min" aria-label="Min coverage %">
+              <span class="vq-filter-sep">–</span>
+              <input class="vq-input vq-input--sm" type="number" id="viewer-cov-max"
+                     min="0" max="100" step="0.1" placeholder="max" aria-label="Max coverage %">
+            </div>
+            <label class="vq-filter-check">
+              <input type="checkbox" id="viewer-filter-blastn"> BLASTn
+            </label>
+            <label class="vq-filter-check">
+              <input type="checkbox" id="viewer-filter-blastx"> BLASTx NR
+            </label>
+          </div>
+        </div>
+
+        ${_msField('viewer-ms-family', 'Family', 'All families', families)}
+        ${_msField('viewer-ms-phylum', 'Phylum', 'All phyla',    phyla)}
+        ${_msField('viewer-ms-genus',  'Genus',  'All genera',   genera)}
+
         ${hasHeur ? `
-        <select class="vq-select" id="viewer-heur-score" aria-label="Filter by heuristic VQ score">
-          <option value="">Any heuristic score</option>
-          <option value="80">Heuristic ≥ 80</option>
-          <option value="60">Heuristic ≥ 60</option>
-          <option value="40">Heuristic ≥ 40</option>
-        </select>
-        <select class="vq-select" id="viewer-heur-class" aria-label="Filter by heuristic classification">
-          <option value="">Any heuristic class</option>
-          <option value="viral-known">Viral known</option>
-          <option value="viral-unknown">Viral unknown</option>
-          <option value="non-viral">Non-viral</option>
-        </select>` : ''}
+        <div class="vq-filter-field">
+          <span class="vq-filter-field__label">Heuristic score</span>
+          <div class="vq-range">
+            <input class="vq-input vq-input--sm" type="number" id="viewer-heur-min"
+                   min="0" max="100" step="1" placeholder="min" aria-label="Min heuristic score">
+            <span class="vq-filter-sep">–</span>
+            <input class="vq-input vq-input--sm" type="number" id="viewer-heur-max"
+                   min="0" max="100" step="1" placeholder="max" aria-label="Max heuristic score">
+          </div>
+        </div>` : ''}
+
         ${hasLlm ? `
-        <select class="vq-select" id="viewer-llm-score" aria-label="Filter by LLM VQ score">
-          <option value="">Any LLM score</option>
-          <option value="80">LLM ≥ 80</option>
-          <option value="60">LLM ≥ 60</option>
-          <option value="40">LLM ≥ 40</option>
-        </select>
-        <select class="vq-select" id="viewer-llm-class" aria-label="Filter by LLM classification">
-          <option value="">Any LLM class</option>
-          <option value="viral-known">Viral known</option>
-          <option value="viral-unknown">Viral unknown</option>
-          <option value="non-viral">Non-viral</option>
-        </select>` : ''}
+        <div class="vq-filter-field">
+          <span class="vq-filter-field__label">LLM score</span>
+          <div class="vq-range">
+            <input class="vq-input vq-input--sm" type="number" id="viewer-llm-min"
+                   min="0" max="100" step="1" placeholder="min" aria-label="Min LLM score">
+            <span class="vq-filter-sep">–</span>
+            <input class="vq-input vq-input--sm" type="number" id="viewer-llm-max"
+                   min="0" max="100" step="1" placeholder="max" aria-label="Max LLM score">
+          </div>
+        </div>` : ''}
+
       </div>
-
-      <div class="vq-toolbar__filter-row">
-        <div class="vq-filter-group">
-          <span class="vq-filter-label">BLAST filter</span>
-          <span class="vq-filter-sub">Identity&nbsp;%</span>
-          <input class="vq-input vq-input--sm" type="number" id="viewer-ident-min"
-                 min="0" max="100" step="0.1" placeholder="min" aria-label="Min identity %">
-          <span class="vq-filter-sep">–</span>
-          <input class="vq-input vq-input--sm" type="number" id="viewer-ident-max"
-                 min="0" max="100" step="0.1" placeholder="max" aria-label="Max identity %">
-          <span class="vq-filter-sub">Coverage&nbsp;%</span>
-          <input class="vq-input vq-input--sm" type="number" id="viewer-cov-min"
-                 min="0" max="100" step="0.1" placeholder="min" aria-label="Min coverage %">
-          <span class="vq-filter-sep">–</span>
-          <input class="vq-input vq-input--sm" type="number" id="viewer-cov-max"
-                 min="0" max="100" step="0.1" placeholder="max" aria-label="Max coverage %">
-          <label class="vq-filter-check">
-            <input type="checkbox" id="viewer-filter-blastn"> BLASTn
-          </label>
-          <label class="vq-filter-check">
-            <input type="checkbox" id="viewer-filter-blastx"> BLASTx NR
-          </label>
-        </div>
-
-        <div class="vq-filter-divider"></div>
-
-        <div class="vq-filter-group">
-          <span class="vq-filter-label">Length (nt)</span>
-          <input class="vq-input vq-input--sm" type="number" id="viewer-len-min"
-                 min="0" step="1" placeholder="min" aria-label="Min sequence length">
-          <span class="vq-filter-sep">–</span>
-          <input class="vq-input vq-input--sm" type="number" id="viewer-len-max"
-                 min="0" step="1" placeholder="max" aria-label="Max sequence length">
-        </div>
+      <div class="vq-filter-panel__foot">
+        <button class="vq-btn vq-btn--ghost vq-btn--sm" id="viewer-filter-clear" type="button">
+          Clear filters
+        </button>
       </div>
     </div>
 
     <div id="viewer-list"></div>
   `;
 
-  ['viewer-search','viewer-phylum','viewer-family','viewer-genus','viewer-sort',
-   'viewer-heur-score','viewer-heur-class','viewer-llm-score','viewer-llm-class',
+  ['viewer-search','viewer-sort',
    'viewer-ident-min','viewer-ident-max','viewer-cov-min','viewer-cov-max',
-   'viewer-len-min','viewer-len-max']
+   'viewer-len-min','viewer-len-max',
+   'viewer-heur-min','viewer-heur-max','viewer-llm-min','viewer-llm-max']
     .forEach(id => document.getElementById(id)?.addEventListener('input', _applyFilters));
   ['viewer-filter-blastn','viewer-filter-blastx']
     .forEach(id => document.getElementById(id)?.addEventListener('change', _applyFilters));
+
+  _wireMultiSelect('viewer-ms-family', _VW.tax.family);
+  _wireMultiSelect('viewer-ms-phylum', _VW.tax.phylum);
+  _wireMultiSelect('viewer-ms-genus',  _VW.tax.genus);
+
+  // Retractable filter panel
+  const filterToggle = document.getElementById('viewer-filter-toggle');
+  const filterPanel  = document.getElementById('viewer-filter-panel');
+  filterToggle?.addEventListener('click', () => {
+    const willOpen = filterPanel.hidden;
+    filterPanel.hidden = !willOpen;
+    filterToggle.setAttribute('aria-expanded', String(willOpen));
+    filterToggle.classList.toggle('active', willOpen);
+  });
+  document.getElementById('viewer-filter-clear')?.addEventListener('click', () => {
+    filterPanel.querySelectorAll('input[type="number"]').forEach(i => { i.value = ''; });
+    filterPanel.querySelectorAll('input[type="checkbox"]').forEach(c => { c.checked = false; });
+    Object.values(_VW.tax).forEach(set => set.clear());
+    filterPanel.querySelectorAll('[data-ms-label]').forEach(l => { l.textContent = l.dataset.allLabel; });
+    filterPanel.querySelectorAll('.vq-ms').forEach(m => m.classList.remove('vq-ms--active'));
+    _applyFilters();
+  });
 
   document.getElementById('viewer-select-all')?.addEventListener('click', () => {
     _VW.filtered.forEach(s => _VW.selected.add(s.id));
@@ -356,15 +424,70 @@ function _hitPassesBlastFilter(hit, identMin, identMax, covMin, covMax) {
   return true;
 }
 
+/* Read a numeric filter input; '' / absent → null (i.e. unbounded). */
+function _numVal(id) {
+  const v = document.getElementById(id)?.value;
+  return v != null && v !== '' ? parseFloat(v) : null;
+}
+
+/* Wire a checkbox-dropdown filter to its backing Set. */
+function _wireMultiSelect(rootId, set) {
+  const root = document.getElementById(rootId);
+  if (!root) return;
+  const toggle = root.querySelector('[data-menu-toggle]');
+  const label  = root.querySelector('[data-ms-label]');
+  toggle?.addEventListener('click', e => {
+    e.stopPropagation();
+    document.querySelectorAll('.vq-menu.open').forEach(m => { if (m !== root) m.classList.remove('open'); });
+    root.classList.toggle('open');
+  });
+  // Keep the dropdown open while ticking several boxes (the global document
+  // click handler closes any open .vq-menu).
+  root.querySelector('.vq-ms__panel')?.addEventListener('click', e => e.stopPropagation());
+  root.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) set.add(cb.value); else set.delete(cb.value);
+      const n = set.size;
+      label.textContent = n === 0 ? label.dataset.allLabel
+                        : n === 1 ? [...set][0]
+                        : `${n} selected`;
+      root.classList.toggle('vq-ms--active', n > 0);
+      _applyFilters();
+    });
+  });
+}
+
+/* Recompute the count badge on the Filters toggle. With the panel collapsed
+   this is the only cue that filters are silently narrowing the results. */
+function _updateFilterBadge() {
+  const badge = document.getElementById('viewer-filter-badge');
+  if (!badge) return;
+  const has = id => { const v = document.getElementById(id)?.value; return v != null && v !== ''; };
+  const chk = id => document.getElementById(id)?.checked ?? false;
+  let n = 0;
+  if (has('viewer-len-min')  || has('viewer-len-max'))  n++;
+  // Mirror _applyFilters: BLAST only filters when a source is checked AND a range is set.
+  const blastRange = has('viewer-ident-min') || has('viewer-ident-max') ||
+                     has('viewer-cov-min')   || has('viewer-cov-max');
+  if ((chk('viewer-filter-blastn') || chk('viewer-filter-blastx')) && blastRange) n++;
+  if (_VW.tax.family.size) n++;
+  if (_VW.tax.phylum.size) n++;
+  if (_VW.tax.genus.size)  n++;
+  if (has('viewer-heur-min') || has('viewer-heur-max')) n++;
+  if (has('viewer-llm-min')  || has('viewer-llm-max'))  n++;
+  badge.textContent = String(n);
+  badge.hidden = n === 0;
+}
+
 function _applyFilters() {
-  const q        = document.getElementById('viewer-search')?.value.toLowerCase() || '';
-  const phylum   = document.getElementById('viewer-phylum')?.value || '';
-  const family   = document.getElementById('viewer-family')?.value || '';
-  const genus    = document.getElementById('viewer-genus')?.value  || '';
-  const heurCls   = document.getElementById('viewer-heur-class')?.value || '';
-  const heurScore = parseInt(document.getElementById('viewer-heur-score')?.value || '0', 10);
-  const llmCls    = document.getElementById('viewer-llm-class')?.value || '';
-  const llmScore  = parseInt(document.getElementById('viewer-llm-score')?.value || '0', 10);
+  const q       = document.getElementById('viewer-search')?.value.toLowerCase() || '';
+  const famSet  = _VW.tax.family;
+  const phySet  = _VW.tax.phylum;
+  const genSet  = _VW.tax.genus;
+  const heurMin = _numVal('viewer-heur-min');
+  const heurMax = _numVal('viewer-heur-max');
+  const llmMin  = _numVal('viewer-llm-min');
+  const llmMax  = _numVal('viewer-llm-max');
 
   const identMinRaw = document.getElementById('viewer-ident-min')?.value;
   const identMaxRaw = document.getElementById('viewer-ident-max')?.value;
@@ -385,15 +508,28 @@ function _applyFilters() {
   const lenMax = lenMaxRaw !== '' ? parseInt(lenMaxRaw, 10) : null;
 
   _VW.filtered = _VW.sequences.filter(s => {
-    if (q && !s.id.toLowerCase().includes(q) &&
-        !(s.taxonomy?.species || '').toLowerCase().includes(q)) return false;
-    if (phylum && s.taxonomy?.phylum !== phylum) return false;
-    if (family && s.taxonomy?.family !== family) return false;
-    if (genus  && s.taxonomy?.genus  !== genus)  return false;
-    if (heurCls   && s.heuristic_output?.classification !== heurCls) return false;
-    if (heurScore && (s.heuristic_output?.vq_score ?? 0) < heurScore) return false;
-    if (llmCls    && s.llm_output?.classification !== llmCls) return false;
-    if (llmScore  && (s.llm_output?.vq_score ?? 0) < llmScore) return false;
+    const t = s.taxonomy || {};
+    if (q) {
+      const hay = [s.id, t.species, t.family, t.genus, t.phylum, t.order]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (phySet.size && !phySet.has(t.phylum)) return false;
+    if (famSet.size && !famSet.has(t.family)) return false;
+    if (genSet.size && !genSet.has(t.genus))  return false;
+    // Score ranges: a bound is set but the score is absent → exclude.
+    if (heurMin !== null || heurMax !== null) {
+      const hs = s.heuristic_output?.vq_score;
+      if (hs == null) return false;
+      if (heurMin !== null && hs < heurMin) return false;
+      if (heurMax !== null && hs > heurMax) return false;
+    }
+    if (llmMin !== null || llmMax !== null) {
+      const ls = s.llm_output?.vq_score;
+      if (ls == null) return false;
+      if (llmMin !== null && ls < llmMin) return false;
+      if (llmMax !== null && ls > llmMax) return false;
+    }
     if (lenMin !== null && (s.length ?? 0) < lenMin) return false;
     if (lenMax !== null && (s.length ?? 0) > lenMax) return false;
     if (hasBlastFilter) {
@@ -413,6 +549,7 @@ function _applyFilters() {
   if (countEl) countEl.textContent =
     `${_VW.filtered.length} of ${_VW.sequences.length} sequence${_VW.sequences.length !== 1 ? 's' : ''}`;
 
+  _updateFilterBadge();
   _sortFiltered();
   _renderList();
 }

@@ -696,6 +696,146 @@ body {
 }
 
 /* ============================================================
+   Retractable filter panel
+   ============================================================ */
+
+.vq-filter-badge {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  min-width:       16px;
+  height:          16px;
+  padding:         0 5px;
+  margin-left:     2px;
+  border-radius:   999px;
+  background:      var(--vq-accent);
+  color:           #fff;
+  font-size:       10px;
+  font-weight:     700;
+  line-height:     1;
+}
+.vq-filter-badge[hidden] { display: none; }
+
+.vq-filter-panel {
+  margin:        0 0 var(--vq-space-4);
+  padding:       var(--vq-space-4);
+  border:        1px solid var(--vq-border);
+  border-radius: var(--vq-radius);
+  background:    var(--vq-surface-2);
+}
+.vq-filter-panel[hidden] { display: none; }
+
+.vq-filter-panel__grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap:                   var(--vq-space-3) var(--vq-space-4);
+  align-items:           start;
+}
+
+.vq-filter-panel__foot {
+  display:         flex;
+  justify-content: flex-end;
+  margin-top:      var(--vq-space-3);
+  padding-top:     var(--vq-space-3);
+  border-top:      1px solid var(--vq-border);
+}
+
+.vq-filter-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            6px;
+  min-width:      0;
+}
+.vq-filter-field--wide { grid-column: 1 / -1; }
+
+.vq-filter-field__label {
+  font-size:      var(--vq-text-xs);
+  font-weight:    600;
+  color:          var(--vq-text-3);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.vq-range {
+  display:     flex;
+  align-items: center;
+  gap:         var(--vq-space-2);
+}
+.vq-range .vq-input--sm { width: 76px; }
+
+.vq-blast-filter {
+  display:     flex;
+  align-items: center;
+  flex-wrap:   wrap;
+  gap:         var(--vq-space-2) var(--vq-space-3);
+}
+
+/* ── Multi-select checkbox dropdown ─────────────────────────── */
+
+.vq-ms { display: block; width: 100%; }
+
+.vq-ms__toggle {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             8px;
+  width:           100%;
+  padding:         7px 12px;
+  border:          1px solid var(--vq-border);
+  border-radius:   var(--vq-radius-sm);
+  background:      var(--vq-surface);
+  font:            inherit;
+  font-size:       var(--vq-text-sm);
+  color:           var(--vq-text);
+  cursor:          pointer;
+  transition:      border-color var(--vq-dur) var(--vq-ease);
+}
+.vq-ms__toggle:hover            { border-color: var(--vq-border-dark); }
+.vq-ms.open    .vq-ms__toggle,
+.vq-ms--active .vq-ms__toggle   { border-color: var(--vq-accent); }
+.vq-ms__toggle svg              { flex-shrink: 0; color: var(--vq-text-3); }
+
+.vq-ms__value {
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+}
+.vq-ms--active .vq-ms__value { color: var(--vq-accent-dark); font-weight: 500; }
+
+.vq-ms__panel {
+  left:       0;
+  right:      0;
+  min-width:  0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.vq-ms__item {
+  display:       flex;
+  align-items:   center;
+  gap:           8px;
+  padding:       6px 10px;
+  border-radius: 4px;
+  font-size:     var(--vq-text-sm);
+  color:         var(--vq-text-2);
+  cursor:        pointer;
+  white-space:   nowrap;
+}
+.vq-ms__item:hover { background: var(--vq-surface-2); }
+.vq-ms__item input {
+  accent-color: var(--vq-accent);
+  width:        14px;
+  height:       14px;
+  cursor:       pointer;
+}
+
+.vq-ms__empty {
+  padding:   8px 10px;
+  font-size: var(--vq-text-xs);
+  color:     var(--vq-text-3);
+}
+
+/* ============================================================
    Toggle
    ============================================================ */
 
