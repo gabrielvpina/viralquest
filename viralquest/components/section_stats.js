@@ -1304,10 +1304,22 @@ function _renderHeuristicGauge(heur) {
     { label: 'Non-viral',     n: nonvir,  color: 'var(--vq-warning)'      },
   ].filter(s => s.n > 0);
 
+  // Clip segments to a rounded rect so the stacked fill gets rounded caps
+  // without square corners poking out behind an overlay stroke.
+  const clipId = `vq-heur-bar-clip-${Math.random().toString(36).slice(2)}`;
+  svg.append('defs').append('clipPath')
+    .attr('id', clipId)
+    .append('rect')
+      .attr('x', 0).attr('y', BAR_Y)
+      .attr('width', W).attr('height', BAR_H)
+      .attr('rx', BAR_H / 2);
+
+  const barG = svg.append('g').attr('clip-path', `url(#${clipId})`);
+
   let cx = 0;
   segments.forEach(seg => {
     const segW = Math.max((seg.n / total) * W, 2);
-    svg.append('rect')
+    barG.append('rect')
       .attr('x', cx).attr('y', BAR_Y)
       .attr('width', segW).attr('height', BAR_H)
       .attr('fill', seg.color).attr('opacity', 0.85)
@@ -1321,15 +1333,6 @@ function _renderHeuristicGauge(heur) {
       .on('mouseleave', VQ.tooltipHide);
     cx += segW;
   });
-
-  // Rounded caps on the stacked bar
-  svg.append('rect')
-    .attr('x', 0).attr('y', BAR_Y)
-    .attr('width', W).attr('height', BAR_H)
-    .attr('rx', BAR_H / 2)
-    .attr('fill', 'none')
-    .attr('stroke', 'var(--vq-surface)')
-    .attr('stroke-width', 1.5);
 
   // ── Bottom: avg score track ───────────────────────────────────────────
   const TRACK_Y = BAR_Y + BAR_H + 10;
