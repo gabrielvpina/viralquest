@@ -116,6 +116,7 @@ class ReportExporter:
         output_path:   str | Path | None        = None,
         version:       str                      = "unknown",
         salmon_report: SalmonQuantReport | None = None,
+        cap3:          dict | None              = None,
     ) -> dict:
         """
         Build the report dictionary, optionally write it to *output_path*,
@@ -129,6 +130,8 @@ class ReportExporter:
         output_path   : if given, the report is written as indented JSON here
         version       : viralquest version string embedded in meta
         salmon_report : if given, a ``salmon_quant`` key is added to the JSON
+        cap3          : CAP3 assembly stats (``used``/``contigs``/``singlets``)
+                        when --cap3 ran; None otherwise
         """
         confirmed = select_confirmed_sequences(nuc_seqs, force=self.force)
         if self.force:
@@ -156,7 +159,7 @@ class ReportExporter:
 
         report = {
             "meta":           self._build_meta(input_fasta, version),
-            "pipeline_stats": self._build_pipeline_stats(nuc_seqs, confirmed, confirmed_clusters),
+            "pipeline_stats": self._build_pipeline_stats(nuc_seqs, confirmed, confirmed_clusters, cap3),
             "sequences":      [self._seq_to_dict(s) for s in confirmed],
             "clusters":       [self._cluster_to_dict(c) for c in confirmed_clusters],
         }
@@ -252,6 +255,7 @@ class ReportExporter:
         all_seqs:  list,
         confirmed: list,
         clusters:  list,
+        cap3:      dict | None = None,
     ) -> dict:
         """
         Aggregate counts from the full (pre-filter) sequence set so the HTML
@@ -285,7 +289,7 @@ class ReportExporter:
         heur = [s for s in confirmed if s.heuristic_output]
         heur_scores = [s.heuristic_output.vq_score for s in heur]
 
-        return {
+        stats: dict = {
             "blast": {
                 "refseq_unique_seqs": refseq_seqs,
                 "nr_unique_seqs":     nr_seqs,
@@ -321,6 +325,12 @@ class ReportExporter:
             },
             "clusters": len(clusters),
         }
+
+        # CAP3 — only present when the optional --cap3 assembly step ran.
+        if cap3:
+            stats["cap3"] = cap3
+
+        return stats
 
     @staticmethod
     def _taxonomy_to_dict(tax: Taxonomy) -> dict:

@@ -68,12 +68,15 @@ def _enrich_report(report: dict) -> dict:
 def _build_summary(seqs: list[dict], clusters: list[dict], ps: dict) -> dict:
     blast = ps.get("blast") or {}
     hmm   = ps.get("hmm")   or {}
+    cap3  = ps.get("cap3")  or {}   # present only when --cap3 ran
     return {
         "total_sequences": blast.get("total_input",    len(seqs)),
         "confirmed_viral": blast.get("total_confirmed", sum(1 for s in seqs if s.get("is_viral"))),
         "total_orfs":      hmm.get("total_orfs",       sum(len(s.get("orfs") or []) for s in seqs)),
         "total_clusters":  ps.get("clusters",          len(clusters)),
-        "cap3_used":       False,
+        "cap3_used":       bool(cap3.get("used")),
+        "cap3_contigs":    cap3.get("contigs"),
+        "cap3_singlets":   cap3.get("singlets"),
     }
 
 

@@ -529,11 +529,17 @@ def _run_pipeline(args):
     fp.read_input_file()
     input_fasta = fp.input_fasta
 
+    cap3_info = None   # populated only when --cap3 is used; drives the report's CAP3 card
     if args.cap3:
         cap3_res   = Cap3Runner(args.input, outdir=str(outdir / "cap3")).cap3_runner()
         contigs_p  = FastaParser(str(cap3_res.contigs));  contigs_p.read_input_file()
         singlets_p = FastaParser(str(cap3_res.singlets)); singlets_p.read_input_file()
         seqs = contigs_p.sequences + singlets_p.sequences
+        cap3_info = {
+            "used":     True,
+            "contigs":  len(contigs_p.sequences),
+            "singlets": len(singlets_p.sequences),
+        }
         assembled_fasta = outdir / "cap3" / "assembled.fasta"
         cap3_res.get_combined_fasta(assembled_fasta)
     else:
@@ -740,6 +746,7 @@ def _run_pipeline(args):
         output_path=json_path,
         version=__version__,
         salmon_report=salmon_report,
+        cap3=cap3_info,
     )
     yield from _tick(t)
 
