@@ -55,12 +55,13 @@ def _enrich_report(report: dict) -> dict:
     clusters = report.get("clusters", [])
     ps       = report.get("pipeline_stats") or {}   # pre-computed by exporter when available
 
-    report["_taxonomy_tree"] = _build_taxonomy_tree(seqs)
-    report["summary"]        = _build_summary(seqs, clusters, ps)
-    report["blast_stats"]    = _build_blast_stats(seqs, ps)
-    report["hmm_stats"]      = _build_hmm_stats(seqs, ps)
-    report["llm_stats"]      = _build_llm_stats(seqs, ps)
-    report["salmon_stats"]   = _build_salmon_stats(report.get("salmon_quant"))
+    report["_taxonomy_tree"]  = _build_taxonomy_tree(seqs)
+    report["summary"]         = _build_summary(seqs, clusters, ps)
+    report["blast_stats"]     = _build_blast_stats(seqs, ps)
+    report["hmm_stats"]       = _build_hmm_stats(seqs, ps)
+    report["llm_stats"]       = _build_llm_stats(seqs, ps)
+    report["heuristic_stats"] = _build_heuristic_stats(seqs, ps)
+    report["salmon_stats"]    = _build_salmon_stats(report.get("salmon_quant"))
     return report
 
 
@@ -133,6 +134,24 @@ def _build_llm_stats(seqs: list[dict], ps: dict) -> dict:
         "viral_known":   sum(1 for s in scored if s["llm_output"].get("classification") == "viral-known"),
         "viral_unknown": sum(1 for s in scored if s["llm_output"].get("classification") == "viral-unknown"),
         "api_error":     sum(1 for s in scored if s["llm_output"].get("classification") == "api-error"),
+        "avg_score":     round(sum(scores) / len(scores), 1) if scores else None,
+    }
+
+
+def _build_heuristic_stats(seqs: list[dict], ps: dict) -> dict:
+    heur = ps.get("heuristic") or {}
+    if heur and heur.get("present") is not None:
+        return heur
+    scored = [s for s in seqs if s.get("heuristic_output")]
+    if not scored:
+        return {"present": False}
+    scores = [s["heuristic_output"]["vq_score"] for s in scored]
+    return {
+        "present":       True,
+        "scored":        len(scored),
+        "viral_known":   sum(1 for s in scored if s["heuristic_output"].get("classification") == "viral-known"),
+        "viral_unknown": sum(1 for s in scored if s["heuristic_output"].get("classification") == "viral-unknown"),
+        "non_viral":     sum(1 for s in scored if s["heuristic_output"].get("classification") == "non-viral"),
         "avg_score":     round(sum(scores) / len(scores), 1) if scores else None,
     }
 

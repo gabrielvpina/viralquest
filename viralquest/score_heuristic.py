@@ -15,16 +15,27 @@ Three components, each on a 0-100 scale, combined by a weighted average:
     blastx 30%   — best BLASTx hit          (identity x coverage)
     hmm    40%   — FILTER-database HMM evidence (best bit score + hit multiplicity)
 
-Two rules shape the raw average, and they are kept deliberately separate:
+Several rules shape the raw average, and they are kept deliberately separate:
 
   * Renormalisation — a component that is *absent* (e.g. BLASTn was never run)
     is dropped and its weight redistributed over the present components, so the
     score is never artificially capped. Absent is not the same as zero.
 
+  * Low-coverage penalty — applied *inside* each BLAST component. A hit covering
+    only a tiny fraction of the query is damped, so high identity over a short
+    footprint can no longer carry the component.
+
+  * Single-evidence penalty — applied *after* the weighted sum. A score that
+    rests on a single component (e.g. HMM only) is damped, because the other two
+    evidence channels are missing.
+
   * False-positive penalty — applied *after* the weighted sum. If the dominant
     BLASTn hit is to a clearly NON-viral subject at high identity and coverage,
     the whole score is damped multiplicatively. This can override otherwise
     strong BLASTx / HMM signal, flagging a likely host / contaminant contig.
+
+Only the false-positive penalty affects the *classification*; the low-coverage
+and single-evidence penalties lower the numeric score alone.
 
 Because RefSeq BLASTx hits are viral by construction and NR BLASTx hits are
 pre-filtered to viral subjects upstream (diamond.py), the viral-subject check
@@ -58,6 +69,22 @@ WEIGHTS: dict[str, float] = {"blastn": 0.30, "blastx": 0.30, "hmm": 0.40}
 # Within an alignment component, how identity and coverage are mixed.
 ID_FRAC:  float = 0.6
 COV_FRAC: float = 0.4
+
+# Low-coverage penalty (BLASTx and BLASTn). A hit covering less than
+# LOWCOV_COV_MIN of the query is weak evidence no matter how high its identity
+# is — high identity over a tiny footprint says little about the whole contig.
+# When coverage is below the threshold the alignment component is multiplied by
+# LOWCOV_PENALTY. This is baked straight into the component value (so it shows up
+# in components.blastn / components.blastx), NOT in components.penalty.
+LOWCOV_COV_MIN: float = 30.0
+LOWCOV_PENALTY: float = 0.5
+
+# Single-evidence penalty. A score resting on a single present component (e.g.
+# HMM only, with no BLASTn/BLASTx corroboration) is damped by
+# SINGLE_EVIDENCE_PENALTY because the other two evidence channels are missing.
+# Unlike the false-positive penalty this only lowers the score — it does NOT
+# change the classification.
+SINGLE_EVIDENCE_PENALTY: float = 0.7
 
 # Identity ramps (value <= lo scores 0, >= hi scores 100, linear between).
 # BLASTx is protein-level so meaningful identity is lower than for nucleotide.
@@ -117,8 +144,17 @@ def _alignment_component(
     pident: float, qcov: float,
     id_lo: float, id_hi: float, cov_lo: float, cov_hi: float,
 ) -> float:
-    """0-100 from a single alignment's percent identity and query coverage."""
-    return ID_FRAC * _ramp(pident, id_lo, id_hi) + COV_FRAC * _ramp(qcov, cov_lo, cov_hi)
+    """
+    0-100 from a single alignment's percent identity and query coverage.
+
+    A hit whose query coverage is below LOWCOV_COV_MIN is damped by
+    LOWCOV_PENALTY: high identity over a tiny footprint is weak evidence about
+    the whole contig, so identity alone must not carry the component.
+    """
+    comp = ID_FRAC * _ramp(pident, id_lo, id_hi) + COV_FRAC * _ramp(qcov, cov_lo, cov_hi)
+    if qcov < LOWCOV_COV_MIN:
+        comp *= LOWCOV_PENALTY
+    return comp
 
 
 def _looks_viral(title: str) -> bool:
@@ -186,21 +222,28 @@ def _build_analysis(
     seq: NucSequence,
     components: dict[str, float],
     applied: dict[str, float],
-    penalty: float,
+    fp_penalty: float,
+    single_penalty: float,
     fp_hit: BlastnResult | None,
     viral_bn: BlastnResult | None,
     bx: BlastxResult | None,
 ) -> str:
+    def _lowcov_note(qcov: float) -> str:
+        return (f" — low-coverage penalty x{LOWCOV_PENALTY:g}"
+                if qcov < LOWCOV_COV_MIN else "")
+
     parts: list[str] = []
     if "blastx" in components and bx is not None:
         parts.append(
             f"BLASTx best hit {bx.pct_identity:.1f}% identity / "
-            f"{bx.query_coverage:.1f}% coverage (component {components['blastx']:.0f})."
+            f"{bx.query_coverage:.1f}% coverage (component {components['blastx']:.0f}"
+            f"{_lowcov_note(bx.query_coverage)})."
         )
     if "blastn" in components and viral_bn is not None:
         parts.append(
             f"Viral BLASTn best hit {viral_bn.pident:.1f}% identity / "
-            f"{viral_bn.qcovhsp:.0f}% coverage (component {components['blastn']:.0f})."
+            f"{viral_bn.qcovhsp:.0f}% coverage (component {components['blastn']:.0f}"
+            f"{_lowcov_note(viral_bn.qcovhsp)})."
         )
     if "hmm" in components:
         counts = ", ".join(
@@ -211,10 +254,16 @@ def _build_analysis(
         )
     if not parts:
         parts.append("No viral alignment or HMM evidence available.")
-    if penalty < 1.0 and fp_hit is not None:
+    if single_penalty < 1.0 and components:
+        only = next(iter(components)).upper()
         parts.append(
-            f"Penalty x{penalty:g} applied: dominant BLASTn hit is non-viral at "
-            f"{fp_hit.pident:.1f}% identity / {fp_hit.qcovhsp:.0f}% coverage "
+            f"Single-evidence penalty x{single_penalty:g} applied: score rests on the "
+            f"{only} component alone, with no corroboration from the other two channels."
+        )
+    if fp_penalty < 1.0 and fp_hit is not None:
+        parts.append(
+            f"False-positive penalty x{fp_penalty:g} applied: dominant BLASTn hit is "
+            f"non-viral at {fp_hit.pident:.1f}% identity / {fp_hit.qcovhsp:.0f}% coverage "
             f"('{fp_hit.stitle[:80]}') — possible false positive."
         )
     if applied:
@@ -231,10 +280,12 @@ def _classify(
     present: dict[str, float],
     viral_bn: BlastnResult | None,
     bx: BlastxResult | None,
-    penalty: float,
+    fp_penalty: float,
 ) -> str:
-    # A triggered false-positive penalty overrides everything.
-    if penalty < 1.0:
+    # A triggered false-positive penalty overrides everything. Only the
+    # false-positive penalty reaches here — the low-coverage and single-evidence
+    # penalties lower the numeric score but never change the classification.
+    if fp_penalty < 1.0:
         return "non-viral"
     # No viral evidence of any kind.
     if not present:
@@ -298,16 +349,28 @@ class HeuristicScorer:
             applied = {}
             raw_score = 0.0
 
-        # --- false-positive penalty applied AFTER the weighted sum ---
-        penalty = 1.0
-        if (fp_hit is not None and not _looks_viral(fp_hit.stitle)
-                and fp_hit.pident >= FP_ID and fp_hit.qcovhsp >= FP_COV):
-            penalty = NON_VIRAL_PENALTY
+        # --- penalties applied AFTER the weighted sum (multiplicative) ---
+        # (the low-coverage penalty is already baked into the BLAST components.)
+        #
+        # false-positive: dominant BLASTn hit is strongly non-viral → host /
+        # contaminant. This one also forces the "non-viral" classification.
+        fp_penalty = (
+            NON_VIRAL_PENALTY
+            if (fp_hit is not None and not _looks_viral(fp_hit.stitle)
+                and fp_hit.pident >= FP_ID and fp_hit.qcovhsp >= FP_COV)
+            else 1.0
+        )
+        # single-evidence: score rests on a single component (no corroboration).
+        single_penalty = SINGLE_EVIDENCE_PENALTY if len(present) == 1 else 1.0
+        # components.penalty stores the combined post-sum dampers (1.0 = none).
+        penalty = fp_penalty * single_penalty
 
         vq_score = int(max(0, min(100, round(raw_score * penalty))))
-        classification = _classify(present, viral_bn, bx, penalty)
+        classification = _classify(present, viral_bn, bx, fp_penalty)
         blastn_species = _extract_species(viral_bn.stitle) if viral_bn else ""
-        analysis = _build_analysis(seq, present, applied, penalty, fp_hit, viral_bn, bx)
+        analysis = _build_analysis(
+            seq, present, applied, fp_penalty, single_penalty, fp_hit, viral_bn, bx
+        )
 
         return HeuristicScore(
             seq_id=seq.id,
