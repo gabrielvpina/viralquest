@@ -68,7 +68,10 @@ function vqInitQuant(clusters) {
 
     <div class="vq-stats-page">
       <div class="vq-card" style="margin-bottom:var(--vq-space-4)">
-        <div class="vq-card__header"><div class="vq-card__title">Clusters</div></div>
+        <div class="vq-card__header">
+          <div class="vq-card__title">Clusters</div>
+          <button class="vq-btn vq-btn--sm vq-btn--ghost" id="qt-clear" type="button">Clear selection</button>
+        </div>
         <div class="vq-card__body">
           <div class="qt-cluster-list" id="qt-list">${rows}</div>
         </div>
@@ -102,6 +105,11 @@ function vqInitQuant(clusters) {
   document.getElementById('qt-export')?.addEventListener('click', () => {
     const svg = document.querySelector('#qt-plot svg');
     if (svg) VQ.exportPNG(svg, 'quantification.png');
+  });
+  document.getElementById('qt-clear')?.addEventListener('click', () => {
+    _selected.clear();
+    document.querySelectorAll('#qt-list input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+    _renderPlot();
   });
 
   _renderPlot();
@@ -139,14 +147,26 @@ function _renderPlot() {
   const allVals = cols.flatMap(c => c.members.map(m => tx(m.tpm)));
   const maxV = d3.max(allVals) || 1;
 
-  const padL = 56, padR = 20, padT = 14, padB = 70;
-  const colW = Math.max(80, Math.min(200, 560 / cols.length));
-  const W = padL + padR + cols.length * colW;
-  const H = 360;
+  const padL = 54, padR = 18, padT = 14, padB = 70;
+  const H = 320;
+
+  // The plot keeps a standard size: width is bounded (max-width below) so it
+  // shrinks on narrow screens but never balloons when there are few elements.
+  let plotW, colW;
+  if (showBox) {
+    colW  = Math.max(80, Math.min(170, 480 / cols.length));
+    plotW = cols.length * colW;
+  } else {
+    // Single cluster → spread members along their own x slot ("break").
+    plotW = Math.max(150, Math.min(560, cols[0].members.length * 34));
+    colW  = plotW;
+  }
+  const W = padL + padR + plotW;
 
   const svg = d3.select(host).append('svg')
     .attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMidYMin meet')
-    .style('width', '100%').style('height', 'auto').style('display', 'block');
+    .style('width', '100%').style('max-width', W + 'px')
+    .style('height', 'auto').style('display', 'block');
 
   const y = d3.scaleLinear().domain([0, maxV]).nice().range([H - padB, padT]);
 
@@ -164,32 +184,41 @@ function _renderPlot() {
     .attr('transform', `rotate(-90 14 ${H / 2})`)
     .text('TPM' + (_logScale ? ' (log)' : ''));
 
-  cols.forEach((c, i) => {
-    const cx = padL + i * colW + colW / 2;
-    const vals = c.members.map(m => tx(m.tpm));
-
-    if (showBox && vals.length >= 1) _drawBox(svg, cx, colW * 0.5, vals, y);
-
-    // Jittered member points.
-    c.members.forEach((m, j) => {
-      const jitter = vals.length > 1 ? (_hash(m.gid) - 0.5) * colW * 0.4 : 0;
-      svg.append('circle').attr('cx', cx + jitter).attr('cy', y(tx(m.tpm))).attr('r', 4)
-        .attr('fill', 'var(--vq-accent)').attr('opacity', 0.8)
-        .attr('stroke', '#fff').attr('stroke-width', 1)
-        .on('mousemove', e => VQ.tooltipShow(
-          `<b>${VQ.esc(m.sample)}</b> · ${VQ.esc(m.seq_id)}<br>TPM ${m.tpm.toFixed(2)}`, e))
-        .on('mouseleave', () => VQ.tooltipHide());
+  if (showBox) {
+    cols.forEach((c, i) => {
+      const cx = padL + i * colW + colW / 2;
+      const vals = c.members.map(m => tx(m.tpm));
+      if (vals.length >= 1) _drawBox(svg, cx, colW * 0.5, vals, y);
+      c.members.forEach(m => {
+        const jitter = vals.length > 1 ? (_hash(m.gid) - 0.5) * colW * 0.4 : 0;
+        _point(svg, cx + jitter, y(tx(m.tpm)), m);
+      });
+      svg.append('text').attr('x', cx).attr('y', H - padB + 16)
+        .attr('text-anchor', 'middle').attr('font-size', 10)
+        .attr('font-family', 'var(--vq-font-mono)').attr('fill', 'var(--vq-text-2)')
+        .text(c.gid);
+      svg.append('text').attr('x', cx).attr('y', H - padB + 30)
+        .attr('text-anchor', 'middle').attr('class', 'ov-axis-label')
+        .text(`n=${c.members.length}${c.omitted ? ` (+${c.omitted})` : ''}`);
     });
-
-    // x label (cluster id) + member count
-    svg.append('text').attr('x', cx).attr('y', H - padB + 16)
+  } else {
+    // Single cluster: one x position per member so points never overlap.
+    const c = cols[0];
+    const xb = d3.scalePoint().domain(c.members.map((_, j) => j))
+      .range([padL, W - padR]).padding(0.7);
+    c.members.forEach((m, j) => {
+      const px = xb(j);
+      _point(svg, px, y(tx(m.tpm)), m);
+      svg.append('text').attr('x', px).attr('y', H - padB + 14)
+        .attr('text-anchor', 'end').attr('class', 'ov-axis-label')
+        .attr('transform', `rotate(-40 ${px} ${H - padB + 14})`)
+        .text(_trunc(m.sample, 12));
+    });
+    svg.append('text').attr('x', (padL + W - padR) / 2).attr('y', H - 8)
       .attr('text-anchor', 'middle').attr('font-size', 10)
       .attr('font-family', 'var(--vq-font-mono)').attr('fill', 'var(--vq-text-2)')
-      .text(c.gid);
-    svg.append('text').attr('x', cx).attr('y', H - padB + 30)
-      .attr('text-anchor', 'middle').attr('class', 'ov-axis-label')
-      .text(`n=${c.members.length}${c.omitted ? ` (+${c.omitted})` : ''}`);
-  });
+      .text(`${c.gid} · n=${c.members.length}${c.omitted ? ` (+${c.omitted})` : ''}`);
+  }
 }
 
 function _drawBox(svg, cx, boxW, vals, y) {
@@ -209,6 +238,20 @@ function _drawBox(svg, cx, boxW, vals, y) {
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+
+function _point(svg, cx, cy, m) {
+  svg.append('circle').attr('cx', cx).attr('cy', cy).attr('r', 4)
+    .attr('fill', 'var(--vq-accent)').attr('opacity', 0.8)
+    .attr('stroke', '#fff').attr('stroke-width', 1)
+    .on('mousemove', e => VQ.tooltipShow(
+      `<b>${VQ.esc(m.sample)}</b> · ${VQ.esc(m.seq_id)}<br>TPM ${m.tpm.toFixed(2)}`, e))
+    .on('mouseleave', () => VQ.tooltipHide());
+}
+
+function _trunc(s, n) {
+  s = String(s ?? '');
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
 
 function _exportBtn(id) {
   return `<button class="vq-btn vq-btn--sm vq-btn--ghost" id="${id}" type="button">Export PNG</button>`;

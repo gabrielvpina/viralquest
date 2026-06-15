@@ -1952,6 +1952,20 @@ body {
 .clu-divergent    { margin: 6px 0 0; padding-left: 18px; }
 .clu-divergent li { margin: 2px 0; }
 
+/* Ego-network controls (radio direction + focus dropdown) */
+.clu-net-controls { display: flex; flex-wrap: wrap; align-items: center;
+                    gap: var(--vq-space-3, 12px); margin-bottom: var(--vq-space-3, 12px); }
+.clu-mode  { display: inline-flex; gap: var(--vq-space-3, 12px);
+             font-size: var(--vq-text-sm); color: var(--vq-text-2); }
+.clu-radio { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.clu-radio input { accent-color: var(--vq-accent); cursor: pointer; margin: 0; }
+.clu-select { font: inherit; font-size: var(--vq-text-sm); padding: 4px 10px;
+              border: 1px solid var(--vq-border); border-radius: var(--vq-radius-sm);
+              background: var(--vq-surface); color: var(--vq-text-1);
+              max-width: 360px; cursor: pointer; }
+.clu-select:disabled { opacity: .55; cursor: not-allowed; }
+.clu-graph { min-height: 120px; }
+
 /* ════════════════════════════════════════════════════════════════════
    viralquest-report — Sequence Viewer (Section 3) sample filter bar
    ════════════════════════════════════════════════════════════════════ */

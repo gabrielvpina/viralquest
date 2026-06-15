@@ -121,10 +121,10 @@ function _chip(label, value, mod, sub) {
     </div>`;
 }
 
-function _card(id, title, sub) {
+function _card(id, title, sub, cls) {
   const esc = VQ.esc;
   return `
-    <div class="vq-chart-card" id="${id}-card" style="min-height:auto">
+    <div class="vq-chart-card${cls ? ' ' + cls : ''}" id="${id}-card" style="min-height:auto">
       <div class="vq-chart-card__head">
         <div>
           <div class="vq-chart-card__title">${esc(title)}</div>
@@ -277,13 +277,21 @@ function _stackedFamilies(host, samples) {
       .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
       .attr('class', 'ov-axis-label').text(_trunc(s.sample, 16));
 
+    // Rounded outer corners (matching the other overview bars) via a per-row
+    // clip; inner segment boundaries stay crisp.
+    const clipId = `ov-fam-clip-${i}`;
+    svg.append('clipPath').attr('id', clipId)
+      .append('rect').attr('x', padL).attr('y', y)
+      .attr('width', (W - padR) - padL).attr('height', rh).attr('rx', 3).attr('ry', 3);
+    const rowG = svg.append('g').attr('clip-path', `url(#${clipId})`);
+
     let acc = 0;
     // Draw segments in the global family order for visual consistency.
     families.forEach(f => {
       const n = (s.families || {})[f];
       if (!n) return;
       const x0 = x(acc), x1 = x(acc + n);
-      svg.append('rect').attr('x', x0).attr('y', y)
+      rowG.append('rect').attr('x', x0).attr('y', y)
         .attr('width', Math.max(0.5, x1 - x0)).attr('height', rh)
         .attr('fill', colorFor(cIdx[f]))
         .on('mousemove', e => VQ.tooltipShow(`<b>${esc(f)}</b><br>${esc(s.sample)}: ${n}`, e))

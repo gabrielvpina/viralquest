@@ -16,7 +16,8 @@ const FLOOR_ID  = 90;   // matches report_clusters.FLOOR_IDENTITY
 const FLOOR_COV = 70;   // matches report_clusters.FLOOR_COVERAGE
 
 let _clusters = [];
-let _state    = { id: FLOOR_ID, cov: FLOOR_COV };
+let _state    = { id: FLOOR_ID, cov: FLOOR_COV, mode: 'cluster', focus: null };
+let _adj      = { clusterToSamples: {}, sampleToClusters: {} };
 
 function vqInitClusters(clusters, samples) {
   const el = document.getElementById('section-clusters');
@@ -39,7 +40,6 @@ function vqInitClusters(clusters, samples) {
           · sequences shared between samples
         </div>
       </div>
-      <div class="vq-section-actions">${_identityLegend()}</div>
     </div>
 
     <div class="vq-card" style="margin-bottom:var(--vq-space-4)">
@@ -66,7 +66,16 @@ function vqInitClusters(clusters, samples) {
         <div class="vq-card__title">Cluster Network</div>
         <div class="vq-card__sub" id="clu-net-sub"></div>
       </div>
-      <div class="vq-card__body"><div id="clu-graph"></div></div>
+      <div class="vq-card__body">
+        <div class="clu-net-controls">
+          <div class="clu-mode" role="radiogroup" aria-label="Network direction">
+            <label class="clu-radio"><input type="radio" name="clu-mode" value="cluster" checked> Cluster → samples</label>
+            <label class="clu-radio"><input type="radio" name="clu-mode" value="sample"> Sample → clusters</label>
+          </div>
+          <select id="clu-focus" class="clu-select" aria-label="Focus"></select>
+        </div>
+        <div id="clu-graph" class="clu-graph"></div>
+      </div>
     </div>
 
     <div id="clu-cards"></div>
@@ -83,6 +92,18 @@ function vqInitClusters(clusters, samples) {
   };
   idIn.addEventListener('input', apply);
   covIn.addEventListener('input', apply);
+
+  el.querySelectorAll('input[name="clu-mode"]').forEach(r =>
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      _state.mode = r.value;
+      _state.focus = null;          // re-default focus for the new direction
+      _refreshNetwork();
+    }));
+  document.getElementById('clu-focus').addEventListener('change', e => {
+    _state.focus = e.target.value;
+    _drawEgo();
+  });
 
   _rerender();
 }
@@ -107,97 +128,183 @@ function _rerender() {
   const readout = document.getElementById('clu-readout');
   if (readout)
     readout.textContent = `${active.length} / ${_clusters.length} cluster(s) shown`;
-  _renderGraph(document.getElementById('clu-graph'), active);
+  _refreshNetwork();
   _renderCards(document.getElementById('clu-cards'), active);
 }
 
-// ── Bipartite network graph ─────────────────────────────────────────────────
+// ── Ego network graph (one focus node + its connections) ────────────────────
 
-function _renderGraph(host, active) {
+function _connCount(name, isCluster) {
+  return isCluster ? (_adj.clusterToSamples[name] || []).length
+                   : (_adj.sampleToClusters[name] || []).length;
+}
+
+// Recompute the cluster↔sample adjacency, repopulate the focus dropdown for the
+// current direction, then (re)draw the ego graph.
+function _refreshNetwork() {
+  const active = _activeClusters();
+  const c2s = {}, s2c = {};
+  active.forEach(({ cluster, members }) => {
+    const samples = [...new Set(members.map(m => m.sample))].sort();
+    c2s[cluster.gid] = samples;
+    samples.forEach(s => { (s2c[s] = s2c[s] || []).push(cluster.gid); });
+  });
+  Object.values(s2c).forEach(a => a.sort());
+  _adj = { clusterToSamples: c2s, sampleToClusters: s2c };
+
+  const sel = document.getElementById('clu-focus');
+  const sub = document.getElementById('clu-net-sub');
+  if (!sel) return;
+
+  const isCluster = _state.mode === 'cluster';
+  const entities = isCluster ? Object.keys(c2s).sort() : Object.keys(s2c).sort();
+
+  if (!entities.length) {
+    sel.innerHTML = '';
+    sel.disabled = true;
+    if (sub) sub.textContent = '';
+    _state.focus = null;
+    _drawEgo();
+    return;
+  }
+  sel.disabled = false;
+
+  // Keep the current focus if it still exists, else default to the busiest node.
+  if (!_state.focus || !entities.includes(_state.focus)) {
+    _state.focus = entities.slice()
+      .sort((a, b) => _connCount(b, isCluster) - _connCount(a, isCluster))[0];
+  }
+
+  sel.innerHTML = entities.map(name => {
+    const n = _connCount(name, isCluster);
+    const unit = isCluster ? 'sample' : 'cluster';
+    const label = `${name} — ${n} ${unit}${n !== 1 ? 's' : ''}`;
+    return `<option value="${VQ.esc(name)}"${name === _state.focus ? ' selected' : ''}>${VQ.esc(label)}</option>`;
+  }).join('');
+
+  if (sub)
+    sub.textContent = isCluster
+      ? `${entities.length} cluster${entities.length !== 1 ? 's' : ''} · pick one to see its samples`
+      : `${entities.length} sample${entities.length !== 1 ? 's' : ''} · pick one to see its clusters`;
+
+  _drawEgo();
+}
+
+// Switch the focus to a clicked neighbour (pivot to the opposite direction).
+function _pivot(name, asType) {
+  _state.mode = asType;
+  _state.focus = name;
+  document.querySelectorAll('input[name="clu-mode"]')
+    .forEach(r => { r.checked = (r.value === asType); });
+  _refreshNetwork();
+}
+
+function _egoNode(g, d) {
+  if (d.type === 'cluster') {
+    g.append('circle').attr('r', d.center ? 9 : 7)
+      .attr('fill', 'var(--vq-accent)').attr('stroke', '#fff').attr('stroke-width', 1.5);
+  } else {
+    const s = d.center ? 12 : 10;
+    g.append('rect').attr('x', -s / 2).attr('y', -s / 2).attr('width', s).attr('height', s)
+      .attr('rx', 2).attr('fill', 'var(--vq-primary)').attr('stroke', '#fff').attr('stroke-width', 1.5);
+  }
+}
+
+function _drawEgo() {
+  const host = document.getElementById('clu-graph');
   if (!host) return;
   host.innerHTML = '';
 
-  if (!active.length) {
-    host.innerHTML = `<div class="vq-empty">No clusters pass the current filters.</div>`;
-    document.getElementById('clu-net-sub').textContent = '';
+  const isCluster = _state.mode === 'cluster';
+  const focus = _state.focus;
+  const neighborType = isCluster ? 'sample' : 'cluster';
+  const neighbors = focus
+    ? (isCluster ? _adj.clusterToSamples[focus] : _adj.sampleToClusters[focus]) || []
+    : [];
+
+  if (!focus || !neighbors.length) {
+    host.innerHTML = `<div class="vq-empty">No connections to display.</div>`;
     return;
   }
 
-  // Build bipartite nodes/links.
-  const nodes = [];
-  const links = [];
-  const sampleNode = {};
-  active.forEach(({ cluster, members }) => {
-    const cNode = { id: 'C:' + cluster.gid, type: 'cluster', label: cluster.gid,
-                    n: new Set(members.map(m => m.sample)).size };
-    nodes.push(cNode);
-    [...new Set(members.map(m => m.sample))].forEach(s => {
-      if (!sampleNode[s]) {
-        sampleNode[s] = { id: 'S:' + s, type: 'sample', label: s };
-        nodes.push(sampleNode[s]);
-      }
-      links.push({ source: cNode.id, target: sampleNode[s].id });
-    });
-  });
+  // Compact canvas; height grows only mildly with the number of neighbours.
+  const W = 640;
+  const H = Math.max(150, Math.min(280, 130 + neighbors.length * 7));
+  const cx = W / 2, cy = H / 2;
+  const rx = W / 2 - 96, ry = H / 2 - 30;
 
-  document.getElementById('clu-net-sub').textContent =
-    `${active.length} cluster${active.length > 1 ? 's' : ''} · ` +
-    `${Object.keys(sampleNode).length} sample${Object.keys(sampleNode).length > 1 ? 's' : ''}`;
-
-  const W = 720, H = Math.max(320, Math.min(640, 120 + nodes.length * 14));
   const svg = d3.select(host).append('svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
     .attr('preserveAspectRatio', 'xMidYMid meet')
     .style('width', '100%').style('height', 'auto').style('display', 'block');
 
-  const link = svg.append('g').attr('stroke', '#cbd5e1').attr('stroke-width', 1.2)
-    .selectAll('line').data(links).join('line');
-
-  const node = svg.append('g').selectAll('g').data(nodes).join('g')
-    .style('cursor', 'pointer')
-    .call(d3.drag()
-      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-      .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
-      .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
-
-  node.each(function (d) {
-    const g = d3.select(this);
-    if (d.type === 'cluster') {
-      g.append('circle').attr('r', 9)
-        .attr('fill', 'var(--vq-accent)').attr('stroke', '#fff').attr('stroke-width', 2);
-    } else {
-      g.append('rect').attr('x', -7).attr('y', -7).attr('width', 14).attr('height', 14)
-        .attr('rx', 3).attr('fill', 'var(--vq-primary)').attr('stroke', '#fff').attr('stroke-width', 2);
-    }
-    g.append('text').attr('x', 0).attr('y', d.type === 'cluster' ? -13 : 19)
-      .attr('text-anchor', 'middle').attr('font-size', 10)
-      .attr('font-family', d.type === 'cluster' ? 'var(--vq-font-mono)' : 'var(--vq-font)')
-      .attr('fill', 'var(--vq-text-2)').text(d.label);
+  const positions = neighbors.map((name, i) => {
+    const a = -Math.PI / 2 + (i / neighbors.length) * 2 * Math.PI;
+    return { name, x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry };
   });
 
-  node.on('mousemove', (e, d) => VQ.tooltipShow(
-      d.type === 'cluster'
-        ? `<b>${VQ.esc(d.label)}</b><br>${d.n} samples`
-        : `<b>${VQ.esc(d.label)}</b><br>sample`, e))
-    .on('mouseleave', () => VQ.tooltipHide())
-    .on('click', (e, d) => {
-      if (d.type === 'cluster') {
-        const card = document.getElementById('clu-card-' + VQ.safeId(d.label));
-        card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        card?.classList.add('vq-seq-card--highlight');
-        setTimeout(() => card?.classList.remove('vq-seq-card--highlight'), 1600);
-      }
-    });
+  // Links (focus → each neighbour); brighten on hover.
+  const linkG = svg.append('g').attr('stroke', '#cbd5e1')
+    .attr('stroke-width', 1).attr('stroke-opacity', 0.3);
+  const lineSel = linkG.selectAll('line').data(positions).join('line')
+    .attr('x1', cx).attr('y1', cy).attr('x2', d => d.x).attr('y2', d => d.y);
 
-  const sim = d3.forceSimulation(nodes)
-    .force('link', d3.forceLink(links).id(d => d.id).distance(70).strength(0.6))
-    .force('charge', d3.forceManyBody().strength(-220))
-    .force('center', d3.forceCenter(W / 2, H / 2))
-    .force('collide', d3.forceCollide(24))
-    .on('tick', () => {
-      link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-      node.attr('transform', d => `translate(${d.x},${d.y})`);
+  // Neighbour nodes.
+  const nb = svg.append('g').selectAll('g').data(positions).join('g')
+    .attr('transform', d => `translate(${d.x},${d.y})`)
+    .style('cursor', 'pointer');
+
+  nb.each(function (d) { _egoNode(d3.select(this), { type: neighborType }); });
+
+  nb.append('text')
+    .attr('text-anchor', d => d.x < cx - 1 ? 'end' : d.x > cx + 1 ? 'start' : 'middle')
+    .attr('x', d => d.x < cx - 1 ? -11 : d.x > cx + 1 ? 11 : 0)
+    .attr('y', d => Math.abs(d.x - cx) <= 1 ? (d.y < cy ? -11 : 17) : 3)
+    .attr('font-size', 9)
+    .attr('font-family', neighborType === 'cluster' ? 'var(--vq-font-mono)' : 'var(--vq-font)')
+    .attr('fill', 'var(--vq-text-2)')
+    .text(d => d.name);
+
+  nb.on('mouseover', function (e, d) {
+      lineSel.attr('stroke', l => l === d ? 'var(--vq-accent)' : '#cbd5e1')
+             .attr('stroke-opacity', l => l === d ? 0.9 : 0.12);
+    })
+    .on('mousemove', (e, d) => VQ.tooltipShow(
+      `<b>${VQ.esc(d.name)}</b><br>${_connCount(d.name, neighborType === 'cluster') } ` +
+      `${neighborType === 'cluster' ? 'sample' : 'cluster'} connection(s)`, e))
+    .on('mouseleave', () => {
+      lineSel.attr('stroke', '#cbd5e1').attr('stroke-opacity', 0.3);
+      VQ.tooltipHide();
+    })
+    .on('click', (e, d) => _pivot(d.name, neighborType));
+
+  // Centre (focus) node + label.
+  const center = svg.append('g').attr('transform', `translate(${cx},${cy})`)
+    .style('cursor', isCluster ? 'pointer' : 'default');
+  _egoNode(center, { type: isCluster ? 'cluster' : 'sample', center: true });
+  const species = isCluster ? (_clusters.find(c => c.gid === focus) || {}).species : null;
+
+  // Cluster code (title); for clusters, the viral species it represents sits
+  // just below it in a smaller italic line.
+  center.append('text').attr('x', 0).attr('y', isCluster ? (species ? -27 : -14) : 19)
+    .attr('text-anchor', 'middle').attr('font-size', 10).attr('font-weight', 600)
+    .attr('font-family', isCluster ? 'var(--vq-font-mono)' : 'var(--vq-font)')
+    .attr('fill', 'var(--vq-text-1)').text(focus);
+  if (species)
+    center.append('text').attr('x', 0).attr('y', -14)
+      .attr('text-anchor', 'middle').attr('font-size', 8.5)
+      .attr('font-style', 'italic').attr('fill', 'var(--vq-text-3)')
+      .text(species.length > 42 ? species.slice(0, 41) + '…' : species);
+
+  center.on('mousemove', e => VQ.tooltipShow(
+      `<b>${VQ.esc(focus)}</b><br>${neighbors.length} ${neighborType}${neighbors.length !== 1 ? 's' : ''}`, e))
+    .on('mouseleave', VQ.tooltipHide)
+    .on('click', () => {
+      if (!isCluster) return;   // only clusters have an alignment card to jump to
+      const cluCard = document.getElementById('clu-card-' + VQ.safeId(focus));
+      cluCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      cluCard?.classList.add('vq-seq-card--highlight');
+      setTimeout(() => cluCard?.classList.remove('vq-seq-card--highlight'), 1600);
     });
 }
 
