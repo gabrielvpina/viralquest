@@ -112,6 +112,15 @@ function vqInitQuant(clusters) {
     _renderPlot();
   });
 
+  // Re-render when the card gains or changes width (e.g. when this tab first
+  // opens, or the window resizes) so the plot always fills the card.
+  let _lastW = 0;
+  const plotHost = document.getElementById('qt-plot');
+  new ResizeObserver(() => {
+    const w = Math.round(plotHost.clientWidth);
+    if (w && w !== _lastW) { _lastW = w; _renderPlot(); }
+  }).observe(plotHost);
+
   _renderPlot();
 }
 
@@ -140,6 +149,7 @@ function _renderPlot() {
     const totalOmit = cols.reduce((a, c) => a + c.omitted, 0);
     sub.textContent = `${chosen.length} cluster${chosen.length > 1 ? 's' : ''} · `
       + (showBox ? 'boxplot' : 'dot plot')
+      + ` · scale: ${_logScale ? 'log₁₀(TPM + 1)' : 'linear TPM'}`
       + (totalOmit ? ` · ${totalOmit} member(s) omitted (no Salmon)` : '');
   }
 
@@ -150,30 +160,27 @@ function _renderPlot() {
   const padL = 54, padR = 18, padT = 14, padB = 70;
   const H = 320;
 
-  // The plot keeps a standard size: width is bounded (max-width below) so it
-  // shrinks on narrow screens but never balloons when there are few elements.
-  let plotW, colW;
-  if (showBox) {
-    colW  = Math.max(80, Math.min(170, 480 / cols.length));
-    plotW = cols.length * colW;
-  } else {
-    // Single cluster → spread members along their own x slot ("break").
-    plotW = Math.max(150, Math.min(560, cols[0].members.length * 34));
-    colW  = plotW;
-  }
-  const W = padL + padR + plotW;
+  // Fill 100% of the card: the viewBox width tracks the container's pixel
+  // width (height fixed), so width:100% renders at exactly that size — no
+  // distortion, no letter-boxing, and it spans the whole card.
+  const W = Math.max(320, Math.round(host.clientWidth) || 900);
+  const plotW = W - padL - padR;
+  const colW  = showBox ? plotW / cols.length : plotW;
 
   const svg = d3.select(host).append('svg')
     .attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMidYMin meet')
-    .style('width', '100%').style('max-width', W + 'px')
-    .style('height', 'auto').style('display', 'block');
+    .style('width', '100%').style('height', 'auto').style('display', 'block');
 
   const y = d3.scaleLinear().domain([0, maxV]).nice().range([H - padB, padT]);
 
   // y axis + grid
   y.ticks(5).forEach(t => {
+    // Inline stroke (not the .ov-grid class) so the gridlines survive PNG/SVG
+    // export, where external stylesheet rules are not carried over.
     svg.append('line').attr('x1', padL).attr('x2', W - padR)
-      .attr('y1', y(t)).attr('y2', y(t)).attr('class', 'ov-grid');
+      .attr('y1', y(t)).attr('y2', y(t))
+      .attr('stroke', 'var(--vq-border)').attr('stroke-width', 1)
+      .attr('shape-rendering', 'crispEdges');
     const lbl = _logScale ? (Math.pow(10, t) - 1) : t;
     svg.append('text').attr('x', padL - 8).attr('y', y(t))
       .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
@@ -182,15 +189,16 @@ function _renderPlot() {
   svg.append('text').attr('x', 14).attr('y', H / 2)
     .attr('text-anchor', 'middle').attr('class', 'ov-axis-label')
     .attr('transform', `rotate(-90 14 ${H / 2})`)
-    .text('TPM' + (_logScale ? ' (log)' : ''));
+    .text(_logScale ? 'log₁₀(TPM + 1)' : 'TPM');
 
   if (showBox) {
     cols.forEach((c, i) => {
       const cx = padL + i * colW + colW / 2;
       const vals = c.members.map(m => tx(m.tpm));
-      if (vals.length >= 1) _drawBox(svg, cx, colW * 0.5, vals, y);
+      const boxW = Math.min(colW * 0.5, 110);
+      if (vals.length >= 1) _drawBox(svg, cx, boxW, vals, y);
       c.members.forEach(m => {
-        const jitter = vals.length > 1 ? (_hash(m.gid) - 0.5) * colW * 0.4 : 0;
+        const jitter = vals.length > 1 ? (_hash(m.gid) - 0.5) * Math.min(colW * 0.4, 80) : 0;
         _point(svg, cx + jitter, y(tx(m.tpm)), m);
       });
       svg.append('text').attr('x', cx).attr('y', H - padB + 16)
