@@ -51,6 +51,7 @@ Documentation = "https://github.com/gabrielvpina/viralquest/blob/main/README.md"
 
 [project.scripts]
 viralquest          = "viralquest.cli:main"
+viralquest-report   = "viralquest.cli_report:main"
 viralquest-setup    = "viralquest.setup_env:setup"
 viralquest-download = "viralquest.setup_env:download"
 
@@ -62,4 +63,8 @@ where = ["."]
 include = ["viralquest*"]
 
 [tool.setuptools.package-data]
-"viralquest" = ["bin/*", "misc/*"]
+"viralquest" = [
+    "bin/*", "misc/*",
+    "components/*", "components/assets/*",
+    "components-report/*", "components-report/assets/*",
+]

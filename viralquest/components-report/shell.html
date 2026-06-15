@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{TITLE}}</title>
+  <link rel="icon" href="{{VQ_FAVICON}}" type="image/png">
+  <style>{{VQ_STYLES}}</style>
+</head>
+<body>
+
+  <!-- ── Navigation ─────────────────────────────────────────── -->
+  <nav class="vq-nav" aria-label="Report sections">
+    <div class="vq-nav__logo">
+      <img src="{{VQ_LOGO}}" alt="ViralQuest">
+    </div>
+
+    <div class="vq-nav__tabs" role="tablist" aria-label="Report sections">
+      <button class="vq-nav__tab vq-nav__tab--about" data-section="about" role="tab"
+              id="tab-about"    aria-controls="section-about"    aria-selected="false" tabindex="-1">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        About
+      </button>
+      <button class="vq-nav__tab active" data-section="overview" role="tab"
+              id="tab-overview" aria-controls="section-overview" aria-selected="true" tabindex="0">Overview</button>
+      <button class="vq-nav__tab" data-section="clusters" role="tab"
+              id="tab-clusters" aria-controls="section-clusters" aria-selected="false" tabindex="-1">General Clusters</button>
+      <button class="vq-nav__tab" data-section="viewer" role="tab"
+              id="tab-viewer" aria-controls="section-viewer" aria-selected="false" tabindex="-1">Sequence Viewer</button>
+      <button class="vq-nav__tab" data-section="quant" role="tab"
+              id="tab-quant" aria-controls="section-quant" aria-selected="false" tabindex="-1">RNA Quantification</button>
+    </div>
+
+    <div class="vq-nav__meta">
+      <span id="nav-version"></span>
+      <span>·</span>
+      <span id="nav-samples"></span>
+    </div>
+  </nav>
+
+  <!-- ── Sections ───────────────────────────────────────────── -->
+  <main class="vq-main">
+    <section class="vq-section"        id="section-about"    role="tabpanel" aria-labelledby="tab-about"    hidden></section>
+    <section class="vq-section active" id="section-overview" role="tabpanel" aria-labelledby="tab-overview"></section>
+    <section class="vq-section"        id="section-clusters" role="tabpanel" aria-labelledby="tab-clusters" hidden></section>
+    <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-labelledby="tab-viewer"   hidden></section>
+    <section class="vq-section"        id="section-quant"    role="tabpanel" aria-labelledby="tab-quant"    hidden></section>
+  </main>
+
+  <!-- ── Shared tooltip ─────────────────────────────────────── -->
+  <div class="vq-tooltip" id="vq-tooltip" role="tooltip" aria-live="polite"></div>
+
+  <!-- ── Back to top ──────────────────────────────────────────── -->
+  <button class="vq-back-top" id="vq-back-top" aria-label="Back to top" title="Back to top">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2.5"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="18 15 12 9 6 15"/>
+    </svg>
+  </button>
+
+  <!-- ── Report data (injected by report_builder.py) ────────── -->
+  <script>const VQ_REPORT = {{VQ_DATA}};</script>
+
+  <!-- ── D3 v7 (inlined) ────────────────────────────────────── -->
+  <script>{{VQ_D3}}</script>
+
+  <!-- ── Component scripts (inlined) ────────────────────────── -->
+  <script>{{VQ_EXPORT}}</script>
+  <script>{{VQ_ABOUT}}</script>
+  <script>{{VQ_OVERVIEW}}</script>
+  <script>{{VQ_CLUSTERS}}</script>
+  <script>{{VQ_VIEWER}}</script>
+  <script>{{VQ_VIEWER_REPORT}}</script>
+  <script>{{VQ_QUANT}}</script>
+
+  <!-- ── Shell controller ───────────────────────────────────── -->
+  <script>
+  (function () {
+    'use strict';
+
+    const tabs     = [...document.querySelectorAll('.vq-nav__tab')];
+    const sections = [...document.querySelectorAll('.vq-section')];
+
+    function activate(tab) {
+      tabs.forEach(t => {
+        const on = t === tab;
+        t.classList.toggle('active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+      });
+      sections.forEach(s => {
+        const target = 'section-' + tab.dataset.section;
+        const on     = s.id === target;
+        s.classList.toggle('active', on);
+        if (on) s.removeAttribute('hidden');
+        else    s.setAttribute('hidden', '');
+      });
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => activate(tab));
+      tab.addEventListener('keydown', e => {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          let j = i;
+          for (let step = 0; step < tabs.length; step++) {
+            j = (j + dir + tabs.length) % tabs.length;
+            if (tabs[j].style.display !== 'none') break;
+          }
+          tabs[j].focus(); activate(tabs[j]);
+        } else if (e.key === 'Home') {
+          e.preventDefault(); tabs[0].focus(); activate(tabs[0]);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          const last = tabs.filter(t => t.style.display !== 'none').pop();
+          last.focus(); activate(last);
+        }
+      });
+    });
+
+    // --- Back to top ------------------------------------------------
+    const backTop = document.getElementById('vq-back-top');
+    let activeSection = 'overview';
+    function updateBackTop() {
+      backTop?.classList.toggle('visible', window.scrollY > 300);
+    }
+    tabs.forEach(tab => tab.addEventListener('click', () => {
+      activeSection = tab.dataset.section; updateBackTop();
+    }));
+    window.addEventListener('scroll', updateBackTop, { passive: true });
+    backTop?.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    // --- Nav meta ---------------------------------------------------
+    const meta = VQ_REPORT.meta || {};
+    const v  = document.getElementById('nav-version');
+    const ns = document.getElementById('nav-samples');
+    if (v)  v.textContent  = 'v' + (meta.viralquest_version || '?');
+    if (ns) ns.textContent = (meta.n_samples || 0) + ' sample' + (meta.n_samples === 1 ? '' : 's');
+
+    // --- Init sections ----------------------------------------------
+    vqInitAbout();
+    vqInitOverview(VQ_REPORT);
+    vqInitClusters(VQ_REPORT.clusters || [], VQ_REPORT.samples || []);
+    vqInitViewerReport(VQ_REPORT.sequences || []);
+    vqInitQuant(VQ_REPORT.clusters || []);
+
+  })();
+  </script>
+
+</body>
+</html>
