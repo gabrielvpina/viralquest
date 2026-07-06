@@ -47,6 +47,7 @@ After create the new env, use `conda activate viralquest` to run the next steps.
 ```bash
 git clone https://github.com/gabrielvpina/viralquest.git
 cd viralquest
+git checkout total-refactor
 pip install -e .
 ```
 
