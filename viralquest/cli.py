@@ -181,7 +181,10 @@ def _build_parser():
         help="Sequencing technology of the reads supplied to --reads. "
              "Required when --reads is used. "
              "Choices: sr (Illumina short reads), ont (Oxford Nanopore), "
-             "pb (PacBio CLR), hifi (PacBio HiFi/CCS).")
+             "pb (PacBio CLR), hifi (PacBio HiFi/CCS). "
+             "NOTE: Salmon quantification runs for short reads (sr) only — its "
+             "short-read mapping is invalid for long reads, so for ont/pb/hifi the "
+             "Salmon step is skipped and only minimap2 read coverage is produced.")
     sal.add_argument("--hk-genes", dest="hk_genes", type=str,
         default=None, metavar="IDS.txt",
         help="Text file with reference housekeeping gene IDs (one per line) for "
@@ -309,7 +312,10 @@ def _show_rich_help() -> None:
         "[bold cyan]--read-type[/]      [dim]sr | ont | pb | hifi[/]\n"
         "  Sequencing technology. Required when --reads is used.\n"
         "  sr = Illumina short reads, ont = Oxford Nanopore,\n"
-        "  pb = PacBio CLR, hifi = PacBio HiFi/CCS.\n\n"
+        "  pb = PacBio CLR, hifi = PacBio HiFi/CCS.\n"
+        "  [yellow]Salmon quantification runs for [bold]sr[/bold] only[/yellow] — its short-read\n"
+        "  mapping is invalid for long reads. With ont/pb/hifi the Salmon\n"
+        "  step is skipped; only minimap2 read coverage is produced.\n\n"
         "[bold cyan]--transcriptome[/]  [dim]HOST.fasta[/]\n"
         "  Host transcriptome FASTA. When provided, runs the [bold]reference pathway[/bold]:\n"
         "  viral + bundled HK + ref-HK + transcriptome as a combined Salmon index.\n"
@@ -468,6 +474,18 @@ def _build_live_display(log_buf: deque, steps: list[str], current: int, progress
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
+# Long-read technologies. Salmon quantifies via short-read selective-alignment
+# mapping (k-mer index + --validateMappings), which is not valid for long,
+# error-prone reads, so the Salmon step is skipped for these. Read coverage
+# (minimap2) still runs — it is long-read aware via per-technology presets.
+_LONG_READ_TYPES = ("ont", "pb", "hifi")
+
+
+def _salmon_enabled(args) -> bool:
+    """Salmon runs only for short reads; long reads use coverage (minimap2) only."""
+    return bool(args.reads) and args.read_type not in _LONG_READ_TYPES
+
+
 def _build_steps(args) -> list[str]:
     steps = [
         f"Parse FASTA{'  +  CAP3' if args.cap3 else ''}",
@@ -485,8 +503,9 @@ def _build_steps(args) -> list[str]:
     steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
     if args.reads:
-        mode = "reference" if args.transcriptome else "de novo"
-        steps.append(f"Salmon quantification  —  {mode}")
+        if _salmon_enabled(args):
+            mode = "reference" if args.transcriptome else "de novo"
+            steps.append(f"Salmon quantification  —  {mode}")
         steps.append("Read coverage profiling")
     steps.append("Heuristic scoring  —  rule-based vq_score")
     if args.model_type:
@@ -666,7 +685,13 @@ def _run_pipeline(args):
 
     # ── 10. Salmon quantification ─────────────────────────────────────────────
     salmon_report = None
-    if args.reads:
+    if args.reads and not _salmon_enabled(args):
+        logger.warning(
+            f"Salmon quantification skipped: --read-type '{args.read_type}' is a long-read "
+            "technology, and Salmon's short-read mapping mode is not valid for long reads. "
+            "Read coverage (minimap2) still runs and is long-read aware."
+        )
+    if _salmon_enabled(args):
         t = time.time()
         from .salmon_quant import SalmonQuantPipeline
         try:
@@ -698,9 +723,12 @@ def _run_pipeline(args):
 
         yield from _tick(t)
 
-        # ── 10b. Read coverage (per-base depth track) ─────────────────────────
-        # Profile exactly the sequences that will appear in the report, so the
-        # coverage set matches the viewer in every mode (--nr-db, no --nr-db, --force).
+    # ── 10b. Read coverage (per-base depth track) ─────────────────────────────
+    # Runs for any --reads input (short or long); minimap2 is long-read aware,
+    # so this is the coverage signal used when Salmon is skipped for long reads.
+    # Profile exactly the sequences that will appear in the report, so the
+    # coverage set matches the viewer in every mode (--nr-db, no --nr-db, --force).
+    if args.reads:
         t = time.time()
         from .coverage import CoveragePipeline
         from .exporter import select_confirmed_sequences

@@ -165,6 +165,7 @@ viralquest \
 | Argument | Description |
 |---|---|
 | `--reads` | FASTQ file(s): one = single-end, two = paired-end |
+| `--read-type` | Read technology, required with `--reads`: `sr` (Illumina), `ont` (Nanopore), `pb` (PacBio CLR), `hifi` (PacBio HiFi). Salmon quantification runs for `sr` only; with `ont`/`pb`/`hifi` the Salmon step is skipped (its short-read mapping is invalid for long reads) and only minimap2 read coverage is produced. |
 | `--transcriptome` | Host transcriptome FASTA; enables reference pathway |
 | `--hk-genes` | Text file of reference housekeeping gene IDs (one per line) for normalization; requires `--transcriptome` |
 
