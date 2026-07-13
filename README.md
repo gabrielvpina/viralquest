@@ -217,6 +217,13 @@ The HTML report is fully self-contained (single file, no external dependencies) 
 - **Taxonomy tree** — D3 radial tree built from phylum → order → family → genus → sequence
 - **Salmon quantification** — viral expression boxplots grouped by cluster, housekeeping gene bar charts per kingdom, host–viral similarity table (EVE detection)
 
+### Screenshots
+
+![General Stats panel](data/screenshots/stats.png)
+
+![Sequence Viewer - With ORFs, HMM Domains, Read Coverage, BLAST results and Scores](data/screenshots/seq.png)
+
+
 ---
 
 ## Salmon quantification
