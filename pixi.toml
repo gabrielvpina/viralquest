@@ -2,7 +2,7 @@
 authors = ["gabrielvpina <gvpina.rodrigues@gmail.com>"]
 channels = ["conda-forge", "bioconda"]
 name = "viralquest"
-platforms = ["linux-64"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
 version = "3.0.0"
 
 [tasks]
@@ -27,12 +27,14 @@ pytest = ">=9.0.3,<10"
 diamond = ">=2.1.24,<3"
 blast   = ">=2.16,<3"
 pyhmmer = ">=0.12.0,<0.13"
-cap3    = ">=10.2011,<11"
 salmon  = ">=1.11.4,<2"
 minimap2 = ">=2.28,<3"
 samtools = ">=1.21,<2"
 rich = ">=15.0.0,<16"
 setproctitle = ">=1.3.7,<2"
+
+[target.linux-64.dependencies]
+cap3 = ">=10.2011,<11"
 
 [pypi-dependencies]
 bio = ">=1.8.1, <2"

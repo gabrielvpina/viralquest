@@ -16,6 +16,8 @@ Default  : loguru writes directly to stderr — full timestamped log stream.
 
 from __future__ import annotations
 
+import platform
+import shutil
 import sys
 import time
 from collections import deque
@@ -413,6 +415,13 @@ def _validate_args(args, console) -> None:
         errors.append("--llm-tokens requires --model-type to be set.")
     if args.nr_db and not Path(args.nr_db).exists():
         errors.append(f"NR database not found: {args.nr_db}")
+    if args.cap3 and platform.system() == "Darwin" and not shutil.which("cap3"):
+        errors.append(
+            "--cap3 is unavailable: CAP3 has no native macOS build on bioconda "
+            "(neither Apple Silicon nor Intel), so it isn't installed by the macOS "
+            "pixi environment. Run without --cap3, "
+            "or install a cap3 binary on PATH yourself."
+        )
     for msg in errors:
         console.print(f"[bold red]ERROR:[/bold red] {msg}")
     if errors:

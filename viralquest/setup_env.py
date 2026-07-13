@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -23,14 +24,18 @@ from pathlib import Path
 
 # Binaries provided by conda/bioconda that pip cannot install.
 # Note: HMM searches use pyhmmer (Python binding) — no hmmer binary needed.
+# CAP3 ships no macOS build on bioconda (neither osx-arm64 nor osx-64), so the
+# optional --cap3 assembly step is Linux-only; it's excluded from the macOS
+# requirement list.
 _REQUIRED_TOOLS: list[tuple[str, str]] = [
     ("diamond",  "diamond   >=2.1.24  (bioconda)"),
     ("blastn",   "blast     >=2.16    (bioconda)"),
     ("salmon",   "salmon    >=1.11.4  (bioconda)"),
-    ("cap3",     "cap3      >=10.2011 (bioconda)"),
     ("minimap2", "minimap2  >=2.28    (bioconda)"),
     ("samtools", "samtools  >=1.21    (bioconda)"),
-]
+] + ([] if platform.system() == "Darwin" else [
+    ("cap3", "cap3      >=10.2011 (bioconda)"),
+])
 
 _PIXI_INSTALL_CMD  = "curl -fsSL https://pixi.sh/install.sh | bash"
 _PIXI_TOML_NAME    = "pixi.toml"
@@ -128,11 +133,15 @@ def setup() -> None:
         pixi_toml = _find_pixi_toml()
         if pixi_toml is None:
             _print_header("Manual installation required")
+            cap3_pin = "" if platform.system() == "Darwin" else "    'cap3>=10.2011'   "
             print(
                 "Could not find pixi.toml. Install the missing tools manually:\n\n"
                 "  conda install -c conda-forge -c bioconda \\\n"
                 "    'diamond>=2.1.24' 'blast>=2.16' 'salmon>=1.11.4' \\\n"
-                "    'cap3>=10.2011'   'minimap2>=2.28' 'samtools>=1.21'\n"
+                f"{cap3_pin}'minimap2>=2.28' 'samtools>=1.21'\n"
+                + ("" if platform.system() != "Darwin" else
+                   "\n  Note: CAP3 has no native macOS build on bioconda,\n"
+                   "  so the optional --cap3 assembly step is unavailable on macOS.\n")
             )
             sys.exit(1)
 
