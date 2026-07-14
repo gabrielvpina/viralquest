@@ -246,15 +246,21 @@ class SequenceQualityPipeline:
     def _revcomp(cls, s: str) -> str:
         return s.translate(_COMPLEMENT)[::-1]
 
+    _MAX_KMER_HITS = 200   # skip ultra-repetitive k-mers (low-complexity noise)
+
     def _dotplot(self, seq: NucSequence) -> DotPlot | None:
         """
         Self-similarity dot plot as extended line segments in bp coordinates.
 
-        The sequence is sampled every ``stride`` bases (so each axis has at most
-        ``_DOTPLOT_MAX_DIM`` anchors).  Forward matches on offset ``d = y - x``
-        become segments along a diagonal (main diagonal ``d = 0`` is the identity
-        line); reverse-complement matches on anti-diagonal ``s = x + y`` mark
-        inverted repeats.  Total segments are capped for a lightweight SVG.
+        A **full** k-mer index over every position is built, then seeded from
+        sampled anchors (every ``stride`` bases, so each axis has at most
+        ``_DOTPLOT_MAX_DIM`` seed points).  Because the index holds all positions,
+        a repeat is detected whatever its offset — sampling only the *seeds*, not
+        the index, avoids missing repeats whose two copies don't share the
+        sampling lattice.  Forward matches on offset ``d = y - x`` become segments
+        along a diagonal (``d = 0`` is the identity line); reverse-complement
+        matches on anti-diagonal ``s = x + y`` mark inverted repeats.  Total
+        segments are capped for a lightweight SVG.
         """
         w = self.dotplot_word
         s = seq.sequence.upper()
@@ -265,20 +271,21 @@ class SequenceQualityPipeline:
         stride  = max(1, L // self._DOTPLOT_MAX_DIM)
         anchors = range(0, L - w + 1, stride)
 
-        # Forward k-mer index over sampled anchors.
+        # Full forward k-mer index — every start position, not just the anchors.
         fwd: dict[str, list[int]] = {}
-        for i in anchors:
+        for i in range(0, L - w + 1):
             fwd.setdefault(s[i:i + w], []).append(i)
 
-        # Forward matches grouped by diagonal offset (upper triangle incl. diagonal).
-        # A unique k-mer yields a single (a, a) pair → the identity line (offset 0).
+        # Direct repeats: from each anchor, all forward copies of its k-mer
+        # (offset d = j - i ≥ 0; d = 0 is the identity diagonal).
         by_offset: dict[int, list[int]] = {}
-        for positions in fwd.values():
-            for a in positions:
-                for b in positions:
-                    if b < a:
-                        continue
-                    by_offset.setdefault(b - a, []).append(a)
+        for i in anchors:
+            hits = fwd.get(s[i:i + w])
+            if not hits or len(hits) > self._MAX_KMER_HITS:
+                continue
+            for j in hits:
+                if j >= i:
+                    by_offset.setdefault(j - i, []).append(i)
 
         segments: list[list[int]] = []
         self._emit_segments(by_offset, w, stride, anti=False, out=segments)
@@ -286,13 +293,12 @@ class SequenceQualityPipeline:
         # Inverted repeats: seq[i:] matches revcomp(seq[j:]) ⇒ anti-diagonal.
         by_sum: dict[int, list[int]] = {}
         for i in anchors:
-            j_list = fwd.get(self._revcomp(s[i:i + w]))
-            if not j_list:
+            hits = fwd.get(self._revcomp(s[i:i + w]))
+            if not hits or len(hits) > self._MAX_KMER_HITS:
                 continue
-            for j in j_list:
-                if j <= i:
-                    continue                 # dedupe symmetric anti-diagonal matches
-                by_sum.setdefault(i + j, []).append(i)
+            for j in hits:
+                if j > i:                    # dedupe symmetric anti-diagonal matches
+                    by_sum.setdefault(i + j, []).append(i)
         self._emit_segments(by_sum, w, stride, anti=True, out=segments)
 
         if not segments:

@@ -10,14 +10,16 @@ per-cycle quality and GC curves for plotting.  The result is a single
 fastp is designed for short reads; for long-read technologies (``ont``/``pb``/
 ``hifi``) adapter trimming is disabled and ``adapter_rate`` is reported as 0.
 
-By default fastp runs in QC-only mode — the filtered reads it writes are kept on
-disk (so the CLI can opt into using them downstream via ``--trim-reads``) but the
-rest of the pipeline still consumes the original reads.
+fastp runs in **QC-only** mode: the filtered reads are discarded (written to
+``os.devnull``) — the goal is to inform the user about read quality, not to trim.
+Only the ``fastp.json`` / ``fastp.html`` QC reports are written to the output
+directory; no cleaned FASTQ is produced.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -51,9 +53,6 @@ class ReadQcPipeline:
         self.threads   = threads
         self.read_type = read_type
         self.fastp_bin = fastp_bin
-        # Cleaned reads written by fastp; populated by run() so the CLI can opt
-        # into feeding them downstream (--trim-reads).
-        self.cleaned_reads: list[Path] = []
 
     # ── public ────────────────────────────────────────────────────────────────
 
@@ -81,7 +80,7 @@ class ReadQcPipeline:
         html_path = outdir / "fastp.html"
 
         try:
-            self._run_fastp(reads, outdir, json_path, html_path)
+            self._run_fastp(reads, json_path, html_path)
             data = json.loads(json_path.read_text(encoding="utf-8"))
             report = self._parse(reads, data)
         except Exception as exc:
@@ -97,7 +96,7 @@ class ReadQcPipeline:
     # ── private ───────────────────────────────────────────────────────────────
 
     def _run_fastp(
-        self, reads: list[str], outdir: Path, json_path: Path, html_path: Path
+        self, reads: list[str], json_path: Path, html_path: Path
     ) -> None:
         mode = "paired" if len(reads) == 2 else "single"
         cmd = [
@@ -109,15 +108,11 @@ class ReadQcPipeline:
         if self.read_type in _LONG_READ_TYPES:
             cmd.append("--disable_adapter_trimming")
 
+        # QC only — discard the filtered reads (we report quality, we don't trim).
         if len(reads) == 2:
-            out1 = outdir / "clean_R1.fastq.gz"
-            out2 = outdir / "clean_R2.fastq.gz"
-            cmd += ["-i", reads[0], "-I", reads[1], "-o", str(out1), "-O", str(out2)]
-            self.cleaned_reads = [out1, out2]
+            cmd += ["-i", reads[0], "-I", reads[1], "-o", os.devnull, "-O", os.devnull]
         else:
-            out1 = outdir / "clean.fastq.gz"
-            cmd += ["-i", reads[0], "-o", str(out1)]
-            self.cleaned_reads = [out1]
+            cmd += ["-i", reads[0], "-o", os.devnull]
 
         logger.info(f"fastp [{mode}-end, {self.threads} threads] → '{json_path.name}' ...")
         proc = subprocess.run(cmd, capture_output=True, text=True)

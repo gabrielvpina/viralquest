@@ -103,7 +103,7 @@ kmer-jellyfish = ">=2.3,<3"
 
 - **Comando:** `fastp --thread N -j fastp.json -h fastp.html -i R1 [-I R2] -o clean… [-O clean…]`. Single/paired escolhidos pelo nº de arquivos (mesma convenção do `CoveragePipeline`).
 - **Long reads** (`ont/pb/hifi`): adiciona `--disable_adapter_trimming` e força `adapter_rate = 0`.
-- **QC-only por padrão:** as reads limpas são escritas em `outdir` e o caminho fica em `self.cleaned_reads` (para o `--trim-reads` da Fase 3 optar por usá-las a jusante); o resto do pipeline continua com as reads originais.
+- **QC-only:** as reads filtradas são **descartadas** (`-o os.devnull`, e `-O` no paired) — o objetivo é informar a qualidade, não trimar. Só os relatórios `fastp.json`/`fastp.html` vão para `outdir/read_qc`; nenhum FASTQ limpo é gerado. O pipeline sempre consome as reads originais.
 - **Parse do JSON:** `reads/bases before/after` (`summary`), `q20/q30_rate`, `gc_content×100`, `read1_mean_length`, `duplication.rate`, `adapter_cutting.adapter_trimmed_reads / reads_before`, e as curvas por-ciclo `read1_after_filtering.quality_curves.mean` e `content_curves.GC`.
 - **`_downsample`:** curvas por-ciclo reduzidas a ≤ 300 pontos (médias de bloco) — evita SVG gigante em long reads.
 - Falha graciosa: fastp ausente, nº de arquivos ≠ 1–2, ou JSON ilegível → `None`.
@@ -115,7 +115,7 @@ kmer-jellyfish = ">=2.3,<3"
 - **dustmasker** (`_dustmask`): `dustmasker -in ref -outfmt interval` → parse de `>seqid` + linhas `a - b` (0-based, inclusivas) → `low_complexity_regions`; `low_complexity_frac` = bases mascaradas / comprimento.
 - **self-BLASTn** (`_self_blast`): uma chamada `blastn -query ref -subject ref -dust yes -evalue 1e-5 -word_size 11 -outfmt "6 qseqid sseqid qstart qend sstart send pident length sstrand"`. Filtra: hits cross-sequência (`qseqid≠sseqid`), a diagonal self-completa (plus + coords idênticas) e duplicatas simétricas (A→B/B→A) via chave de triângulo superior. Coords `minus` normalizadas (`s_lo/s_hi`). → `SelfRepeat` (strand `plus`=direta, `minus`=invertida).
 - **jellyfish** (`_jellyfish`, **por sequência**): `jellyfish count -m K -s 10M -C -o out.jf seq.fa` + `jellyfish histo`. `kmer_repeat_score` = `(total − singletons) / total` (fração de *instâncias* de k-mer que recorrem, multiplicidade > 1); expõe também `kmer_distinct`/`kmer_total`. `K` default = 15.
-- **dot plot SVG nativo** (`_dotplot`, numpy/puro-Python): amostra a sequência a cada `stride = L // 500` bases; índice de k-mers forward (`word` default 12). Matches forward agrupados por offset diagonal `d = y − x` (triângulo superior incl. diagonal identidade `d=0`); matches contra o **reverse-complement** agrupados por anti-diagonal `s = x + y` marcam repetições invertidas. `_emit_segments` funde âncoras colineares (gap ≤ 2·stride) em segmentos `[x1,y1,x2,y2]` (bp), limitados a 4000 por sequência. → `DotPlot`.
+- **dot plot SVG nativo** (`_dotplot`, puro-Python): constrói um índice de k-mers forward sobre **todas** as posições (`word` default 12) e o consulta a partir de sementes amostradas a cada `stride = L // 500` bases. Indexar todas as posições (e não só as amostradas) é essencial: garante que uma repetição seja detectada **qualquer que seja o offset** — a versão anterior amostrava também o índice e perdia repetições (diretas e invertidas) cujas duas cópias não caíam na mesma grade de amostragem quando `stride > 1`. Matches forward → offset diagonal `d = j − i ≥ 0` (incl. diagonal identidade `d=0`); matches contra o **reverse-complement** → anti-diagonal `s = i + j` (repetições invertidas). k-mers ultra-repetitivos (> `_MAX_KMER_HITS = 200` ocorrências) são pulados. `_emit_segments` funde âncoras colineares (gap ≤ 2·stride) em segmentos `[x1,y1,x2,y2]` (bp), limitados a 4000. → `DotPlot`. **No relatório**, a diagonal identidade é tracejada/recuada e as repetições (azul = direta, vermelho = invertida) são desenhadas por cima, grossas e opacas, para não se confundirem com a diagonal.
 
 **Validação inline:** parse do fastp (incl. adapter=0 p/ long read) e curva downsampleada OK; dot plot detecta corretamente repetição direta (diagonal) e invertida (anti-diagonal) numa sequência sintética; parsers do dustmasker e do self-BLASTn conferidos com saída mockada (diagonal trivial, dup simétrica e cross-seq descartadas; direta e invertida mantidas com coords 0-based normalizadas). Ambos os módulos importam limpos. Testes formais ficam na Fase 6.
 
@@ -125,15 +125,14 @@ kmer-jellyfish = ">=2.3,<3"
 
 ### Argumentos novos (`cli.py`, grupo *"read / sequence quality (optional, needs --reads)"*)
 - `--skip-read-qc` — pula o passo de read QC (fastp); os sinais de qualidade de sequência ainda rodam.
-- `--trim-reads` — alimenta as reads limpas do fastp ao Salmon/coverage no lugar das brutas (implica read QC; ignorado com `--skip-read-qc`).
 - `--kmer K` — tamanho de k-mer do score do jellyfish (default 15).
 
-Validações (`_validate_args`): `--trim-reads`/`--skip-read-qc` exigem `--reads`; `--kmer >= 2`.
+Validações (`_validate_args`): `--skip-read-qc` exige `--reads`; `--kmer >= 2`.
 
 ### Passos e ordem (`_build_steps` ⟷ `_run_pipeline`)
 Helper novo `_read_qc_enabled(args)` = `bool(args.reads) and not args.skip_read_qc`. O bloco de reads passa a ter **quatro** passos, na mesma ordem em ambas as funções:
 
-1. **Read QC — fastp** (`_read_qc_enabled`) — roda `ReadQcPipeline` em `outdir/read_qc` → `read_qc_report`. Com `--trim-reads`, se as reads limpas existem e casam em número, `args.reads` é trocado por elas (afeta Salmon **e** coverage a jusante).
+1. **Read QC — fastp** (`_read_qc_enabled`) — roda `ReadQcPipeline` em `outdir/read_qc` → `read_qc_report`. QC-only: fastp descarta as reads filtradas; o pipeline sempre usa as reads originais.
 2. **Salmon quantification** (`_salmon_enabled`) — inalterado.
 3. **Sequence quality — dustmask · self-BLAST · jellyfish** (`if args.reads`) — roda `SequenceQualityPipeline(kmer_size=args.kmer)` no mesmo conjunto `select_confirmed_sequences(seqs, force)` do coverage; anexa `seq.seq_quality`.
 4. **Read coverage profiling** (`if args.reads`) — inalterado.
@@ -180,10 +179,21 @@ sinais de qualidade de sequência (com link para o Sequence Viewer). Usa `VQ.esc
 - **Bandas de baixa complexidade (dustmasker)** — `_drawLowComplexityBands` desenha
   faixas verticais translúcidas (âmbar) atrás das lanes de ORF, com tooltip da região.
 - **Dot plot SVG nativo** — `_dotPlotSVG(seq_quality)` gera `<svg>` puro (eixos query ×
-  subject): diagonal identidade (cinza), segmentos slope +1 = repetição direta (azul),
-  slope −1 = invertida (vermelho). Renderizado *lazy* no `_toggleCard`, ao lado de um
-  resumo textual (`_repeatSummary`: nº diretas/invertidas, `kmer_repeat_score`,
-  `low_complexity_frac`).
+  subject). **Fonte única de verdade:** um classificador compartilhado (`_segClass`)
+  rotula cada segmento como `diag` (diagonal identidade, cinza tracejado), `lowcx`
+  (auto-match dentro de região dustmask → âmbar), `direct` (slope +1 → azul) ou
+  `inverted` (slope −1 → vermelho). A **legenda** (`_repeatSummary` via `_dotplotRepeats`)
+  e o **realce no FASTA** (`_fastaHighlightedHTML`) contam/pintam exatamente os segmentos
+  `direct`/`inverted` desenhados — então *o que aparece = o que é contado = o que é
+  realçado*. Auto-matches de baixa complexidade aparecem em âmbar no dot plot e são
+  representados pelo `low-complexity %`, **não** inflam a contagem de repetições
+  estruturais. Renderizado *lazy* no `_toggleCard`.
+
+  > **Nota de padronização:** antes, a legenda contava os HSPs do self-BLASTn
+  > (`self_repeats`, corte por e-value) enquanto o dot plot vinha do hashing de k-mers —
+  > por isso repetições pequenas apareciam no plot mas não na contagem. Agora ambos
+  > derivam dos segmentos do dot plot; `self_repeats` (BLAST) segue no JSON como dado
+  > suplementar.
 
 ### `components/shell.html`
 Aba `data-section="readqc"` + `<section id="section-readqc">` + `<script>{{VQ_READQC}}</script>`;
@@ -212,6 +222,6 @@ complexidade e dot plot (repetição direta + invertida) para inspeção visual.
 ---
 
 ## Decisões default (reversíveis)
-1. **fastp = QC-only** por padrão; reads limpas a jusante só com `--trim-reads`.
+1. **fastp = QC-only**; as reads filtradas são descartadas (sem FASTQ limpo no output) — o módulo informa a qualidade, não trima.
 2. **Feature 2 gated em `--reads`** conforme pedido (tecnicamente roda só nos contigs; pode virar standalone depois).
 3. **Long reads:** fastp degrada métricas de adapter; `fastplong` plugável se for preciso paridade total com `ont/pb/hifi`.

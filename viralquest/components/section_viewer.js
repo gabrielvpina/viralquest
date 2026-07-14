@@ -607,6 +607,10 @@ function _seqCard(seq) {
   const refseqCount  = (seq.blastx_hits || []).length;
   const nrCount      = (seq.blastx_nr_hits || []).length;
 
+  // FASTA preview (header + sequence, seq-quality regions colour-highlighted).
+  const hasFasta  = !!(seq.sequence || seq.sequence_nt);
+  const fastaHtml = hasFasta ? _fastaHighlightedHTML(seq) : '';
+
   card.innerHTML = `
     <div class="vq-seq-card__head" role="button" tabindex="0" aria-expanded="false">
       <input type="checkbox" class="vq-checkbox" data-seq-checkbox
@@ -650,13 +654,37 @@ function _seqCard(seq) {
       <div class="vq-body-label">Genome map</div>
       <div class="vq-genome-wrap" id="genome-wrap-${safe}"></div>
 
-      ${seq.seq_quality ? `
-      <div class="vq-body-label">Sequence quality</div>
-      <div class="vq-seqqual" style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;padding:4px 2px 8px">
-        <div class="vq-dotplot-wrap" id="dotplot-wrap-${safe}" style="flex:0 0 auto"></div>
-        <div class="vq-seqqual-meta" style="font-size:12px;color:var(--vq-text-2);line-height:2">
-          ${_repeatSummary(seq.seq_quality)}
-        </div>
+      ${(seq.seq_quality || hasFasta) ? `
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:4px">
+
+        ${seq.seq_quality ? `
+        <div style="flex:1 1 300px;min-width:280px">
+          <div class="vq-body-label">Sequence quality</div>
+          <div style="display:flex;gap:16px;align-items:center;padding:4px 2px 8px">
+            <div class="vq-dotplot-wrap" id="dotplot-wrap-${safe}" style="flex:0 0 auto"></div>
+            <div class="vq-seqqual-meta"
+                 style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--vq-text-2)">
+              <div style="display:flex;align-items:center;gap:7px;font-weight:600">
+                <span>Legend</span>
+                <span id="siginfo-${safe}" role="img" tabindex="0" aria-label="What each signal means"
+                      style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+                             border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
+                             font-size:10px;font-weight:700;cursor:help">?</span>
+              </div>
+              ${_repeatSummary(seq.seq_quality)}
+            </div>
+          </div>
+        </div>` : ''}
+
+        ${hasFasta ? `
+        <div style="flex:1 1 300px;min-width:280px;display:flex;flex-direction:column">
+          <div class="vq-body-label" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span>FASTA preview</span>
+            <button type="button" class="vq-btn vq-btn--ghost vq-btn--sm" id="fasta-copy-${safe}">Copy FASTA</button>
+          </div>
+          <div class="vq-fasta" style="height:${_SEQQUAL_SIZE}px;max-height:${_SEQQUAL_SIZE}px">${fastaHtml}</div>
+        </div>` : ''}
+
       </div>` : ''}
 
       <div class="vq-body-label">BLAST hits</div>
@@ -675,11 +703,31 @@ function _seqCard(seq) {
         <div class="vq-panel__body" id="blast-body-${safe}"></div>
       </div>
 
-      ${(seq.sequence || seq.sequence_nt) ? `
-        <div class="vq-body-label">FASTA preview</div>
-        <div class="vq-fasta">${esc(seq.sequence || seq.sequence_nt)}</div>` : ''}
-
     </div>`;
+
+  // Legend info (?) hover — describe each sequence-quality signal
+  const sigInfo = card.querySelector('#siginfo-' + safe);
+  if (sigInfo) {
+    const infoHtml = _signalsInfoHTML();
+    sigInfo.addEventListener('mousemove', e => VQ.tooltipShow(infoHtml, e));
+    sigInfo.addEventListener('mouseleave', VQ.tooltipHide);
+    sigInfo.addEventListener('focus', () => {
+      const r = sigInfo.getBoundingClientRect();
+      VQ.tooltipShow(infoHtml, { clientX: r.right, clientY: r.bottom });
+    });
+    sigInfo.addEventListener('blur', VQ.tooltipHide);
+  }
+
+  // Copy FASTA (header + sequence) to clipboard
+  card.querySelector('#fasta-copy-' + safe)?.addEventListener('click', function () {
+    navigator.clipboard?.writeText(VQ.buildFasta([seq])).then(() => {
+      this.textContent = 'Copied!';
+      setTimeout(() => { this.textContent = 'Copy FASTA'; }, 1500);
+    }).catch(() => {
+      this.textContent = 'Copy failed';
+      setTimeout(() => { this.textContent = 'Copy FASTA'; }, 1500);
+    });
+  });
 
   // Checkbox
   card.querySelector('[data-seq-checkbox]')?.addEventListener('change', e => {
@@ -1345,9 +1393,13 @@ function _drawLowComplexityBands(svg, regions, SCALE, PAD_L, yTop, yBottom) {
   });
 }
 
+// Shared square size (px) for the dot plot and the FASTA-preview pane, so the
+// two blocks are visually symmetric side by side.
+const _SEQQUAL_SIZE = 300;
+
 // Native-SVG self-similarity dot plot. Main diagonal = identity; off-diagonal
 // segments (slope +1) = direct repeats; anti-diagonal (slope −1) = inverted.
-function _dotPlotSVG(sq, size = 320) {
+function _dotPlotSVG(sq, size = _SEQQUAL_SIZE) {
   const dp = sq.dotplot;
   if (!dp || !(dp.segments || []).length) return null;
 
@@ -1361,7 +1413,7 @@ function _dotPlotSVG(sq, size = 320) {
     .attr('class', 'vq-dotplot-svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
     .attr('preserveAspectRatio', 'xMinYMin meet')
-    .style('width', '100%').style('max-width', size + 'px').style('height', 'auto');
+    .style('width', size + 'px').style('height', size + 'px').style('max-width', '100%');
 
   // Plot frame.
   svg.append('rect')
@@ -1376,37 +1428,148 @@ function _dotPlotSVG(sq, size = 320) {
     .attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', 'var(--vq-text-3)')
     .attr('transform', `rotate(-90 10 ${(H - PAD) / 2})`).text('subject (nt)');
 
-  const g = svg.append('g');
-  dp.segments.forEach(([x1, y1, x2, y2]) => {
-    const inverted = (y2 - y1) * (x2 - x1) < 0;       // slope < 0 ⇒ inverted repeat
-    const onDiag   = Math.abs((y1 - x1)) < 1e-6 && Math.abs((y2 - x2)) < 1e-6;
-    g.append('line')
-      .attr('x1', s(x1)).attr('y1', sy(y1))
-      .attr('x2', s(x2)).attr('y2', sy(y2))
-      .attr('stroke', onDiag ? 'var(--vq-text-3)'
-                    : inverted ? 'var(--vq-danger)' : 'var(--vq-accent)')
-      .attr('stroke-width', onDiag ? 1 : 1.6)
-      .attr('opacity', onDiag ? 0.5 : 0.85);
+  // Classify every segment with the shared classifier, then draw background
+  // layers first (diagonal, low-complexity) and the structural repeats on top,
+  // so what is drawn matches exactly what the legend counts.
+  const low  = sq.low_complexity_regions || [];
+  const g    = svg.append('g');
+  const line = (seg, stroke, width, opacity, dash, cap) => {
+    const [x1, y1, x2, y2] = seg;
+    const l = g.append('line')
+      .attr('x1', s(x1)).attr('y1', sy(y1)).attr('x2', s(x2)).attr('y2', sy(y2))
+      .attr('stroke', stroke).attr('stroke-width', width).attr('opacity', opacity);
+    if (dash) l.attr('stroke-dasharray', dash);
+    if (cap)  l.attr('stroke-linecap', cap);
+  };
+  const repeats = [];
+  dp.segments.forEach(seg => {
+    const c = _segClass(seg, low);
+    if      (c === 'diag')  line(seg, 'var(--vq-text-3)', 1,   0.45, '4,3');
+    else if (c === 'lowcx') line(seg, 'var(--vq-warning)', 1.4, 0.5);
+    else repeats.push(seg);
+  });
+  repeats.forEach(seg => {
+    const inverted = _segClass(seg, low) === 'inverted';
+    line(seg, inverted ? 'var(--vq-danger)' : 'var(--vq-accent)', 2.6, 0.95, null, 'round');
   });
   return svg.node();
 }
 
-// Compact textual summary of self-repeats + k-mer repetitiveness for the card.
+// One classifier shared by the dot plot, the legend count and the FASTA
+// highlight, so all three agree. A segment is:
+//   diag     — the identity diagonal
+//   lowcx    — a self-match inside a dust-masked low-complexity region
+//              (counted under low-complexity %, not as a structural repeat)
+//   direct   — off-diagonal, slope +1 (duplicated segment)
+//   inverted — anti-diagonal, slope −1 (reverse-complement segment)
+function _inLowCx(pos, regions) {
+  for (let k = 0; k < regions.length; k++)
+    if (pos >= regions[k][0] && pos <= regions[k][1]) return true;
+  return false;
+}
+function _segClass(seg, low) {
+  const [x1, y1, x2, y2] = seg;
+  if (Math.abs(y1 - x1) < 1e-6 && Math.abs(y2 - x2) < 1e-6) return 'diag';
+  if (_inLowCx((x1 + x2) / 2, low) || _inLowCx((y1 + y2) / 2, low)) return 'lowcx';
+  return (y2 - y1) * (x2 - x1) < 0 ? 'inverted' : 'direct';
+}
+
+// Structural repeats (from the drawn dot-plot segments) — the single source of
+// truth for the legend count and the FASTA highlight.
+function _dotplotRepeats(sq) {
+  const low = sq.low_complexity_regions || [];
+  const direct = [], inverted = [];
+  (sq.dotplot && sq.dotplot.segments || []).forEach(seg => {
+    const c = _segClass(seg, low);
+    if (c === 'direct') direct.push(seg);
+    else if (c === 'inverted') inverted.push(seg);
+  });
+  return { direct, inverted };
+}
+
+// Compact textual summary of repeats (from the dot plot) + k-mer repetitiveness.
 function _repeatSummary(sq) {
-  const reps    = sq.self_repeats || [];
-  const direct  = reps.filter(r => r.strand === 'plus').length;
-  const inverted = reps.filter(r => r.strand === 'minus').length;
-  const score   = ((sq.kmer_repeat_score || 0) * 100).toFixed(1);
+  const rep      = _dotplotRepeats(sq);
+  const direct   = rep.direct.length;
+  const inverted = rep.inverted.length;
+  const score    = ((sq.kmer_repeat_score || 0) * 100).toFixed(1);
   const lowcx   = ((sq.low_complexity_frac || 0) * 100).toFixed(1);
   const dot = c => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;`
-    + `background:${c};margin-right:5px;vertical-align:middle"></span>`;
-  const parts = [
+    + `background:${c};margin-right:6px;vertical-align:middle"></span>`;
+  // One legend item per line (stacked), vertically centred against the dot plot.
+  const rows = [
     `${dot('var(--vq-accent)')}${direct} direct repeat${direct !== 1 ? 's' : ''}`,
-    `${dot('var(--vq-danger)')}${inverted} inverted`,
-    `k${sq.kmer_size} repeat ${score}%`,
-    `low-complexity ${lowcx}%`,
+    `${dot('var(--vq-danger)')}${inverted} inverted repeat${inverted !== 1 ? 's' : ''}`,
+    `${dot('var(--vq-warning)')}low-complexity ${lowcx}%`,
+    `k${sq.kmer_size} repeat score ${score}%`,
   ];
-  return parts.join('&nbsp;·&nbsp;');
+  return rows.map(r => `<div style="white-space:nowrap">${r}</div>`).join('');
+}
+
+// Colour codes matching the legend / dot plot: 1 low-complexity (amber),
+// 2 direct repeat (blue), 3 inverted repeat (red). Higher priority wins overlaps.
+const _HL_STYLE = {
+  1: 'background:rgba(224,146,28,.32)',   // --vq-warning
+  2: 'background:rgba(47,134,214,.30)',   // --vq-accent
+  3: 'background:rgba(210,74,61,.34)',    // --vq-danger
+};
+const _HL_TITLE = { 1: 'low complexity', 2: 'direct repeat', 3: 'inverted repeat' };
+
+// FASTA header + sequence, with seq-quality regions wrapped in coloured <span>s.
+function _fastaHighlightedHTML(seq) {
+  const esc = VQ.esc;
+  const raw = VQ.buildFasta([seq]).replace(/\n+$/, '');
+  const nl  = raw.indexOf('\n');
+  const header = nl >= 0 ? raw.slice(0, nl) : raw;
+  const body   = nl >= 0 ? raw.slice(nl + 1) : '';
+  const sq = seq.seq_quality;
+  if (!sq || !body) return esc(raw);
+
+  const n    = body.length;
+  const code = new Uint8Array(n);
+  const mark = (a, b, v) => {
+    for (let i = Math.max(0, a | 0); i <= Math.min(n - 1, b | 0); i++)
+      if (v > code[i]) code[i] = v;
+  };
+  (sq.low_complexity_regions || []).forEach(([a, b]) => mark(a, b, 1));
+  // Repeats from the same dot-plot segments the legend counts — both copies of
+  // each segment (query x-range and subject y-range) are marked.
+  const rep = _dotplotRepeats(sq);
+  const markSeg = (segs, v) => segs.forEach(([x1, y1, x2, y2]) => {
+    mark(Math.min(x1, x2), Math.max(x1, x2), v);
+    mark(Math.min(y1, y2), Math.max(y1, y2), v);
+  });
+  markSeg(rep.direct, 2);
+  markSeg(rep.inverted, 3);
+
+  let html = esc(header) + '\n';
+  let i = 0;
+  while (i < n) {
+    const c = code[i];
+    let j = i + 1;
+    while (j < n && code[j] === c) j++;
+    const chunk = esc(body.slice(i, j));
+    html += c === 0
+      ? chunk
+      : `<span style="${_HL_STYLE[c]};border-radius:2px" title="${_HL_TITLE[c]}">${chunk}</span>`;
+    i = j;
+  }
+  return html;
+}
+
+// Shared tooltip body for the legend info (?) badge.
+function _signalsInfoHTML() {
+  const dot = c => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;`
+    + `background:${c};margin-right:7px;flex:0 0 auto;margin-top:3px"></span>`;
+  const row = (c, t) =>
+    `<div style="display:flex;align-items:flex-start;margin:3px 0;max-width:240px">${c ? dot(c) : '<span style="width:16px;flex:0 0 auto"></span>'}<span>${t}</span></div>`;
+  return `
+    <div class="vq-tooltip__title">Sequence-quality signals</div>
+    ${row('var(--vq-accent)',  'Direct repeat — a segment duplicated elsewhere in the same orientation.')}
+    ${row('var(--vq-danger)',  'Inverted repeat — a segment matching the reverse complement of another.')}
+    ${row('var(--vq-warning)', 'Low complexity — dustmasker-flagged low-information region (AT-rich, homopolymer, …).')}
+    ${row('', 'Repeat score — fraction of k-mers (length k) that occur more than once in the sequence.')}
+    <div style="margin-top:5px;color:var(--vq-text-3);font-size:11px">The same colours mark these regions in the FASTA sequence.</div>`;
 }
 
 window.vqInitViewer = vqInitViewer;

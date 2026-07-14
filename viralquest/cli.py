@@ -203,9 +203,6 @@ def _build_parser():
     rq = parser.add_argument_group("read / sequence quality (optional, needs --reads)")
     rq.add_argument("--skip-read-qc", dest="skip_read_qc", action="store_true",
         help="Skip the fastp read-QC step (sequence-quality signals still run).")
-    rq.add_argument("--trim-reads", dest="trim_reads", action="store_true",
-        help="Feed the fastp-cleaned reads to Salmon and read coverage instead of "
-             "the raw reads. Implies read QC (ignored with --skip-read-qc).")
     rq.add_argument("--kmer", dest="kmer", type=int, default=15, metavar="K",
         help="k-mer size for the jellyfish repetitiveness score (default: 15).")
 
@@ -425,8 +422,6 @@ def _validate_args(args, console) -> None:
         errors.append("--read-type is required when --reads is used (choices: sr, ont, pb, hifi).")
     if args.read_type and not args.reads:
         errors.append("--read-type requires --reads.")
-    if args.trim_reads and not args.reads:
-        errors.append("--trim-reads requires --reads.")
     if args.skip_read_qc and not args.reads:
         errors.append("--skip-read-qc requires --reads.")
     if args.kmer is not None and args.kmer < 2:
@@ -710,19 +705,15 @@ def _run_pipeline(args):
     yield from _tick(t)
 
     # ── 9b. Read QC (fastp) ───────────────────────────────────────────────────
-    # Profiles the raw reads once. With --trim-reads the fastp-cleaned reads are
-    # swapped in for the downstream Salmon / coverage steps.
+    # QC only: fastp profiles the raw reads and discards the filtered output —
+    # the pipeline always consumes the original reads (no trimming).
     read_qc_report = None
     if _read_qc_enabled(args):
         t = time.time()
         from .read_qc import ReadQcPipeline
-        rqc = ReadQcPipeline(threads=args.cpu, read_type=args.read_type)
-        read_qc_report = rqc.run(reads=args.reads, outdir=outdir / "read_qc")
-        if args.trim_reads and rqc.cleaned_reads:
-            cleaned = [str(p) for p in rqc.cleaned_reads if p.exists()]
-            if len(cleaned) == len(args.reads):
-                logger.info("Using fastp-cleaned reads for Salmon / coverage (--trim-reads).")
-                args.reads = cleaned
+        read_qc_report = ReadQcPipeline(
+            threads=args.cpu, read_type=args.read_type,
+        ).run(reads=args.reads, outdir=outdir / "read_qc")
         yield from _tick(t)
 
     # ── 10. Salmon quantification ─────────────────────────────────────────────
