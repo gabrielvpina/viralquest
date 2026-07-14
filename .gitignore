@@ -17,3 +17,7 @@ dev/
 
 # macOS
 .DS_Store
+
+# dev 
+example.json
+preview.html
