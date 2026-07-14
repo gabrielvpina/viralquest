@@ -39,6 +39,8 @@
               id="tab-taxonomy" aria-controls="section-taxonomy" aria-selected="false" tabindex="-1">Taxonomy</button>
       <button class="vq-nav__tab"        data-section="salmon"   role="tab"
               id="tab-salmon"   aria-controls="section-salmon"   aria-selected="false" tabindex="-1">Salmon Quant</button>
+      <button class="vq-nav__tab"        data-section="readqc"   role="tab"
+              id="tab-readqc"   aria-controls="section-readqc"   aria-selected="false" tabindex="-1">Read QC</button>
     </div>
 
     <div class="vq-nav__meta">
@@ -57,6 +59,7 @@
     <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-labelledby="tab-viewer"      hidden></section>
     <section class="vq-section"        id="section-taxonomy" role="tabpanel" aria-labelledby="tab-taxonomy"    hidden></section>
     <section class="vq-section"        id="section-salmon"   role="tabpanel" aria-labelledby="tab-salmon"      hidden></section>
+    <section class="vq-section"        id="section-readqc"   role="tabpanel" aria-labelledby="tab-readqc"      hidden></section>
 
   </main>
 
@@ -86,6 +89,7 @@
   <script>{{VQ_VIEWER}}</script>
   <script>{{VQ_TAXONOMY}}</script>
   <script>{{VQ_SALMON}}</script>
+  <script>{{VQ_READQC}}</script>
 
   <!-- ── Shell controller ───────────────────────────────────── -->
   <script>
@@ -141,6 +145,11 @@
       document.getElementById('tab-salmon').style.display = 'none';
     }
 
+    // --- Read QC tab visibility -------------------------------------
+    if (!VQ_REPORT.read_qc) {
+      document.getElementById('tab-readqc').style.display = 'none';
+    }
+
     // --- Back to top ------------------------------------------------
     const backTop = document.getElementById('vq-back-top');
     let activeSection = 'stats';
@@ -184,6 +193,9 @@
     vqInitTaxonomy(VQ_REPORT._taxonomy_tree || null, VQ_REPORT.sequences || []);
     if (VQ_REPORT.salmon_quant) {
       vqInitSalmon(VQ_REPORT.salmon_quant, VQ_REPORT.clusters || []);
+    }
+    if (VQ_REPORT.read_qc) {
+      vqInitReadQc(VQ_REPORT.read_qc, VQ_REPORT.readqc_stats, VQ_REPORT.seq_quality_stats);
     }
 
   })();

@@ -385,6 +385,82 @@ class CoverageProfile:
     breadth_1x:      float              # fraction of bases with depth >= 1
     bins:            list[float]        # downsampled mean depth per bin (<= N_BINS points)
     low_cov_regions: list[list[int]]    # internal [start, end] runs below the drop threshold
+    quality_bins:    list[float] = field(default_factory=list)  # mean base-quality (Phred) per bin, aligned to `bins`
+    mean_quality:    float = 0.0        # mean per-base read quality (Phred) across the sequence
+
+
+@dataclass(slots=True)
+class SelfRepeat:
+    """
+    One internal repeat of a sequence against itself (self-BLASTn HSP).
+
+    The full-length self-diagonal hit is filtered out upstream, so every record
+    here is a *duplicated* or *inverted* region — a direct-repeat pair when
+    ``strand == "plus"`` and an inverted repeat when ``strand == "minus"``.
+    """
+    q_start: int      # 0-based, inclusive — first copy
+    q_end:   int
+    s_start: int      # 0-based, inclusive — second copy
+    s_end:   int
+    strand:  str      # "plus" (direct repeat) | "minus" (inverted repeat)
+    pct_id:  float    # alignment percent identity
+    length:  int      # alignment length (bp)
+
+
+@dataclass(slots=True)
+class DotPlot:
+    """
+    Self-similarity dot plot, precomputed for rendering as a native <svg>.
+
+    Each segment is an extended k-mer match drawn as a line: matches on the main
+    diagonal are the sequence itself; off-diagonal segments mark direct repeats,
+    anti-diagonal segments mark inverted repeats.  Coordinates are in base pairs.
+    """
+    word:     int                    # k-mer word size used to seed matches
+    length:   int                    # sequence length (both axes)
+    segments: list[list[int]]        # each [x1, y1, x2, y2] (bp); anti-diagonal ⇒ inverted
+
+
+@dataclass(slots=True)
+class SequenceQuality:
+    """
+    Structural quality signals for one viral sequence, complementary to the
+    read-coverage / base-quality track.  Flags low-complexity stretches,
+    internal repeats and overall k-mer repetitiveness that may indicate
+    mis-assembly or sequencing artefacts.
+    """
+    seq_id:                 str
+    length:                 int
+    low_complexity_regions: list[list[int]]  # dustmasker [start, end] runs (0-based, inclusive)
+    self_repeats:           list[SelfRepeat] # self-BLASTn internal repeats
+    kmer_size:              int              # jellyfish k
+    kmer_distinct:          int              # number of distinct k-mers
+    kmer_total:             int              # total k-mers counted
+    kmer_repeat_score:      float            # fraction of k-mers with multiplicity > 1 (0–1)
+    low_complexity_frac:    float            # fraction of bases inside low-complexity runs (0–1)
+    dotplot:                "DotPlot | None" = None
+
+
+@dataclass(slots=True)
+class ReadQcReport:
+    """
+    Global sequencing-read QC produced by fastp, attached as an optional
+    pipeline section.  Per-cycle vectors are already downsampled for plotting.
+    """
+    reads:            list[str]        # read file(s) passed to fastp
+    read_type:        str              # sr | ont | pb | hifi
+    reads_before:     int              # total reads before filtering
+    reads_after:      int              # total reads passing filters
+    bases_before:     int
+    bases_after:      int
+    q20_rate:         float            # fraction of bases >= Q20 (after filtering)
+    q30_rate:         float            # fraction of bases >= Q30 (after filtering)
+    gc_pct:           float            # overall GC content (%) after filtering
+    mean_length:      float            # mean read length after filtering
+    dup_rate:         float            # estimated duplication rate (fraction)
+    adapter_rate:     float            # fraction of reads with adapter trimmed (0 for long reads)
+    per_base_quality: list[float]      # mean quality per cycle (downsampled)
+    per_base_gc:      list[float]      # GC content per cycle (downsampled, 0–1)
 
 
 @dataclass(slots=True)
@@ -444,6 +520,10 @@ class NucSequence:
 
     # Read-coverage profile (populated when --reads is given)
     coverage: "CoverageProfile | None" = field(default=None, init=False)
+
+    # Structural quality signals — dustmask / self-BLAST / jellyfish / dot plot
+    # (populated when --reads is given)
+    seq_quality: "SequenceQuality | None" = field(default=None, init=False)
 
     # computed
     length:    int   = field(init=False)

@@ -10,6 +10,7 @@ from loguru import logger
 from viralquest.biodata import (
     InputFasta,
     NucSequence,
+    ReadQcReport,
     SalmonQuantReport,
     Taxonomy,
     ViralCluster,
@@ -114,9 +115,10 @@ class ReportExporter:
         clusters:      list[ViralCluster],
         input_fasta:   InputFasta | None        = None,
         output_path:   str | Path | None        = None,
-        version:       str                      = "unknown",
-        salmon_report: SalmonQuantReport | None = None,
-        cap3:          dict | None              = None,
+        version:        str                      = "unknown",
+        salmon_report:  SalmonQuantReport | None = None,
+        read_qc_report: ReadQcReport | None      = None,
+        cap3:           dict | None              = None,
     ) -> dict:
         """
         Build the report dictionary, optionally write it to *output_path*,
@@ -130,6 +132,7 @@ class ReportExporter:
         output_path   : if given, the report is written as indented JSON here
         version       : viralquest version string embedded in meta
         salmon_report : if given, a ``salmon_quant`` key is added to the JSON
+        read_qc_report: if given, a ``read_qc`` key is added to the JSON
         cap3          : CAP3 assembly stats (``used``/``contigs``/``singlets``)
                         when --cap3 ran; None otherwise
         """
@@ -166,6 +169,9 @@ class ReportExporter:
 
         if salmon_report is not None:
             report["salmon_quant"] = _to_serializable(salmon_report)
+
+        if read_qc_report is not None:
+            report["read_qc"] = _to_serializable(read_qc_report)
 
         if output_path is not None:
             path = Path(output_path)
@@ -217,6 +223,7 @@ class ReportExporter:
             "blastn_hits":    [_to_serializable(h) for h in seq.blastn_hits],
             "taxonomy":       self._taxonomy_to_dict(seq.taxonomy) if seq.taxonomy else None,
             "coverage":       _to_serializable(seq.coverage) if seq.coverage else None,
+            "seq_quality":    _to_serializable(seq.seq_quality) if seq.seq_quality else None,
             # Heuristic score always runs, so the field is always present.
             "heuristic_output": _to_serializable(seq.heuristic_output) if seq.heuristic_output else None,
         }

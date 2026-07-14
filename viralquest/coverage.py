@@ -3,9 +3,10 @@ coverage.py — Per-base read-coverage profiling of viral sequences.
 
 When the user supplies sequencing reads (``--reads``), the confirmed viral
 sequences are used as a small reference; the reads are aligned with minimap2 and
-per-base depth is computed with ``samtools depth``.  The resulting
+per-base depth **and mean base quality** are read from the *same* BAM in a single
+``samtools mpileup`` pass (no second alignment).  The resulting
 ``CoverageProfile`` (one per sequence) is attached to each ``NucSequence`` and
-rendered as a coverage track in the genome viewer.
+rendered as a coverage track in the genome viewer, coloured by base quality.
 
 The biological motive: a correctly assembled viral contig has roughly uniform
 coverage, while a chimeric / mis-assembled contig tends to show a coverage
@@ -104,8 +105,8 @@ class CoveragePipeline:
             self._write_fasta(seqs, ref_fasta)
             if not self._align(ref_fasta, reads, bam):
                 return {}
-            depth = self._compute_depth(seqs, bam)
-            profiles = self._build_profiles(seqs, depth)
+            depth, quality = self._compute_depth_and_quality(seqs, bam)
+            profiles = self._build_profiles(seqs, depth, quality)
         except Exception as exc:
             logger.error(f"CoveragePipeline failed — skipping coverage: {exc}")
             return {}
@@ -161,35 +162,57 @@ class CoveragePipeline:
             return False
         return True
 
-    def _compute_depth(
+    def _compute_depth_and_quality(
         self, seqs: list[NucSequence], bam: Path
-    ) -> dict[str, np.ndarray]:
-        """Run ``samtools depth -a`` and return {seq_id: per-base depth array}."""
-        depth = {s.id: np.zeros(s.length, dtype=np.float64) for s in seqs}
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+        """
+        Read per-base depth *and* mean base quality from the same BAM in one
+        ``samtools mpileup`` pass — no second alignment.
+
+        Returns ``({seq_id: depth}, {seq_id: mean_quality})`` where quality is the
+        mean Phred score of the read bases stacked at each position (0 where no
+        reads map).  The pileup filters are all disabled (``-A -B -Q 0 -q 0``) so
+        depth matches the previous ``samtools depth -a`` count, and every position
+        is emitted (``-a``, ``-d 0`` removes the depth cap).
+        """
+        depth   = {s.id: np.zeros(s.length, dtype=np.float64) for s in seqs}
+        quality = {s.id: np.zeros(s.length, dtype=np.float64) for s in seqs}
 
         proc = subprocess.Popen(
-            [self.samtools_bin, "depth", "-a", "-@", str(self.threads), str(bam)],
+            [self.samtools_bin, "mpileup",
+             "-a", "-A", "-B", "-Q", "0", "-q", "0", "-d", "0",
+             str(bam)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         assert proc.stdout is not None
         for line in proc.stdout:
             parts = line.rstrip("\n").split("\t")
-            if len(parts) < 3:
+            # mpileup: 0=name 1=pos 2=ref 3=depth 4=read_bases 5=base_quals
+            if len(parts) < 4:
                 continue
-            arr = depth.get(parts[0])
-            if arr is None:
+            arr_d = depth.get(parts[0])
+            if arr_d is None:
                 continue
-            pos = int(parts[1]) - 1          # samtools depth is 1-based
-            if 0 <= pos < arr.size:
-                arr[pos] = float(parts[2])
+            pos = int(parts[1]) - 1          # mpileup is 1-based
+            if not (0 <= pos < arr_d.size):
+                continue
+            arr_d[pos] = float(parts[3])
+            # base-quality column: one ASCII char (Phred+33) per stacked base
+            if len(parts) >= 6 and parts[5] and parts[5] != "*":
+                quals = [ord(c) - 33 for c in parts[5]]
+                if quals:
+                    quality[parts[0]][pos] = sum(quals) / len(quals)
         err = proc.stderr.read() if proc.stderr else ""
         proc.wait()
         if proc.returncode != 0:
-            raise RuntimeError(f"samtools depth failed: {err.strip()}")
-        return depth
+            raise RuntimeError(f"samtools mpileup failed: {err.strip()}")
+        return depth, quality
 
     def _build_profiles(
-        self, seqs: list[NucSequence], depth: dict[str, np.ndarray]
+        self,
+        seqs:    list[NucSequence],
+        depth:   dict[str, np.ndarray],
+        quality: dict[str, np.ndarray],
     ) -> dict[str, CoverageProfile]:
         profiles: dict[str, CoverageProfile] = {}
         for seq in seqs:
@@ -206,6 +229,13 @@ class CoveragePipeline:
             bins       = self._downsample(arr)
             low_runs   = self._low_cov_regions(arr, mean)
 
+            # Base quality is only meaningful where reads map; average over
+            # covered positions so uncovered gaps don't dilute the colour.
+            qarr        = quality.get(seq.id)
+            covered     = arr > 0
+            qual_bins   = self._downsample_quality(qarr, covered) if qarr is not None else []
+            mean_qual   = float(qarr[covered].mean()) if (qarr is not None and covered.any()) else 0.0
+
             profiles[seq.id] = CoverageProfile(
                 seq_id          = seq.id,
                 length          = int(arr.size),
@@ -215,6 +245,8 @@ class CoveragePipeline:
                 breadth_1x      = round(breadth, 4),
                 bins            = bins,
                 low_cov_regions = low_runs,
+                quality_bins    = qual_bins,
+                mean_quality    = round(mean_qual, 2),
             )
         return profiles
 
@@ -240,6 +272,22 @@ class CoveragePipeline:
             return [round(float(v), 2) for v in arr]
         chunks = np.array_split(arr, cls._N_BINS)
         return [round(float(c.mean()), 2) for c in chunks]
+
+    @classmethod
+    def _downsample_quality(cls, qarr: np.ndarray, covered: np.ndarray) -> list[float]:
+        """
+        Mean base quality per bin, aligned 1:1 with ``_downsample`` bins, but
+        averaged only over covered positions (``covered``) so gaps read as 0
+        rather than dragging the colour down.
+        """
+        if qarr.size <= cls._N_BINS:
+            return [round(float(q), 2) if c else 0.0 for q, c in zip(qarr, covered)]
+        q_chunks = np.array_split(qarr,    cls._N_BINS)
+        c_chunks = np.array_split(covered, cls._N_BINS)
+        out: list[float] = []
+        for q, c in zip(q_chunks, c_chunks):
+            out.append(round(float(q[c].mean()), 2) if c.any() else 0.0)
+        return out
 
     @classmethod
     def _low_cov_regions(cls, arr: np.ndarray, mean: float) -> list[list[int]]:

@@ -197,6 +197,18 @@ def _build_parser():
              "contigs are always included). Both changes directly reduce the SSHash "
              "index footprint. Recommended when salmon index runs out of memory.")
 
+    # Read / sequence quality ──────────────────────────────────────────────────
+    # Runs only when --reads is given. fastp profiles the reads; dustmasker,
+    # self-BLASTn and jellyfish flag structural issues on the assembled sequences.
+    rq = parser.add_argument_group("read / sequence quality (optional, needs --reads)")
+    rq.add_argument("--skip-read-qc", dest="skip_read_qc", action="store_true",
+        help="Skip the fastp read-QC step (sequence-quality signals still run).")
+    rq.add_argument("--trim-reads", dest="trim_reads", action="store_true",
+        help="Feed the fastp-cleaned reads to Salmon and read coverage instead of "
+             "the raw reads. Implies read QC (ignored with --skip-read-qc).")
+    rq.add_argument("--kmer", dest="kmer", type=int, default=15, metavar="K",
+        help="k-mer size for the jellyfish repetitiveness score (default: 15).")
+
     # AI scoring ───────────────────────────────────────────────────────────────
     ai = parser.add_argument_group("AI scoring (optional)")
     ai.add_argument("--model-type", dest="model_type",
@@ -413,6 +425,12 @@ def _validate_args(args, console) -> None:
         errors.append("--read-type is required when --reads is used (choices: sr, ont, pb, hifi).")
     if args.read_type and not args.reads:
         errors.append("--read-type requires --reads.")
+    if args.trim_reads and not args.reads:
+        errors.append("--trim-reads requires --reads.")
+    if args.skip_read_qc and not args.reads:
+        errors.append("--skip-read-qc requires --reads.")
+    if args.kmer is not None and args.kmer < 2:
+        errors.append("--kmer must be >= 2.")
     if args.model_type and not args.model_name:
         errors.append("--model-name is required when --model-type is set.")
     if args.model_type and not args.llm_tokens:
@@ -486,6 +504,11 @@ def _salmon_enabled(args) -> bool:
     return bool(args.reads) and args.read_type not in _LONG_READ_TYPES
 
 
+def _read_qc_enabled(args) -> bool:
+    """fastp read QC runs whenever reads are given, unless explicitly skipped."""
+    return bool(args.reads) and not args.skip_read_qc
+
+
 def _build_steps(args) -> list[str]:
     steps = [
         f"Parse FASTA{'  +  CAP3' if args.cap3 else ''}",
@@ -503,9 +526,12 @@ def _build_steps(args) -> list[str]:
     steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
     if args.reads:
+        if _read_qc_enabled(args):
+            steps.append("Read QC  —  fastp")
         if _salmon_enabled(args):
             mode = "reference" if args.transcriptome else "de novo"
             steps.append(f"Salmon quantification  —  {mode}")
+        steps.append("Sequence quality  —  dustmask · self-BLAST · jellyfish")
         steps.append("Read coverage profiling")
     steps.append("Heuristic scoring  —  rule-based vq_score")
     if args.model_type:
@@ -683,6 +709,22 @@ def _run_pipeline(args):
     clusters     = tracker.track(viral_for_cl)
     yield from _tick(t)
 
+    # ── 9b. Read QC (fastp) ───────────────────────────────────────────────────
+    # Profiles the raw reads once. With --trim-reads the fastp-cleaned reads are
+    # swapped in for the downstream Salmon / coverage steps.
+    read_qc_report = None
+    if _read_qc_enabled(args):
+        t = time.time()
+        from .read_qc import ReadQcPipeline
+        rqc = ReadQcPipeline(threads=args.cpu, read_type=args.read_type)
+        read_qc_report = rqc.run(reads=args.reads, outdir=outdir / "read_qc")
+        if args.trim_reads and rqc.cleaned_reads:
+            cleaned = [str(p) for p in rqc.cleaned_reads if p.exists()]
+            if len(cleaned) == len(args.reads):
+                logger.info("Using fastp-cleaned reads for Salmon / coverage (--trim-reads).")
+                args.reads = cleaned
+        yield from _tick(t)
+
     # ── 10. Salmon quantification ─────────────────────────────────────────────
     salmon_report = None
     if args.reads and not _salmon_enabled(args):
@@ -721,6 +763,22 @@ def _run_pipeline(args):
                 if seq.id in tpm_map:
                     seq.salmon_tpm, seq.salmon_reads = tpm_map[seq.id]
 
+        yield from _tick(t)
+
+    # ── 10a. Sequence quality (dustmask · self-BLAST · jellyfish · dot plot) ──
+    # Structural signals on the confirmed viral sequences — same set the coverage
+    # track and exporter use, so every signal aligns with the report viewer.
+    if args.reads:
+        t = time.time()
+        from .seq_quality import SequenceQualityPipeline
+        from .exporter    import select_confirmed_sequences
+        viral_for_sq = select_confirmed_sequences(seqs, force=args.force)
+        sq_map = SequenceQualityPipeline(
+            threads=args.cpu, kmer_size=args.kmer,
+        ).run(viral_seqs=viral_for_sq, outdir=outdir / "seq_quality")
+        for seq in seqs:
+            if seq.id in sq_map:
+                seq.seq_quality = sq_map[seq.id]
         yield from _tick(t)
 
     # ── 10b. Read coverage (per-base depth track) ─────────────────────────────
@@ -783,6 +841,7 @@ def _run_pipeline(args):
         output_path=json_path,
         version=__version__,
         salmon_report=salmon_report,
+        read_qc_report=read_qc_report,
         cap3=cap3_info,
     )
     yield from _tick(t)

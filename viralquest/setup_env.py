@@ -28,11 +28,13 @@ from pathlib import Path
 # optional --cap3 assembly step is Linux-only; it's excluded from the macOS
 # requirement list.
 _REQUIRED_TOOLS: list[tuple[str, str]] = [
-    ("diamond",  "diamond   >=2.1.24  (bioconda)"),
-    ("blastn",   "blast     >=2.16    (bioconda)"),
-    ("salmon",   "salmon    >=1.11.4  (bioconda)"),
-    ("minimap2", "minimap2  >=2.28    (bioconda)"),
-    ("samtools", "samtools  >=1.21    (bioconda)"),
+    ("diamond",   "diamond        >=2.1.24  (bioconda)"),
+    ("blastn",    "blast          >=2.16    (bioconda)"),  # also provides dustmasker (self-BLAST / low-complexity)
+    ("salmon",    "salmon         >=1.11.4  (bioconda)"),
+    ("minimap2",  "minimap2       >=2.28    (bioconda)"),
+    ("samtools",  "samtools       >=1.21    (bioconda)"),
+    ("fastp",     "fastp          >=0.24    (bioconda)"),  # read QC
+    ("jellyfish", "kmer-jellyfish >=2.3     (bioconda)"),  # k-mer repetitiveness
 ] + ([] if platform.system() == "Darwin" else [
     ("cap3", "cap3      >=10.2011 (bioconda)"),
 ])

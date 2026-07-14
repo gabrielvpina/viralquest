@@ -1,0 +1,67 @@
+2026-07-14 15:32:10 | INFO     | Starting fasta parser
+2026-07-14 15:32:10 | SUCCESS  | Found 4 valid sequences in tests/mock/contigs.fasta
+2026-07-14 15:32:10 | SUCCESS  |   ✓  Parse FASTA  (0.0s)
+2026-07-14 15:32:10 | INFO     | Starting ORF search (Minimal length: 150 nt)
+2026-07-14 15:32:10 | DEBUG    | Searching ORFs in sequence contig_random...
+2026-07-14 15:32:10 | INFO     | Success: 3 ORFs found in contig_random.
+2026-07-14 15:32:10 | DEBUG    | Searching ORFs in sequence contig_lowcomplexity...
+2026-07-14 15:32:10 | INFO     | Success: 3 ORFs found in contig_lowcomplexity.
+2026-07-14 15:32:10 | DEBUG    | Searching ORFs in sequence contig_direct_repeat...
+2026-07-14 15:32:10 | INFO     | Success: 1 ORFs found in contig_direct_repeat.
+2026-07-14 15:32:10 | DEBUG    | Searching ORFs in sequence contig_inverted_repeat...
+2026-07-14 15:32:10 | INFO     | Success: 0 ORFs found in contig_inverted_repeat.
+2026-07-14 15:32:10 | SUCCESS  |   ✓  Find ORFs  (0.0s)
+2026-07-14 15:32:10 | INFO     | diamond [refseq]: 4 seqs → 1 batch(es), 2 threads
+2026-07-14 15:32:10 | DEBUG    | diamond [refseq] batch 0 — 4 seqs
+2026-07-14 15:32:23 | SUCCESS  | diamond [refseq] batch 1/1 done
+2026-07-14 15:32:23 | DEBUG    | diamond [refseq]: 0 hits processed.
+2026-07-14 15:32:23 | INFO     | Diamond RefSeq results → tests/mock/run_out/diamond/refseq.tsv
+2026-07-14 15:32:23 | SUCCESS  |   ✓  Diamond BLASTx  —  RefSeq viral filter  (13.1s)
+2026-07-14 15:32:23 | SUCCESS  | 7102 metadata records loaded for RVDB.
+2026-07-14 15:32:34 | INFO     | HMM RVDB (0 hits) → tests/mock/run_out/hmm/RVDB.tsv
+2026-07-14 15:32:34 | SUCCESS  | 39548 metadata records loaded for Vfam.
+2026-07-14 15:32:49 | INFO     | HMM Vfam (0 hits) → tests/mock/run_out/hmm/Vfam.tsv
+2026-07-14 15:32:49 | SUCCESS  | 2010 metadata records loaded for EggNOG.
+2026-07-14 15:32:51 | INFO     | HMM EggNOG (0 hits) → tests/mock/run_out/hmm/EggNOG.tsv
+2026-07-14 15:32:51 | SUCCESS  |   ✓  HMMsearch  —  RVDB · Vfam · EggNOG  (viral confirmation)  (28.2s)
+2026-07-14 15:32:51 | SUCCESS  |   ✓  HMMsearch  —  Pfam  (functional annotation)  (0.0s)
+2026-07-14 15:32:52 | SUCCESS  | TaxonomyLoader: 259993 scientific names, 9692 species names indexed from /Users/gvpina/viralquest/data/viralTax.json.xz.
+2026-07-14 15:32:52 | SUCCESS  | Taxonomy resolved for 0/4 sequences.
+2026-07-14 15:32:52 | SUCCESS  | ViralFamilyLoader: 257 entries merged (257 high-token, 257 low-token).
+2026-07-14 15:32:52 | SUCCESS  | ViralFamilyInfo annotated 0/4 sequences.
+2026-07-14 15:32:52 | SUCCESS  |   ✓  Taxonomy annotation  (1.0s)
+2026-07-14 15:32:52 | SUCCESS  | ClusterBuilder: 0 cluster(s) from 0 sequence(s).
+2026-07-14 15:32:52 | SUCCESS  |   ✓  Cluster sequences by species  (0.0s)
+2026-07-14 15:32:52 | INFO     | fastp [paired-end, 2 threads] → 'fastp.json' ...
+2026-07-14 15:32:53 | SUCCESS  | Read QC: 62/62 reads passed (Q30 81.6%, GC 45.1%).
+2026-07-14 15:32:53 | SUCCESS  |   ✓  Read QC  —  fastp  (1.2s)
+2026-07-14 15:32:53 | WARNING  | SalmonQuantPipeline: no confirmed viral sequences — the viral_quant section will be empty.
+2026-07-14 15:32:53 | INFO     | BLASTn [HK→contigs]: 11477 HK gene(s) vs assembled contigs ...
+2026-07-14 15:32:55 | INFO     | BLASTn [HK→contigs]: 0 contig(s) matched HK genes.
+2026-07-14 15:32:55 | INFO     | De-novo FASTA: 0 viral + 0 HK-matched + rest unchanged → 'denovo_ref.fasta'
+2026-07-14 15:32:55 | INFO     | Salmon index: 'denovo_ref.fasta' → 'vq_salmon_idx' ...
+2026-07-14 15:32:57 | SUCCESS  | Salmon index built → 'tests/mock/run_out/salmon/vq_salmon_idx'
+2026-07-14 15:32:57 | INFO     | Salmon quant [paired-end, 2 threads] → 'vq_quant' ...
+2026-07-14 15:32:58 | SUCCESS  | Salmon quant done — mapping rate 100.0% → 'tests/mock/run_out/salmon/vq_quant/quant.sf'
+2026-07-14 15:32:58 | INFO     | quant.sf: 0 viral | 0 conserved | 0 ref_hk | 4 host entries.
+2026-07-14 15:33:04 | DEBUG    | PfamHkFinder: 22/22 HK profiles loaded.
+2026-07-14 15:33:04 | WARNING  | PfamHkFinder: search error: 'pyhmmer.plan7.TopHits' object has no attribute 'query_name'
+2026-07-14 15:33:04 | INFO     | PfamHkFinder: 0 HK contig(s) identified via Pfam domains.
+2026-07-14 15:33:04 | INFO     | SalmonQuantReport assembled [de_novo]: 0 viral | 0 conserved | 0 ref_hk | 0 host-viral | 0 pfam-hk record(s).
+2026-07-14 15:33:04 | DEBUG    | SalmonQuantPipeline: temporary files removed.
+2026-07-14 15:33:04 | SUCCESS  |   ✓  Salmon quantification  —  de novo  (10.9s)
+2026-07-14 15:33:05 | SUCCESS  | Sequence quality signals built for 4 sequence(s).
+2026-07-14 15:33:05 | SUCCESS  |   ✓  Sequence quality  —  dustmask · self-BLAST · jellyfish  (1.0s)
+2026-07-14 15:33:05 | INFO     | minimap2 [paired-end, preset=sr, 2 threads] → 'coverage.bam' ...
+2026-07-14 15:33:06 | SUCCESS  | Coverage profiles built for 4/4 viral sequence(s).
+2026-07-14 15:33:06 | SUCCESS  |   ✓  Read coverage profiling  (1.4s)
+2026-07-14 15:33:06 | INFO     | [1/4] contig_random: vq_score=0, class=non-viral
+2026-07-14 15:33:06 | INFO     | [2/4] contig_lowcomplexity: vq_score=0, class=non-viral
+2026-07-14 15:33:06 | INFO     | [3/4] contig_direct_repeat: vq_score=0, class=non-viral
+2026-07-14 15:33:06 | INFO     | [4/4] contig_inverted_repeat: vq_score=0, class=non-viral
+2026-07-14 15:33:06 | SUCCESS  |   ✓  Heuristic scoring  —  rule-based vq_score  (0.0s)
+2026-07-14 15:33:06 | INFO     | Viral contigs FASTA (0 seqs) → tests/mock/run_out/contigs_viral_contigs.fasta
+2026-07-14 15:33:06 | WARNING  | Force mode: exporting all 4 sequence(s) without viral confirmation filters.
+2026-07-14 15:33:06 | SUCCESS  | Report written → 'tests/mock/run_out/contigs_viralquest.json'  (4 sequences, 0 clusters).
+2026-07-14 15:33:06 | SUCCESS  |   ✓  Export JSON report  (0.0s)
+2026-07-14 15:33:06 | SUCCESS  |   ✓  Build HTML report  (0.0s)

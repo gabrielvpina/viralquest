@@ -650,6 +650,15 @@ function _seqCard(seq) {
       <div class="vq-body-label">Genome map</div>
       <div class="vq-genome-wrap" id="genome-wrap-${safe}"></div>
 
+      ${seq.seq_quality ? `
+      <div class="vq-body-label">Sequence quality</div>
+      <div class="vq-seqqual" style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;padding:4px 2px 8px">
+        <div class="vq-dotplot-wrap" id="dotplot-wrap-${safe}" style="flex:0 0 auto"></div>
+        <div class="vq-seqqual-meta" style="font-size:12px;color:var(--vq-text-2);line-height:2">
+          ${_repeatSummary(seq.seq_quality)}
+        </div>
+      </div>` : ''}
+
       <div class="vq-body-label">BLAST hits</div>
       <div class="vq-panel">
         <div class="vq-subtabs" role="tablist" aria-label="BLAST hit sources">
@@ -727,6 +736,16 @@ function _toggleCard(card, seq, forceOpen = false) {
   const safe = VQ.safeId(seq.id);
   const wrap = card.querySelector('#genome-wrap-' + safe);
   if (wrap && !wrap.querySelector('svg')) wrap.appendChild(_genomeSVG(seq, wrap.clientWidth));
+
+  // Native-SVG self-similarity dot plot (rendered lazily on first open).
+  if (seq.seq_quality) {
+    const dpWrap = card.querySelector('#dotplot-wrap-' + safe);
+    if (dpWrap && !dpWrap.querySelector('svg')) {
+      const node = _dotPlotSVG(seq.seq_quality);
+      if (node) dpWrap.appendChild(node);
+      else dpWrap.innerHTML = '<div class="vq-empty" style="padding:8px 0;font-size:11px">No dot plot.</div>';
+    }
+  }
 
   // Render the default BLASTn table
   const blastBody = card.querySelector('#blast-body-' + safe);
@@ -980,6 +999,11 @@ function _genomeSVG(seq, containerWidth) {
   // ── Read-coverage track ─────────────────────────────────────────────────
   if (cov) _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, COV_AREA_H);
 
+  // ── Low-complexity bands (dustmasker) — behind the ORF lanes ─────────────
+  const sqBands = seq.seq_quality && (seq.seq_quality.low_complexity_regions || []).length
+    ? seq.seq_quality.low_complexity_regions : null;
+  if (sqBands) _drawLowComplexityBands(svg, sqBands, SCALE, PAD_L, AXIS_Y, AXIS_Y + gridH);
+
   // ── Frame labels (left gutter) + lane backgrounds ───────────────────────
   laneYs.forEach((y, i) => {
     // Subtle striping so the lanes are visually distinct
@@ -1135,6 +1159,15 @@ function _genomeSVG(seq, containerWidth) {
 
 // ── Read-coverage track ─────────────────────────────────────────────────────
 
+// Colour a coverage bin by its mean read base quality (Phred). Green = high
+// confidence, amber = borderline, red = low quality (possible sequencing error).
+function _qualColor(q) {
+  if (q >= 30) return 'var(--vq-success)';
+  if (q >= 20) return 'var(--vq-warning)';
+  if (q > 0)   return 'var(--vq-danger)';
+  return 'var(--vq-text-3)';
+}
+
 function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH) {
   const top    = AXIS_Y + 12;
   const bottom = top + areaH;
@@ -1142,22 +1175,40 @@ function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH
   const nb     = bins.length;
   const maxD   = cov.max_depth > 0 ? cov.max_depth : 1;
 
+  // Per-base quality (from the same BAM) aligned 1:1 with the depth bins.
+  const qual   = (cov.quality_bins && cov.quality_bins.length === nb) ? cov.quality_bins : null;
+
   const binNt  = i => ((i + 0.5) / nb) * seqLen;       // bin centre in nt
   const xOf    = i => PAD_L + SCALE(binNt(i));
   const yScale = d3.scaleLinear([0, maxD], [bottom, top]);
 
   const g = svg.append('g').attr('class', 'vq-cov-track');
 
-  // Filled coverage area.
-  const area = d3.area()
-    .x((d, i) => xOf(i))
-    .y0(bottom)
-    .y1(d => yScale(d))
-    .curve(d3.curveMonotoneX);
-  g.append('path')
-    .datum(bins)
-    .attr('d', area)
-    .attr('fill', 'var(--vq-accent)').attr('opacity', 0.30);
+  if (qual) {
+    // Colour the coverage by base quality: one bar per bin, height = depth.
+    const bw = Math.max(0.6, drawW / nb);
+    g.selectAll('rect.vq-cov-bar')
+      .data(bins)
+      .join('rect')
+      .attr('class', 'vq-cov-bar')
+      .attr('x', (d, i) => xOf(i) - bw / 2)
+      .attr('y', d => yScale(d))
+      .attr('width', bw)
+      .attr('height', d => bottom - yScale(d))
+      .attr('fill', (d, i) => _qualColor(qual[i]))
+      .attr('opacity', 0.75);
+  } else {
+    // No quality signal → original single-colour filled area.
+    const area = d3.area()
+      .x((d, i) => xOf(i))
+      .y0(bottom)
+      .y1(d => yScale(d))
+      .curve(d3.curveMonotoneX);
+    g.append('path')
+      .datum(bins)
+      .attr('d', area)
+      .attr('fill', 'var(--vq-accent)').attr('opacity', 0.30);
+  }
 
   // Outline on top of the area.
   const line = d3.line()
@@ -1189,11 +1240,12 @@ function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH
     .text(`${Math.round(maxD)}×`);
 
   // Summary caption (top-right of the band).
+  const qCaption = qual ? ` · Q̄ ${(cov.mean_quality ?? 0).toFixed(0)}` : '';
   g.append('text')
     .attr('x', PAD_L + drawW).attr('y', top - 2)
     .attr('text-anchor', 'end').attr('font-size', 9)
     .attr('fill', 'var(--vq-text-3)')
-    .text(`mean ${cov.mean_depth.toFixed(1)}× · breadth ${(cov.breadth_1x * 100).toFixed(0)}% · CV ${cov.cv.toFixed(2)}`);
+    .text(`mean ${cov.mean_depth.toFixed(1)}× · breadth ${(cov.breadth_1x * 100).toFixed(0)}% · CV ${cov.cv.toFixed(2)}${qCaption}`);
 
   // Hover overlay → depth tooltip at the pointer position.
   g.append('rect')
@@ -1204,11 +1256,15 @@ function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH
       const [mx] = d3.pointer(evt);
       const nt   = Math.max(0, Math.min(seqLen, SCALE.invert(mx - PAD_L)));
       const bi   = Math.max(0, Math.min(nb - 1, Math.floor((nt / seqLen) * nb)));
+      const qRow = qual
+        ? `<span class="vq-tooltip__key">Quality</span><span>Q${(qual[bi] ?? 0).toFixed(0)}</span>`
+        : '';
       VQ.tooltipShow(`
         <div class="vq-tooltip__title">Read coverage</div>
         <div class="vq-tooltip__row">
           <span class="vq-tooltip__key">Position</span><span>~${Math.round(nt).toLocaleString()} nt</span>
           <span class="vq-tooltip__key">Depth</span><span>${bins[bi].toFixed(1)}×</span>
+          ${qRow}
           <span class="vq-tooltip__key">Mean</span><span>${cov.mean_depth.toFixed(1)}×</span>
           <span class="vq-tooltip__key">Max</span><span>${cov.max_depth.toFixed(0)}×</span>
         </div>`, evt);
@@ -1266,6 +1322,92 @@ function _domainColor(target) {
   return col;
 }
 
+
+// ── Sequence-quality overlays ────────────────────────────────────────────────
+
+function _drawLowComplexityBands(svg, regions, SCALE, PAD_L, yTop, yBottom) {
+  const g = svg.append('g').attr('class', 'vq-lowcx-bands');
+  regions.forEach(([a, b]) => {
+    const x1 = PAD_L + SCALE(a);
+    const x2 = PAD_L + SCALE(b + 1);
+    g.append('rect')
+      .attr('x', x1).attr('y', yTop)
+      .attr('width', Math.max(1, x2 - x1)).attr('height', Math.max(0, yBottom - yTop))
+      .attr('fill', 'var(--vq-warning)').attr('opacity', 0.10)
+      .style('cursor', 'help')
+      .on('mousemove', evt => VQ.tooltipShow(
+        `<div class="vq-tooltip__title">Low complexity</div>
+         <div class="vq-tooltip__row">
+           <span class="vq-tooltip__key">Region</span>
+           <span>${(a + 1).toLocaleString()}–${(b + 1).toLocaleString()} nt</span>
+         </div>`, evt))
+      .on('mouseleave', VQ.tooltipHide);
+  });
+}
+
+// Native-SVG self-similarity dot plot. Main diagonal = identity; off-diagonal
+// segments (slope +1) = direct repeats; anti-diagonal (slope −1) = inverted.
+function _dotPlotSVG(sq, size = 320) {
+  const dp = sq.dotplot;
+  if (!dp || !(dp.segments || []).length) return null;
+
+  const L   = dp.length || 1;
+  const PAD = 34;
+  const W   = size, H = size;
+  const s   = d3.scaleLinear([0, L], [PAD, W - 8]);
+  const sy  = d3.scaleLinear([0, L], [H - PAD, 8]);   // y grows upward
+
+  const svg = d3.create('svg')
+    .attr('class', 'vq-dotplot-svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('max-width', size + 'px').style('height', 'auto');
+
+  // Plot frame.
+  svg.append('rect')
+    .attr('x', PAD).attr('y', 8).attr('width', W - PAD - 8).attr('height', H - PAD - 8)
+    .attr('fill', 'none').attr('stroke', 'var(--vq-border)').attr('stroke-width', 1);
+
+  // Axis labels.
+  svg.append('text').attr('x', (W + PAD) / 2).attr('y', H - 8)
+    .attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', 'var(--vq-text-3)')
+    .text('query (nt)');
+  svg.append('text').attr('x', 10).attr('y', (H - PAD) / 2)
+    .attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', 'var(--vq-text-3)')
+    .attr('transform', `rotate(-90 10 ${(H - PAD) / 2})`).text('subject (nt)');
+
+  const g = svg.append('g');
+  dp.segments.forEach(([x1, y1, x2, y2]) => {
+    const inverted = (y2 - y1) * (x2 - x1) < 0;       // slope < 0 ⇒ inverted repeat
+    const onDiag   = Math.abs((y1 - x1)) < 1e-6 && Math.abs((y2 - x2)) < 1e-6;
+    g.append('line')
+      .attr('x1', s(x1)).attr('y1', sy(y1))
+      .attr('x2', s(x2)).attr('y2', sy(y2))
+      .attr('stroke', onDiag ? 'var(--vq-text-3)'
+                    : inverted ? 'var(--vq-danger)' : 'var(--vq-accent)')
+      .attr('stroke-width', onDiag ? 1 : 1.6)
+      .attr('opacity', onDiag ? 0.5 : 0.85);
+  });
+  return svg.node();
+}
+
+// Compact textual summary of self-repeats + k-mer repetitiveness for the card.
+function _repeatSummary(sq) {
+  const reps    = sq.self_repeats || [];
+  const direct  = reps.filter(r => r.strand === 'plus').length;
+  const inverted = reps.filter(r => r.strand === 'minus').length;
+  const score   = ((sq.kmer_repeat_score || 0) * 100).toFixed(1);
+  const lowcx   = ((sq.low_complexity_frac || 0) * 100).toFixed(1);
+  const dot = c => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;`
+    + `background:${c};margin-right:5px;vertical-align:middle"></span>`;
+  const parts = [
+    `${dot('var(--vq-accent)')}${direct} direct repeat${direct !== 1 ? 's' : ''}`,
+    `${dot('var(--vq-danger)')}${inverted} inverted`,
+    `k${sq.kmer_size} repeat ${score}%`,
+    `low-complexity ${lowcx}%`,
+  ];
+  return parts.join('&nbsp;·&nbsp;');
+}
 
 window.vqInitViewer = vqInitViewer;
 })();
