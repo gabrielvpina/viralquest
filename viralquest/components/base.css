@@ -1608,6 +1608,16 @@ body {
   overflow: auto;
 }
 
+/* Shared block for the three symmetric panes under the genome map (dot plot,
+   top hit + taxonomy, FASTA preview) — same background so they read as a set. */
+.vq-qual-block {
+  background:    var(--vq-bg);
+  border:        1px solid var(--vq-border);
+  border-radius: var(--vq-radius-sm);
+  padding:       12px;
+  box-sizing:    border-box;
+}
+
 /* ============================================================
    Table
    ============================================================ */

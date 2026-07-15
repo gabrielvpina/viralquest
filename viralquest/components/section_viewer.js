@@ -610,7 +610,14 @@ function _seqCard(seq) {
   // FASTA preview (header + sequence, seq-quality regions colour-highlighted).
   const hasFasta  = !!(seq.sequence || seq.sequence_nt);
   const fastaHtml = hasFasta ? _fastaHighlightedHTML(seq) : '';
-  const topHitHtml = _topHitCard(seq);   // middle column: best BLASTx hit + taxonomy
+  const topHitContent = _topHitContent(seq);   // middle block: best BLASTx hit + taxonomy
+  // Column widths adapt: with no BLASTx hit (HMM-only) the middle block is absent,
+  // so the FASTA pane grows and the sequence-quality pane shrinks.
+  const hasTopHit = !!topHitContent;
+  // Dot-plot column hugs its content (no grow) so there's no empty space to the
+  // right of the legend; the freed width goes to the top-hit / FASTA panes.
+  const dotCol    = 'flex:0 1 auto;min-width:0';
+  const fastaCol  = hasTopHit ? 'flex:1.1 1 260px;min-width:250px' : 'flex:2 1 380px;min-width:320px';
 
   card.innerHTML = `
     <div class="vq-seq-card__head" role="button" tabindex="0" aria-expanded="false">
@@ -655,37 +662,53 @@ function _seqCard(seq) {
       <div class="vq-body-label">Genome map</div>
       <div class="vq-genome-wrap" id="genome-wrap-${safe}"></div>
 
-      ${(seq.seq_quality || hasFasta || topHitHtml) ? `
-      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-top:4px">
+      ${(seq.seq_quality || hasFasta || topHitContent) ? `
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-top:8px">
 
         ${seq.seq_quality ? `
-        <div style="flex:1 1 300px;min-width:280px">
-          <div class="vq-body-label">Sequence quality</div>
-          <div style="display:flex;gap:16px;align-items:center;padding:4px 2px 8px">
-            <div class="vq-dotplot-wrap" id="dotplot-wrap-${safe}" style="flex:0 0 auto"></div>
+        <div style="${dotCol};display:flex;flex-direction:column">
+          <div class="vq-body-label" style="display:flex;align-items:center;gap:7px;min-height:24px;margin:0 0 6px">
+            <span>Sequence quality</span>
+            <span id="siginfo-${safe}" role="img" tabindex="0" aria-label="What each signal means"
+                  style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+                         border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
+                         font-size:10px;font-weight:700;cursor:help">?</span>
+          </div>
+          <div class="vq-qual-block" style="height:360px;display:flex;flex-direction:row;align-items:center;
+                                            justify-content:flex-start;gap:10px">
+            <div class="vq-dotplot-wrap" id="dotplot-wrap-${safe}"
+                 style="flex:0 1 auto;min-width:0;height:100%;aspect-ratio:1;max-width:260px;
+                        display:flex;align-items:center;justify-content:center"></div>
             <div class="vq-seqqual-meta"
-                 style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--vq-text-2)">
-              <div style="display:flex;align-items:center;gap:7px;font-weight:600">
-                <span>Legend</span>
-                <span id="siginfo-${safe}" role="img" tabindex="0" aria-label="What each signal means"
-                      style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
-                             border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
-                             font-size:10px;font-weight:700;cursor:help">?</span>
-              </div>
+                 style="flex:0 0 auto;display:flex;flex-direction:column;gap:11px;font-size:11.5px;color:var(--vq-text-2)">
               ${_repeatSummary(seq.seq_quality)}
             </div>
           </div>
         </div>` : ''}
 
-        ${topHitHtml}
+        ${topHitContent ? `
+        <div style="flex:1 1 240px;min-width:230px;display:flex;flex-direction:column">
+          <div class="vq-body-label" style="display:flex;align-items:center;gap:7px;min-height:24px;margin:0 0 6px">
+            <span>Top hit &amp; taxonomy</span>
+            <span id="taxinfo-${safe}" role="img" tabindex="0" aria-label="Taxonomy source"
+                  style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+                         border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
+                         font-size:10px;font-weight:700;cursor:help">?</span>
+          </div>
+          <div class="vq-qual-block" style="height:360px;overflow:auto;display:flex;flex-direction:column;
+                                            justify-content:flex-start;gap:2px;font-size:11.5px;line-height:1.75">
+            ${topHitContent}
+          </div>
+        </div>` : ''}
 
         ${hasFasta ? `
-        <div style="flex:1 1 300px;min-width:280px;display:flex;flex-direction:column">
-          <div class="vq-body-label" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <div style="${fastaCol};display:flex;flex-direction:column">
+          <div class="vq-body-label" style="display:flex;align-items:center;justify-content:space-between;
+                                            gap:10px;min-height:24px;margin:0 0 6px">
             <span>FASTA preview</span>
             <button type="button" class="vq-btn vq-btn--ghost vq-btn--sm" id="fasta-copy-${safe}">Copy FASTA</button>
           </div>
-          <div class="vq-fasta" style="height:${_SEQQUAL_SIZE}px;max-height:${_SEQQUAL_SIZE}px">${fastaHtml}</div>
+          <div class="vq-fasta" style="height:360px;max-height:360px;margin:0">${fastaHtml}</div>
         </div>` : ''}
 
       </div>` : ''}
@@ -708,18 +731,23 @@ function _seqCard(seq) {
 
     </div>`;
 
-  // Legend info (?) hover — describe each sequence-quality signal
-  const sigInfo = card.querySelector('#siginfo-' + safe);
-  if (sigInfo) {
-    const infoHtml = _signalsInfoHTML();
-    sigInfo.addEventListener('mousemove', e => VQ.tooltipShow(infoHtml, e));
-    sigInfo.addEventListener('mouseleave', VQ.tooltipHide);
-    sigInfo.addEventListener('focus', () => {
-      const r = sigInfo.getBoundingClientRect();
-      VQ.tooltipShow(infoHtml, { clientX: r.right, clientY: r.bottom });
+  // Info (?) hovers — bind a tooltip to a badge by id
+  const _bindInfo = (id, html) => {
+    const el = card.querySelector('#' + id + '-' + safe);
+    if (!el) return;
+    el.addEventListener('mousemove', e => VQ.tooltipShow(html, e));
+    el.addEventListener('mouseleave', VQ.tooltipHide);
+    el.addEventListener('focus', () => {
+      const r = el.getBoundingClientRect();
+      VQ.tooltipShow(html, { clientX: r.right, clientY: r.bottom });
     });
-    sigInfo.addEventListener('blur', VQ.tooltipHide);
-  }
+    el.addEventListener('blur', VQ.tooltipHide);
+  };
+  _bindInfo('siginfo', _signalsInfoHTML());
+  _bindInfo('taxinfo', `
+    <div class="vq-tooltip__title">Top hit &amp; taxonomy</div>
+    <div style="max-width:240px">Best BLASTx hit (NR preferred, else RefSeq).
+    Taxonomic lineage resolved from <strong>ICTV</strong> and <strong>NCBI</strong> taxonomy.</div>`);
 
   // Copy FASTA (header + sequence) to clipboard
   card.querySelector('#fasta-copy-' + safe)?.addEventListener('click', function () {
@@ -1410,20 +1438,21 @@ function _dotPlotSVG(sq, size = _SEQQUAL_SIZE) {
   const svg = d3.create('svg')
     .attr('class', 'vq-dotplot-svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('preserveAspectRatio', 'xMinYMin meet')
-    .style('width', size + 'px').style('height', size + 'px').style('max-width', '100%');
+    .attr('preserveAspectRatio', 'xMidYMid meet')
+    .style('width', '100%').style('height', '100%').style('max-width', '100%');
 
-  // Plot frame.
+  // Plot frame — white fill so the plot stands out against the block background.
   svg.append('rect')
     .attr('x', PAD).attr('y', 8).attr('width', W - PAD - 8).attr('height', H - PAD - 8)
-    .attr('fill', 'none').attr('stroke', 'var(--vq-border)').attr('stroke-width', 1);
+    .attr('fill', 'var(--vq-surface)').attr('stroke', 'var(--vq-border)').attr('stroke-width', 1);
 
-  // Axis labels.
+  // Axis labels (bold).
   svg.append('text').attr('x', (W + PAD) / 2).attr('y', H - 8)
-    .attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', 'var(--vq-text-3)')
-    .text('query (nt)');
+    .attr('text-anchor', 'middle').attr('font-size', 9.5).attr('font-weight', 700)
+    .attr('fill', 'var(--vq-text-2)').text('query (nt)');
   svg.append('text').attr('x', 10).attr('y', (H - PAD) / 2)
-    .attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', 'var(--vq-text-3)')
+    .attr('text-anchor', 'middle').attr('font-size', 9.5).attr('font-weight', 700)
+    .attr('fill', 'var(--vq-text-2)')
     .attr('transform', `rotate(-90 10 ${(H - PAD) / 2})`).text('subject (nt)');
 
   // Classify every segment with the shared classifier, then draw background
@@ -1453,9 +1482,10 @@ function _dotPlotSVG(sq, size = _SEQQUAL_SIZE) {
   return svg.node();
 }
 
-// Middle column: best BLASTx hit (NR preferred, else RefSeq) + taxonomy lineage.
-// Returns '' when there is neither a hit nor taxonomy to show.
-function _topHitCard(seq) {
+// Inner content for the middle "Top hit & taxonomy" block: best BLASTx hit
+// (NR preferred, else RefSeq) + taxonomy lineage. Returns '' when there is
+// neither a hit nor taxonomy to show.
+function _topHitContent(seq) {
   const esc  = VQ.esc;
   const t    = seq.taxonomy || {};
   const pool = (seq.blastx_nr_hits && seq.blastx_nr_hits.length)
@@ -1471,7 +1501,7 @@ function _topHitCard(seq) {
     </div>` : '';
 
   const hit = best ? `
-    <div style="font-weight:600;line-height:1.35;margin-bottom:3px;word-break:break-word">
+    <div style="font-weight:600;line-height:1.35;margin-bottom:4px;word-break:break-word">
       ${esc(best.subject_title || best.species || best.subject_id || '—')}
     </div>
     ${kv('Accession', best.subject_id)}
@@ -1483,19 +1513,21 @@ function _topHitCard(seq) {
 
   const tax = hasTax ? `
     <div style="border-top:1px solid var(--vq-border);margin-top:8px;padding-top:8px">
-      ${kv('Family',  t.family)}
-      ${kv('Genus',   t.genus)}
-      ${kv('Species', t.species || t.scientific_name)}
+      ${kv('Kingdom',   t.kingdom)}
+      ${kv('Phylum',    t.phylum)}
+      ${kv('Class',     t['class'])}
+      ${kv('Order',     t.order)}
+      ${kv('Family',    t.family)}
+      ${kv('Subfamily', t.subfamily)}
+      ${kv('Genus',     t.genus)}
+      ${kv('Species',   t.species || t.scientific_name)}
+      ${t.genome ? `
+      <div style="border-top:1px dashed var(--vq-border);margin-top:6px;padding-top:6px">
+        ${kv('Genome', t.genome)}
+      </div>` : ''}
     </div>` : '';
 
-  return `
-    <div style="flex:1 1 200px;min-width:190px;max-width:290px">
-      <div class="vq-body-label">Top hit &amp; taxonomy</div>
-      <div class="vq-panel" style="padding:10px 12px;font-size:11.5px;line-height:1.85;
-                                   display:flex;flex-direction:column;gap:2px">
-        ${hit}${tax}
-      </div>
-    </div>`;
+  return hit + tax;
 }
 
 // One classifier shared by the dot plot, the legend count and the FASTA
@@ -1538,15 +1570,15 @@ function _repeatSummary(sq) {
   const score    = ((sq.kmer_repeat_score || 0) * 100).toFixed(1);
   const lowcx   = ((sq.low_complexity_frac || 0) * 100).toFixed(1);
   const dot = c => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;`
-    + `background:${c};margin-right:6px;vertical-align:middle"></span>`;
-  // One legend item per line (stacked), vertically centred against the dot plot.
+    + `background:${c};margin-right:7px;vertical-align:middle;flex:0 0 auto"></span>`;
+  // Full-name legend items, stacked in a column to the right of the dot plot.
   const rows = [
     `${dot('var(--vq-accent)')}${direct} direct repeat${direct !== 1 ? 's' : ''}`,
     `${dot('var(--vq-danger)')}${inverted} inverted repeat${inverted !== 1 ? 's' : ''}`,
     `${dot('var(--vq-warning)')}low-complexity ${lowcx}%`,
     `k${sq.kmer_size} repeat score ${score}%`,
   ];
-  return rows.map(r => `<div style="white-space:nowrap">${r}</div>`).join('');
+  return rows.map(r => `<div style="display:flex;align-items:center;white-space:nowrap">${r}</div>`).join('');
 }
 
 // Colour codes matching the legend / dot plot: 1 low-complexity (amber),
