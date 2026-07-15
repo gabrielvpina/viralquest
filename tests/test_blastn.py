@@ -373,6 +373,60 @@ class TestParseXmlRecord:
 
 
 # ---------------------------------------------------------------------------
+# BlastnOutputParser._accession_from_alignment  (online Hit_id fallback)
+# ---------------------------------------------------------------------------
+
+def _aln(hit_id=None, accession="__unset__", hsps=None):
+    """Alignment stub. accession is omitted from the object when '__unset__',
+    mirroring Biopython alignments parsed from online qblast XML (no Hit_accession)."""
+    from types import SimpleNamespace
+    ns = SimpleNamespace(title="t", hit_def="Some virus", length=1000,
+                         hsps=hsps if hsps is not None else [_make_hsp()])
+    if hit_id is not None:
+        ns.hit_id = hit_id
+    if accession != "__unset__":
+        ns.accession = accession
+    return ns
+
+
+class TestAccessionResolution:
+    _resolve = staticmethod(BlastnOutputParser._accession_from_alignment)
+
+    def test_explicit_hit_accession_preferred(self):
+        # Local BLAST+/XML v2 sets alignment.accession — it wins over Hit_id.
+        aln = _aln(hit_id="gi|123|ref|X99999.9|", accession="NC_045512")
+        assert self._resolve(aln) == "NC_045512"
+
+    def test_ref_tag_in_pipe_hit_id(self):
+        aln = _aln(hit_id="gi|1798174254|ref|NC_045512.2|")
+        assert self._resolve(aln) == "NC_045512.2"
+
+    def test_gb_tag_in_pipe_hit_id(self):
+        aln = _aln(hit_id="gi|555|gb|MN908947.3|")
+        assert self._resolve(aln) == "MN908947.3"
+
+    def test_plain_accession_hit_id_no_pipes(self):
+        aln = _aln(hit_id="NC_045512.2")
+        assert self._resolve(aln) == "NC_045512.2"
+
+    def test_no_tag_falls_back_to_last_token(self):
+        # Pipe-delimited but no recognised db tag → last token.
+        aln = _aln(hit_id="12345|NC_045512.2")
+        assert self._resolve(aln) == "NC_045512.2"
+
+    def test_no_accession_and_no_hit_id_returns_none(self):
+        aln = _aln(hit_id=None)
+        assert self._resolve(aln) is None
+
+    def test_parse_xml_record_uses_hit_id_fallback(self):
+        # Online path: no Hit_accession → accession pulled from Hit_id.
+        aln  = _aln(hit_id="gi|1798174254|ref|NC_045512.2|")
+        rec  = _make_blast_record(alignments=[aln])
+        hits = BlastnOutputParser.parse_xml_record(rec, "seq1")
+        assert hits[0].accession == "NC_045512.2"
+
+
+# ---------------------------------------------------------------------------
 # BlastnResultAttacher.attach
 # ---------------------------------------------------------------------------
 

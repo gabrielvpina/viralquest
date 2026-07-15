@@ -841,8 +841,8 @@ function _blastTable(hits, kind) {
   }
   const esc = VQ.esc;
   const rows = hits.map(h => {
-    const accession = h.subject_id || '—';
-    const title     = h.subject_title || h.stitle || '—';
+    const accession = h.accession || h.subject_id || '—';
+    const title     = h.stitle || h.subject_title || '—';
     const pident    = h.pct_identity ?? h.pident;
     const qcov      = h.query_coverage ?? h.qcovhsp;
     const evalue    = h.e_value ?? h.evalue;

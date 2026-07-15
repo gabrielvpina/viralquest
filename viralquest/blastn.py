@@ -263,8 +263,38 @@ class BlastnOutputParser:
                     )
         return hits
 
-    @staticmethod
-    def parse_xml_record(blast_record, query_id: str) -> list[BlastnResult]:
+    # NCBI sequence-id database tags — the accession follows one of these in the
+    # pipe-delimited Hit_id (e.g. "gi|123|ref|NC_045512.2|").
+    _DB_TAGS = frozenset({
+        "ref", "gb", "emb", "dbj", "tpg", "tpe", "tpd",
+        "sp", "pir", "prf", "pdb", "gnl", "lcl",
+    })
+
+    @classmethod
+    def _accession_from_alignment(cls, alignment) -> str | None:
+        """
+        Resolve the subject accession for one alignment.
+
+        Prefer the explicit ``<Hit_accession>`` (present in local BLAST+/XML v2
+        output). Online NCBIWWW.qblast XML omits it, exposing the accession only
+        inside ``Hit_id`` (e.g. ``gi|1798174254|ref|NC_045512.2|``), so fall back
+        to parsing it from there.
+        """
+        acc = getattr(alignment, "accession", None)
+        if acc:
+            return acc
+
+        hit_id = getattr(alignment, "hit_id", "") or ""
+        parts  = [p for p in hit_id.split("|") if p]
+        if not parts:
+            return hit_id or None
+        for i, part in enumerate(parts):
+            if part in cls._DB_TAGS and i + 1 < len(parts):
+                return parts[i + 1]
+        return parts[-1]
+
+    @classmethod
+    def parse_xml_record(cls, blast_record, query_id: str) -> list[BlastnResult]:
         """
         Parse one Biopython NCBIXML blast_record into BlastnResult objects.
 
@@ -299,7 +329,7 @@ class BlastnOutputParser:
                     evalue      = best_hsp.expect,
                     bit_score   = float(best_hsp.bits),
                     stitle      = stitle,
-                    accession   = getattr(alignment, "accession", None) or None,
+                    accession   = cls._accession_from_alignment(alignment),
                     query_start = best_hsp.query_start,
                     query_end   = best_hsp.query_end,
                 ))
