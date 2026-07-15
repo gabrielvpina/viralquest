@@ -16,6 +16,7 @@ Default  : loguru writes directly to stderr — full timestamped log stream.
 
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import sys
@@ -151,6 +152,11 @@ def _build_parser():
     bln.add_argument("--blastn-online-db", dest="blastn_online_db", type=str,
         default="nt", metavar="DB",
         help="NCBI nucleotide database for web BLASTn (default: nt).")
+    bln.add_argument("--ncbi-api-key", dest="ncbi_api_key", type=str,
+        default=None, metavar="KEY",
+        help="NCBI API key to speed up online BLASTn (raises NCBI's rate limit "
+             "from 3 to 10 requests/s). Optional; falls back to the NCBI_API_KEY "
+             "environment variable. Only used with --blastn-online.")
 
     # Pipeline tuning ──────────────────────────────────────────────────────────
     tun = parser.add_argument_group("pipeline tuning")
@@ -307,6 +313,9 @@ def _show_rich_help() -> None:
         "  NCBI e-mail for web BLASTn — no local database required.\n\n"
         "[bold cyan]--blastn-online-db[/]    [dim]DB[/]  (default: nt)\n"
         "  NCBI database to query when using --blastn-online.\n\n"
+        "[bold cyan]--ncbi-api-key[/]        [dim]KEY[/]\n"
+        "  Optional NCBI API key to speed up online BLASTn (3 -> 10 req/s).\n"
+        "  Falls back to the NCBI_API_KEY environment variable.\n\n"
         "[bold]Note:[/] --blastn-local and --blastn-online are mutually exclusive.",
         title="[bold yellow]BLASTN (choose one)[/bold yellow]",
         border_style="yellow", width=85, box=box.ROUNDED,
@@ -445,6 +454,11 @@ def _validate_args(args, console) -> None:
         console.print(
             "[bold yellow]WARNING:[/bold yellow] --model-type is set but --nr-db was not provided. "
             "LLM scoring requires NR-confirmed sequences and will be skipped."
+        )
+    if args.ncbi_api_key and not args.blastn_online:
+        console.print(
+            "[bold yellow]WARNING:[/bold yellow] --ncbi-api-key only applies to online BLASTn "
+            "(--blastn-online); it will be ignored."
         )
 
 
@@ -649,8 +663,15 @@ def _run_pipeline(args):
             blastn = BlastnRunner(mode=BlastnMode.LOCAL, db_path=args.blastn_local,
                                   threads=args.cpu, outdir=str(organizer.blastn_dir))
         else:
+            # NCBI API key (flag wins over env var) raises the web rate limit
+            # from 3 to 10 req/s, so a tighter inter-request delay is safe.
+            ncbi_key = args.ncbi_api_key or os.environ.get("NCBI_API_KEY")
+            if ncbi_key:
+                logger.info("BLASTn [online]: using NCBI API key (10 req/s limit).")
             blastn = BlastnRunner(mode=BlastnMode.ONLINE,
-                                  outdir=str(organizer.blastn_dir))
+                                  outdir=str(organizer.blastn_dir),
+                                  ncbi_api_key=ncbi_key,
+                                  request_delay=0.15 if ncbi_key else 0.4)
         # NR run → only NR-confirmed sequences; no NR → all viral sequences
         blastn_seqs = (
             [s for s in seqs if s.blastx_nr_hits]
