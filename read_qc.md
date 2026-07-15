@@ -1,11 +1,18 @@
-# Read QC & Sequence Quality module
+# Sequence Quality module
 
-Um módulo acionado por `--reads` que agrega dois sinais complementares de qualidade:
+Um módulo acionado por `--reads` que agrega sinais de qualidade das contigs montadas:
 
-1. **Qualidade das reads** (fastp) + **coloração da track de cobertura** pela qualidade de base, reaproveitando o BAM já produzido pelo `coverage.py`.
+1. **Coloração da track de cobertura** pela qualidade de base, reaproveitando o BAM já produzido pelo `coverage.py`.
 2. **Qualidade estrutural da sequência** — regiões de baixa complexidade (dustmasker), repetições internas (self-BLASTn), repetitividade de k-mers (jellyfish) e um **dot plot em SVG nativo**.
 
-Ferramentas fixadas: `fastp` · `dustmasker` · `blastn` (self-BLAST) · `jellyfish` · dot plot SVG nativo · coloração da cobertura.
+Ferramentas fixadas: `dustmasker` · `blastn` (self-BLAST) · `jellyfish` · dot plot SVG nativo · coloração da cobertura (`samtools mpileup`).
+
+> **Histórico:** uma seção de QC de reads da biblioteca (fastp → aba "Read QC") foi
+> implementada e depois **removida** — o fastp não tinha função na visualização da
+> qualidade das contigs (que vem do `coverage.py` via `samtools mpileup`, não do fastp).
+> O resumo de qualidade de sequência que ficava naquela aba virou um **card condicional
+> na aba General Stats**. As menções a `fastp` / `read_qc.py` / aba "Read QC" abaixo
+> descrevem o estado anterior e ficam como registro do histórico de implementação.
 
 ---
 
@@ -177,7 +184,9 @@ sinais de qualidade de sequência (com link para o Sequence Viewer). Usa `VQ.esc
   área monocromática; legenda ganha `Q̄` e o tooltip mostra `Q` por posição. Sem
   `quality_bins` (relatórios antigos) mantém a área original — retrocompatível.
 - **Bandas de baixa complexidade (dustmasker)** — `_drawLowComplexityBands` desenha
-  faixas verticais translúcidas (âmbar) atrás das lanes de ORF, com tooltip da região.
+  faixas verticais translúcidas (âmbar) atrás das lanes de ORF. São **puramente visuais**
+  (`pointer-events: none`) para **não bloquear** o hover da track de cobertura por baixo
+  (o detalhe da região fica no realce do FASTA preview e no dot plot).
 - **Dot plot SVG nativo** — `_dotPlotSVG(seq_quality)` gera `<svg>` puro (eixos query ×
   subject). **Fonte única de verdade:** um classificador compartilhado (`_segClass`)
   rotula cada segmento como `diag` (diagonal identidade, cinza tracejado), `lowcx`
@@ -211,6 +220,114 @@ placeholder, com `tab-readqc`/`section-readqc`/`vqInitReadQc`/`_dotPlotSVG`/`_qu
 `test_report.py` mantêm o baseline (3 falhas pré-existentes). Uma demo self-contained
 (`readqc_demo.html`) foi gerada com cobertura colorida (dip de qualidade), banda de baixa
 complexidade e dot plot (repetição direta + invertida) para inspeção visual.
+
+---
+
+## Parâmetros de qualidade — referência completa
+
+Consolida **todos** os parâmetros e mostradores de qualidade do módulo: o que cada um
+significa, como é calculado e como aparece no relatório. Inclui as últimas modificações
+no dot plot e nos mostradores.
+
+### A. Read QC da biblioteca (fastp) — **REMOVIDO**
+
+Esta seção (fastp → `report["read_qc"]` → `readqc_stats` → aba "Read QC") foi **removida**.
+O fastp não participava da visualização da qualidade das contigs; a coloração de qualidade
+no genome viewer vem do `coverage.py` (`samtools mpileup`), descrito em **B**. Removidos:
+`read_qc.py`, `section_readqc.js`, a aba/seção no `shell.html`, o placeholder `{{VQ_READQC}}`,
+`_build_readqc_stats`, a dataclass `ReadQcReport`, a dependência `fastp` (`pixi.toml` /
+`setup_env.py`) e a flag `--skip-read-qc`.
+
+### B. Cobertura de reads — por sequência
+
+Fonte: minimap2 → BAM → `samtools mpileup` (uma passada dá profundidade **e** qualidade).
+Campos em `sequences[].coverage` (`CoverageProfile`).
+
+| Parâmetro | Significado |
+|-----------|-------------|
+| `bins` | profundidade média por bin (≤ 600 pontos), alinhada a `quality_bins` |
+| `mean_depth` / `max_depth` | profundidade média / máxima |
+| `breadth_1x` | fração de bases com profundidade ≥ 1 |
+| `cv` | `stdev/mean` da profundidade — uniformidade (menor = mais uniforme; degrau ⇒ possível quimera) |
+| `quality_bins` | qualidade de base **média** (Phred) por bin — média só sobre posições cobertas |
+| `mean_quality` | qualidade de base média (Phred) na sequência |
+
+**Mostrador (genome viewer):** a track de cobertura tem **altura = profundidade** e
+**cor = qualidade** (uma barra por bin), via `_qualColor`:
+
+| Qualidade média do bin | Cor |
+|------------------------|-----|
+| Q ≥ 30 | verde (`--vq-success`) |
+| 20 ≤ Q < 30 | âmbar (`--vq-warning`) |
+| 0 < Q < 20 | vermelho (`--vq-danger`) |
+| sem reads | cinza (`--vq-text-3`) |
+
+Hover mostra posição, profundidade, **Q** naquele ponto, média e máx. Legenda mostra
+`Q̄` (qualidade média). Relatórios antigos (sem `quality_bins`) mantêm a área monocromática.
+
+### C. Qualidade estrutural da sequência — por sequência
+
+Campos em `sequences[].seq_quality` (`SequenceQuality`).
+
+| Parâmetro | Fonte | Significado |
+|-----------|-------|-------------|
+| `low_complexity_regions` | dustmasker (SDUST) | intervalos `[início,fim]` (0-based, incl.) de baixa complexidade |
+| `low_complexity_frac` | derivado | fração de bases dentro dessas regiões |
+| `kmer_size` | jellyfish (`--kmer`, default 15) | tamanho do k-mer do score |
+| `kmer_distinct` / `kmer_total` | jellyfish `histo` | nº de k-mers distintos / total de instâncias |
+| `kmer_repeat_score` | jellyfish | fração de instâncias de k-mer que recorrem: `(total − singletons) / total` |
+| `self_repeats` | self-BLASTn | HSPs internos (direta/invertida) — **dado suplementar no JSON**, ver nota de padronização |
+| `dotplot` | k-mer hashing (`_dotplot`) | segmentos `[x1,y1,x2,y2]` (bp) para o dot plot SVG |
+
+#### Dot plot — detecção e classificação (últimas modificações)
+
+- **Detecção independente de offset:** o índice de k-mers cobre **todas** as posições da
+  sequência; as sementes são amostradas a cada `stride = L // 500` bases, mas a busca usa o
+  índice completo. Assim uma repetição é detectada **qualquer que seja o offset** — a versão
+  anterior amostrava também o índice e perdia repetições (diretas e invertidas) quando as
+  duas cópias não caíam na mesma grade (`stride > 1`).
+- **Teto anti-ruído:** k-mers com mais de `_MAX_KMER_HITS = 200` ocorrências são ignorados;
+  no máximo 4000 segmentos por sequência.
+- **Classificador único (`_segClass`)** — usado pelo dot plot, pela contagem da legenda e
+  pelo realce do FASTA, garantindo que **os três concordem**:
+
+  | Classe | Geometria | Cor no dot plot | Conta como repetição? |
+  |--------|-----------|-----------------|-----------------------|
+  | `diag` | diagonal identidade (`y = x`) | cinza tracejado | não |
+  | `lowcx` | segmento com ponto médio dentro de região dustmask | âmbar | não (vai p/ `low-complexity %`) |
+  | `direct` | slope +1 (fora de baixa complexidade) | azul, grosso | **sim** |
+  | `inverted` | slope −1 (fora de baixa complexidade) | vermelho, grosso | **sim** |
+
+> **Nota de padronização.** A contagem da legenda e o realce colorido no FASTA derivam
+> dos **mesmos segmentos desenhados** (`_dotplotRepeats`), não mais do self-BLASTn — por
+> isso *o que aparece no dot plot = o que é contado = o que é realçado*. Auto-similaridade
+> de baixa complexidade é `lowcx` (âmbar, não contada), já representada por `low-complexity %`.
+
+**Mostradores (genome viewer, card da sequência):**
+- **Genome viewer:** bandas âmbar de baixa complexidade atrás das ORFs (visuais, sem
+  bloquear o hover da cobertura).
+- **Coluna esquerda:** dot plot SVG (300×300) + legenda empilhada (nº diretas, invertidas,
+  `low-complexity %`, `k{n} repeat score`) com um **info-hover “?”** descrevendo cada fator.
+- **Coluna central:** bloco **Top hit & taxonomy** — melhor hit BLASTx (NR preferido, senão
+  RefSeq): título, accession, identidade, cobertura, e-value, bit score; + linhagem
+  família/gênero/espécie de `sequences[].taxonomy`.
+- **Coluna direita:** **FASTA preview** rolável (altura 300px, simétrica ao dot plot), com as
+  regiões realçadas nas mesmas cores (âmbar/azul/vermelho); header contém **apenas o nome
+  original** do contig (sem sufixo de espécie); botão **Copy FASTA** (header + sequência).
+
+### D. Stats agregados (`html_report.py`)
+
+- `seq_quality_stats` — agrega `seq_quality` das sequências: `seqs_analyzed`, `with_repeats`,
+  `with_low_complexity`, `total_repeats`, `mean_repeat_score`, `max_repeat_score`, `kmer_size`.
+  **`with_repeats`/`total_repeats` derivam dos segmentos do dot plot** (helper
+  `_structural_repeats`, mesma classificação `_segClass` do viewer — exclui diagonal e
+  auto-matches de baixa complexidade), então batem com a contagem da legenda do viewer.
+
+**Mostrador:** card **condicional** "Sequence Quality" na aba **General Stats**
+(`section_stats.js`, `#stats-seqqual-card`, aparece só quando `seq_quality_stats.present`):
+KPI grande = `seqs_analyzed`; mini-rows = `with_repeats`, `with_low_complexity`,
+`total_repeats`, `repeat score (k{n})` = `mean_repeat_score` (com `max`). Substitui o antigo
+resumo que ficava na aba "Read QC" (removida).
 
 ---
 

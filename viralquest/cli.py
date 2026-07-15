@@ -197,12 +197,10 @@ def _build_parser():
              "contigs are always included). Both changes directly reduce the SSHash "
              "index footprint. Recommended when salmon index runs out of memory.")
 
-    # Read / sequence quality ──────────────────────────────────────────────────
-    # Runs only when --reads is given. fastp profiles the reads; dustmasker,
-    # self-BLASTn and jellyfish flag structural issues on the assembled sequences.
-    rq = parser.add_argument_group("read / sequence quality (optional, needs --reads)")
-    rq.add_argument("--skip-read-qc", dest="skip_read_qc", action="store_true",
-        help="Skip the fastp read-QC step (sequence-quality signals still run).")
+    # Sequence quality ──────────────────────────────────────────────────────────
+    # Runs only when --reads is given: dustmasker, self-BLASTn and jellyfish flag
+    # structural issues (low complexity, repeats) on the assembled sequences.
+    rq = parser.add_argument_group("sequence quality (optional, needs --reads)")
     rq.add_argument("--kmer", dest="kmer", type=int, default=15, metavar="K",
         help="k-mer size for the jellyfish repetitiveness score (default: 15).")
 
@@ -422,8 +420,6 @@ def _validate_args(args, console) -> None:
         errors.append("--read-type is required when --reads is used (choices: sr, ont, pb, hifi).")
     if args.read_type and not args.reads:
         errors.append("--read-type requires --reads.")
-    if args.skip_read_qc and not args.reads:
-        errors.append("--skip-read-qc requires --reads.")
     if args.kmer is not None and args.kmer < 2:
         errors.append("--kmer must be >= 2.")
     if args.model_type and not args.model_name:
@@ -499,11 +495,6 @@ def _salmon_enabled(args) -> bool:
     return bool(args.reads) and args.read_type not in _LONG_READ_TYPES
 
 
-def _read_qc_enabled(args) -> bool:
-    """fastp read QC runs whenever reads are given, unless explicitly skipped."""
-    return bool(args.reads) and not args.skip_read_qc
-
-
 def _build_steps(args) -> list[str]:
     steps = [
         f"Parse FASTA{'  +  CAP3' if args.cap3 else ''}",
@@ -521,8 +512,6 @@ def _build_steps(args) -> list[str]:
     steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
     if args.reads:
-        if _read_qc_enabled(args):
-            steps.append("Read QC  —  fastp")
         if _salmon_enabled(args):
             mode = "reference" if args.transcriptome else "de novo"
             steps.append(f"Salmon quantification  —  {mode}")
@@ -704,18 +693,6 @@ def _run_pipeline(args):
     clusters     = tracker.track(viral_for_cl)
     yield from _tick(t)
 
-    # ── 9b. Read QC (fastp) ───────────────────────────────────────────────────
-    # QC only: fastp profiles the raw reads and discards the filtered output —
-    # the pipeline always consumes the original reads (no trimming).
-    read_qc_report = None
-    if _read_qc_enabled(args):
-        t = time.time()
-        from .read_qc import ReadQcPipeline
-        read_qc_report = ReadQcPipeline(
-            threads=args.cpu, read_type=args.read_type,
-        ).run(reads=args.reads, outdir=outdir / "read_qc")
-        yield from _tick(t)
-
     # ── 10. Salmon quantification ─────────────────────────────────────────────
     salmon_report = None
     if args.reads and not _salmon_enabled(args):
@@ -832,7 +809,6 @@ def _run_pipeline(args):
         output_path=json_path,
         version=__version__,
         salmon_report=salmon_report,
-        read_qc_report=read_qc_report,
         cap3=cap3_info,
     )
     yield from _tick(t)

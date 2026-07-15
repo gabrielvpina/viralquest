@@ -33,7 +33,6 @@ _REQUIRED_TOOLS: list[tuple[str, str]] = [
     ("salmon",    "salmon         >=1.11.4  (bioconda)"),
     ("minimap2",  "minimap2       >=2.28    (bioconda)"),
     ("samtools",  "samtools       >=1.21    (bioconda)"),
-    ("fastp",     "fastp          >=0.24    (bioconda)"),  # read QC
     ("jellyfish", "kmer-jellyfish >=2.3     (bioconda)"),  # k-mer repetitiveness
 ] + ([] if platform.system() == "Darwin" else [
     ("cap3", "cap3      >=10.2011 (bioconda)"),

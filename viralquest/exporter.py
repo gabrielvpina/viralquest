@@ -10,7 +10,6 @@ from loguru import logger
 from viralquest.biodata import (
     InputFasta,
     NucSequence,
-    ReadQcReport,
     SalmonQuantReport,
     Taxonomy,
     ViralCluster,
@@ -117,7 +116,6 @@ class ReportExporter:
         output_path:   str | Path | None        = None,
         version:        str                      = "unknown",
         salmon_report:  SalmonQuantReport | None = None,
-        read_qc_report: ReadQcReport | None      = None,
         cap3:           dict | None              = None,
     ) -> dict:
         """
@@ -132,7 +130,6 @@ class ReportExporter:
         output_path   : if given, the report is written as indented JSON here
         version       : viralquest version string embedded in meta
         salmon_report : if given, a ``salmon_quant`` key is added to the JSON
-        read_qc_report: if given, a ``read_qc`` key is added to the JSON
         cap3          : CAP3 assembly stats (``used``/``contigs``/``singlets``)
                         when --cap3 ran; None otherwise
         """
@@ -169,9 +166,6 @@ class ReportExporter:
 
         if salmon_report is not None:
             report["salmon_quant"] = _to_serializable(salmon_report)
-
-        if read_qc_report is not None:
-            report["read_qc"] = _to_serializable(read_qc_report)
 
         if output_path is not None:
             path = Path(output_path)

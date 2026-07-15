@@ -62,7 +62,6 @@ def _enrich_report(report: dict) -> dict:
     report["llm_stats"]       = _build_llm_stats(seqs, ps)
     report["heuristic_stats"] = _build_heuristic_stats(seqs, ps)
     report["salmon_stats"]    = _build_salmon_stats(report.get("salmon_quant"))
-    report["readqc_stats"]      = _build_readqc_stats(report.get("read_qc"))
     report["seq_quality_stats"] = _build_seq_quality_stats(seqs)
     return report
 
@@ -175,26 +174,28 @@ def _build_salmon_stats(salmon_quant: dict | None) -> dict:
     }
 
 
-def _build_readqc_stats(read_qc: dict | None) -> dict:
-    """Compact fastp read-QC summary card. Curves stay in report['read_qc']."""
-    if not read_qc:
-        return {"present": False}
-    before = read_qc.get("reads_before") or 0
-    after  = read_qc.get("reads_after")  or 0
-    return {
-        "present":      True,
-        "read_type":    read_qc.get("read_type"),
-        "reads_before": before,
-        "reads_after":  after,
-        "bases_after":  read_qc.get("bases_after"),
-        "pass_rate":    round(after / before, 4) if before else None,
-        "q20_rate":     read_qc.get("q20_rate"),
-        "q30_rate":     read_qc.get("q30_rate"),
-        "gc_pct":       read_qc.get("gc_pct"),
-        "mean_length":  read_qc.get("mean_length"),
-        "dup_rate":     read_qc.get("dup_rate"),
-        "adapter_rate": read_qc.get("adapter_rate"),
-    }
+
+def _structural_repeats(sq: dict) -> int:
+    """
+    Count direct + inverted dot-plot segments, excluding the identity diagonal
+    and low-complexity self-matches. Mirrors the viewer's ``_segClass`` so the
+    Read QC tab summary agrees with the Sequence Viewer legend (single source of
+    truth = the drawn dot-plot segments, not the self-BLASTn HSPs).
+    """
+    segs = (sq.get("dotplot") or {}).get("segments") or []
+    low  = sq.get("low_complexity_regions") or []
+
+    def in_low(pos: float) -> bool:
+        return any(a <= pos <= b for a, b in low)
+
+    n = 0
+    for x1, y1, x2, y2 in segs:
+        if abs(y1 - x1) < 1e-6 and abs(y2 - x2) < 1e-6:
+            continue                                   # diagonal
+        if in_low((x1 + x2) / 2) or in_low((y1 + y2) / 2):
+            continue                                   # low-complexity self-match
+        n += 1
+    return n
 
 
 def _build_seq_quality_stats(seqs: list[dict]) -> dict:
@@ -202,13 +203,14 @@ def _build_seq_quality_stats(seqs: list[dict]) -> dict:
     analyzed = [s["seq_quality"] for s in seqs if s.get("seq_quality")]
     if not analyzed:
         return {"present": False}
-    scores = [q.get("kmer_repeat_score") or 0.0 for q in analyzed]
+    scores  = [q.get("kmer_repeat_score") or 0.0 for q in analyzed]
+    repeats = [_structural_repeats(q) for q in analyzed]
     return {
         "present":             True,
         "seqs_analyzed":       len(analyzed),
-        "with_repeats":        sum(1 for q in analyzed if q.get("self_repeats")),
+        "with_repeats":        sum(1 for r in repeats if r > 0),
         "with_low_complexity": sum(1 for q in analyzed if q.get("low_complexity_regions")),
-        "total_repeats":       sum(len(q.get("self_repeats") or []) for q in analyzed),
+        "total_repeats":       sum(repeats),
         "mean_repeat_score":   round(sum(scores) / len(scores), 4),
         "max_repeat_score":    round(max(scores), 4),
         "kmer_size":           analyzed[0].get("kmer_size"),
@@ -301,7 +303,6 @@ def _render_template(report: dict, d3_js: str) -> str:
         "{{VQ_VIEWER}}":    (_COMPONENTS / "section_viewer.js").read_text(encoding="utf-8"),
         "{{VQ_TAXONOMY}}":  (_COMPONENTS / "section_taxonomy.js").read_text(encoding="utf-8"),
         "{{VQ_SALMON}}":    (_COMPONENTS / "section_salmon.js").read_text(encoding="utf-8"),
-        "{{VQ_READQC}}":    (_COMPONENTS / "section_readqc.js").read_text(encoding="utf-8"),
     }
 
     html = template

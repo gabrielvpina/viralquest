@@ -442,28 +442,6 @@ class SequenceQuality:
 
 
 @dataclass(slots=True)
-class ReadQcReport:
-    """
-    Global sequencing-read QC produced by fastp, attached as an optional
-    pipeline section.  Per-cycle vectors are already downsampled for plotting.
-    """
-    reads:            list[str]        # read file(s) passed to fastp
-    read_type:        str              # sr | ont | pb | hifi
-    reads_before:     int              # total reads before filtering
-    reads_after:      int              # total reads passing filters
-    bases_before:     int
-    bases_after:      int
-    q20_rate:         float            # fraction of bases >= Q20 (after filtering)
-    q30_rate:         float            # fraction of bases >= Q30 (after filtering)
-    gc_pct:           float            # overall GC content (%) after filtering
-    mean_length:      float            # mean read length after filtering
-    dup_rate:         float            # estimated duplication rate (fraction)
-    adapter_rate:     float            # fraction of reads with adapter trimmed (0 for long reads)
-    per_base_quality: list[float]      # mean quality per cycle (downsampled)
-    per_base_gc:      list[float]      # GC content per cycle (downsampled, 0–1)
-
-
-@dataclass(slots=True)
 class SalmonQuantReport:
     """Full Salmon quantification result, attached as an optional pipeline section."""
     reads:           list[str]             # read file(s) passed to salmon quant

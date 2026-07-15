@@ -22,6 +22,7 @@ function vqInitStats(report) {
   const llm    = report.llm_stats        || {};
   const heur   = report.heuristic_stats  || {};
   const salmon = report.salmon_stats     || {};
+  const seqQual = report.seq_quality_stats || {};
   const seqs   = report.sequences        || [];
 
   // Derived presence flags — computed directly from sequence data so old
@@ -250,6 +251,29 @@ function vqInitStats(report) {
           <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
             ${_miniRow('Contigs',  fmtNum(sum.cap3_contigs))}
             ${_miniRow('Singlets', fmtNum(sum.cap3_singlets))}
+          </div>
+        </div>` : ''}
+
+        <!-- 13. Sequence Quality — only when --reads produced seq-quality signals -->
+        ${seqQual.present ? `
+        <div class="vq-chart-card" id="stats-seqqual-card" style="min-height:auto">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Sequence Quality</div>
+              <div class="vq-chart-card__sub">structural signals across sequences</div>
+            </div>
+            <div class="vq-chart-card__big">${fmtNum(seqQual.seqs_analyzed)}</div>
+          </div>
+          <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
+            ${_miniRow('With repeats',       fmtNum(seqQual.with_repeats))}
+            ${_miniRow('With low complexity', fmtNum(seqQual.with_low_complexity))}
+            ${_miniRow('Total repeats',      fmtNum(seqQual.total_repeats))}
+            ${_miniRow(`Repeat score (k${seqQual.kmer_size ?? '?'})`,
+                       seqQual.mean_repeat_score != null
+                         ? (seqQual.mean_repeat_score * 100).toFixed(1) + '%'
+                         + (seqQual.max_repeat_score != null
+                             ? ' · max ' + (seqQual.max_repeat_score * 100).toFixed(1) + '%' : '')
+                         : '—')}
           </div>
         </div>` : ''}
 
