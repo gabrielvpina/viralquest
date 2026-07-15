@@ -97,7 +97,6 @@ class TestBlastnRunnerInit:
         assert runner.max_target_seqs == 5
         assert runner.batch_size      == 200
         assert runner.request_delay   == 0.4
-        assert runner.ncbi_api_key    is None
 
     def test_outdir_created(self, tmp_path):
         outdir = tmp_path / "blast_out"

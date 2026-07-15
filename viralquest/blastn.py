@@ -36,7 +36,7 @@ class BlastnRunner:
              Sequences are submitted in batches for efficiency.
     ONLINE — NCBI qblast via Biopython (no local installation needed).
              Submits one sequence at a time with a configurable delay to
-             respect NCBI rate limits (3 req/s without key, 10 with key).
+             respect NCBI's ~3 req/s rate limit.
 
     Results are returned as a flat list of BlastnResult objects.
     Use BlastnResultAttacher to attach them to NucSequence objects.
@@ -48,7 +48,6 @@ class BlastnRunner:
     blastn_bin      : blastn executable name or full path (LOCAL only)
     threads         : -num_threads value passed to blastn (LOCAL only)
     batch_size      : sequences per blastn subprocess call (LOCAL only)
-    ncbi_api_key    : NCBI API key — raises rate limit to 10 req/s (ONLINE only)
     request_delay   : seconds between NCBI requests; default 0.4 s (ONLINE only)
     e_value         : e-value cutoff (both modes)
     max_target_seqs : maximum hits returned per query (both modes)
@@ -65,7 +64,6 @@ class BlastnRunner:
         max_target_seqs: int = 5,
         outdir: str | None = None,
         batch_size: int = 200,
-        ncbi_api_key: str | None = None,
         request_delay: float = 0.4,
     ):
         if mode == BlastnMode.LOCAL and not db_path:
@@ -80,7 +78,6 @@ class BlastnRunner:
         self.outdir          = Path(outdir) if outdir else Path(tempfile.gettempdir()) / "vq_blastn"
         self.outdir.mkdir(parents=True, exist_ok=True)
         self.batch_size      = batch_size
-        self.ncbi_api_key    = ncbi_api_key
         self.request_delay   = request_delay
 
     # --- public ---
@@ -182,7 +179,7 @@ class BlastnRunner:
                 f"BLASTn [online] [{i + 1}/{len(seqs)}] querying '{seq.id}' ..."
             )
             try:
-                kwargs: dict = dict(
+                result_handle = NCBIWWW.qblast(
                     program="blastn",
                     database="nt",
                     sequence=seq.sequence,
@@ -190,11 +187,7 @@ class BlastnRunner:
                     expect=self.e_value,
                     format_type="XML",
                 )
-                if self.ncbi_api_key:
-                    kwargs["api_key"] = self.ncbi_api_key
-
-                result_handle = NCBIWWW.qblast(**kwargs)
-                blast_record  = next(NCBIXML.parse(result_handle))
+                blast_record = next(NCBIXML.parse(result_handle))
                 hits = BlastnOutputParser.parse_xml_record(blast_record, seq.id)
                 all_hits.extend(hits)
                 logger.success(f"BLASTn [online] '{seq.id}': {len(hits)} hit(s)")
