@@ -610,6 +610,7 @@ function _seqCard(seq) {
   // FASTA preview (header + sequence, seq-quality regions colour-highlighted).
   const hasFasta  = !!(seq.sequence || seq.sequence_nt);
   const fastaHtml = hasFasta ? _fastaHighlightedHTML(seq) : '';
+  const topHitHtml = _topHitCard(seq);   // middle column: best BLASTx hit + taxonomy
 
   card.innerHTML = `
     <div class="vq-seq-card__head" role="button" tabindex="0" aria-expanded="false">
@@ -654,8 +655,8 @@ function _seqCard(seq) {
       <div class="vq-body-label">Genome map</div>
       <div class="vq-genome-wrap" id="genome-wrap-${safe}"></div>
 
-      ${(seq.seq_quality || hasFasta) ? `
-      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:4px">
+      ${(seq.seq_quality || hasFasta || topHitHtml) ? `
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-top:4px">
 
         ${seq.seq_quality ? `
         <div style="flex:1 1 300px;min-width:280px">
@@ -675,6 +676,8 @@ function _seqCard(seq) {
             </div>
           </div>
         </div>` : ''}
+
+        ${topHitHtml}
 
         ${hasFasta ? `
         <div style="flex:1 1 300px;min-width:280px;display:flex;flex-direction:column">
@@ -1374,22 +1377,17 @@ function _domainColor(target) {
 // ── Sequence-quality overlays ────────────────────────────────────────────────
 
 function _drawLowComplexityBands(svg, regions, SCALE, PAD_L, yTop, yBottom) {
-  const g = svg.append('g').attr('class', 'vq-lowcx-bands');
+  // Purely visual marker — pointer-events disabled so it never intercepts the
+  // coverage track's hover (depth/quality tooltip) underneath it. The region
+  // detail is available in the FASTA preview highlight and the dot plot.
+  const g = svg.append('g').attr('class', 'vq-lowcx-bands').style('pointer-events', 'none');
   regions.forEach(([a, b]) => {
     const x1 = PAD_L + SCALE(a);
     const x2 = PAD_L + SCALE(b + 1);
     g.append('rect')
       .attr('x', x1).attr('y', yTop)
       .attr('width', Math.max(1, x2 - x1)).attr('height', Math.max(0, yBottom - yTop))
-      .attr('fill', 'var(--vq-warning)').attr('opacity', 0.10)
-      .style('cursor', 'help')
-      .on('mousemove', evt => VQ.tooltipShow(
-        `<div class="vq-tooltip__title">Low complexity</div>
-         <div class="vq-tooltip__row">
-           <span class="vq-tooltip__key">Region</span>
-           <span>${(a + 1).toLocaleString()}–${(b + 1).toLocaleString()} nt</span>
-         </div>`, evt))
-      .on('mouseleave', VQ.tooltipHide);
+      .attr('fill', 'var(--vq-warning)').attr('opacity', 0.10);
   });
 }
 
@@ -1453,6 +1451,51 @@ function _dotPlotSVG(sq, size = _SEQQUAL_SIZE) {
     line(seg, inverted ? 'var(--vq-danger)' : 'var(--vq-accent)', 2.6, 0.95, null, 'round');
   });
   return svg.node();
+}
+
+// Middle column: best BLASTx hit (NR preferred, else RefSeq) + taxonomy lineage.
+// Returns '' when there is neither a hit nor taxonomy to show.
+function _topHitCard(seq) {
+  const esc  = VQ.esc;
+  const t    = seq.taxonomy || {};
+  const pool = (seq.blastx_nr_hits && seq.blastx_nr_hits.length)
+    ? seq.blastx_nr_hits : (seq.blastx_hits || []);
+  const best = pool.length ? pool.reduce((a, b) => (b.bit_score > a.bit_score ? b : a)) : null;
+  const hasTax = t.family || t.genus || t.species || t.scientific_name;
+  if (!best && !hasTax) return '';
+
+  const kv = (k, v) => (v || v === 0) ? `
+    <div style="display:flex;justify-content:space-between;gap:10px">
+      <span style="color:var(--vq-text-3)">${esc(k)}</span>
+      <span style="text-align:right;word-break:break-word">${esc(String(v))}</span>
+    </div>` : '';
+
+  const hit = best ? `
+    <div style="font-weight:600;line-height:1.35;margin-bottom:3px;word-break:break-word">
+      ${esc(best.subject_title || best.species || best.subject_id || '—')}
+    </div>
+    ${kv('Accession', best.subject_id)}
+    ${kv('Identity',  best.pct_identity != null ? best.pct_identity.toFixed(1) + '%' : null)}
+    ${kv('Coverage',  best.query_coverage ? best.query_coverage.toFixed(0) + '%' : null)}
+    ${kv('E-value',   best.e_value != null ? best.e_value.toExponential(1) : null)}
+    ${kv('Bit score', best.bit_score != null ? Math.round(best.bit_score) : null)}`
+    : `<div style="color:var(--vq-text-3)">No BLASTx hit</div>`;
+
+  const tax = hasTax ? `
+    <div style="border-top:1px solid var(--vq-border);margin-top:8px;padding-top:8px">
+      ${kv('Family',  t.family)}
+      ${kv('Genus',   t.genus)}
+      ${kv('Species', t.species || t.scientific_name)}
+    </div>` : '';
+
+  return `
+    <div style="flex:1 1 200px;min-width:190px;max-width:290px">
+      <div class="vq-body-label">Top hit &amp; taxonomy</div>
+      <div class="vq-panel" style="padding:10px 12px;font-size:11.5px;line-height:1.85;
+                                   display:flex;flex-direction:column;gap:2px">
+        ${hit}${tax}
+      </div>
+    </div>`;
 }
 
 // One classifier shared by the dot plot, the legend count and the FASTA
