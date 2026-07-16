@@ -364,7 +364,7 @@ function _compBar(label, val, weight) {
     </div>`;
 }
 
-function _heurColumn(h) {
+function _heurColumn(h, safe) {
   const esc = VQ.esc;
   const c   = h.components || null;
   const wt  = c?.weights || {};
@@ -379,6 +379,10 @@ function _heurColumn(h) {
     <div class="vq-score-col">
       <div class="vq-score-col__head">
         <span class="vq-score-col__title">Heuristic · rule-based</span>
+        <span id="heurinfo-${safe}" role="img" tabindex="0" aria-label="How the heuristic score is computed"
+              style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+                     border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
+                     font-size:10px;font-weight:700;cursor:help;flex:0 0 auto;margin-right:auto">?</span>
         <span class="vq-badge vq-badge--${esc(h.classification)}">${esc(h.classification)}</span>
       </div>
       <div class="vq-score-col__num">${h.vq_score}<small> / 100</small></div>
@@ -401,11 +405,11 @@ function _llmColumn(l) {
     </div>`;
 }
 
-function _scorePanel(seq) {
+function _scorePanel(seq, safe) {
   const h = seq.heuristic_output, l = seq.llm_output;
   if (!h && !l) return '';
   const cols = [];
-  if (h) cols.push(_heurColumn(h));   // heuristic-primary: rule-based leads
+  if (h) cols.push(_heurColumn(h, safe));   // heuristic-primary: rule-based leads
   if (l) cols.push(_llmColumn(l));
   return `
     <div class="vq-body-label">VQ scores</div>
@@ -657,9 +661,15 @@ function _seqCard(seq) {
 
     <div class="vq-seq-card__body" id="body-${safe}">
 
-      ${_scorePanel(seq)}
+      ${_scorePanel(seq, safe)}
 
-      <div class="vq-body-label">Genome map</div>
+      <div class="vq-body-label" style="display:flex;align-items:center;gap:7px">
+        <span>Genome map</span>
+        <span id="mapinfo-${safe}" role="img" tabindex="0" aria-label="What the genome map shows"
+              style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+                     border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
+                     font-size:10px;font-weight:700;cursor:help">?</span>
+      </div>
       <div class="vq-genome-wrap" id="genome-wrap-${safe}"></div>
 
       ${(seq.seq_quality || hasFasta || topHitContent) ? `
@@ -705,7 +715,13 @@ function _seqCard(seq) {
         <div style="${fastaCol};display:flex;flex-direction:column">
           <div class="vq-body-label" style="display:flex;align-items:center;justify-content:space-between;
                                             gap:10px;min-height:24px;margin:0 0 6px">
-            <span>FASTA preview</span>
+            <span style="display:inline-flex;align-items:center;gap:7px">
+              <span>FASTA preview</span>
+              <span id="fastainfo-${safe}" role="img" tabindex="0" aria-label="What the highlight colours mean"
+                    style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+                           border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
+                           font-size:10px;font-weight:700;cursor:help">?</span>
+            </span>
             <button type="button" class="vq-btn vq-btn--ghost vq-btn--sm" id="fasta-copy-${safe}">Copy FASTA</button>
           </div>
           <div class="vq-fasta" style="height:360px;max-height:360px;margin:0">${fastaHtml}</div>
@@ -743,6 +759,9 @@ function _seqCard(seq) {
     });
     el.addEventListener('blur', VQ.tooltipHide);
   };
+  _bindInfo('mapinfo',   _mapInfoHTML(seq));
+  _bindInfo('fastainfo', _fastaInfoHTML());
+  _bindInfo('heurinfo',  _heurInfoHTML());
   _bindInfo('siginfo', _signalsInfoHTML());
   _bindInfo('taxinfo', `
     <div class="vq-tooltip__title">Top hit &amp; taxonomy</div>
@@ -1003,8 +1022,12 @@ function _genomeSVG(seq, containerWidth) {
 
   // ── Read-coverage band (only when --reads produced a profile) ───────────
   const cov        = (seq.coverage && (seq.coverage.bins || []).length) ? seq.coverage : null;
-  const COV_AREA_H = 36;                 // height of the filled coverage area
-  const COV_H      = cov ? COV_AREA_H + 18 : 0;   // total vertical room reserved
+  // Strand-split coverage needs room for a two-sided (sense up / antisense down) plot.
+  const covStrand  = cov && (cov.bins_fwd || []).length === (cov.bins || []).length
+                          && (cov.bins_rev || []).length === (cov.bins || []).length;
+  const COV_AREA_H = covStrand ? 56 : 36;         // height of the coverage area
+  // Room reserved = legend block row + bars + the caption//gap row below.
+  const COV_H      = cov ? COV_LEG_H + COV_AREA_H + 18 : 0;
 
   // ── Frame-based lane assignment ─────────────────────────────────────────
   const FRAME_INDEX = { '+1': 0, '+2': 1, '+3': 2, '-1': 3, '-2': 4, '-3': 5 };
@@ -1219,14 +1242,9 @@ function _genomeSVG(seq, containerWidth) {
     .attr('fill', 'var(--vq-dom-1)').attr('y', 2);
   legendG.append('text').attr('x', 158).attr('y', 8.5)
     .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)').text('HMM domain');
-  let legendX = 240;
-  if (cov) {
-    legendG.append('rect').attr('x', legendX).attr('width', 12).attr('height', 5).attr('rx', 1)
-      .attr('fill', 'var(--vq-accent)').attr('opacity', 0.35).attr('y', 2);
-    legendG.append('text').attr('x', legendX + 18).attr('y', 8.5)
-      .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)').text('Read coverage');
-    legendX += 120;
-  }
+  // Coverage is NOT listed here — it has its own legend block at the top of the
+  // coverage band (_drawCovLegend), next to the data it describes.
+  const legendX = 240;
   if (!fluidMode) {
     legendG.append('text').attr('x', legendX).attr('y', 8.5)
       .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)')
@@ -1247,8 +1265,66 @@ function _qualColor(q) {
   return 'var(--vq-text-3)';
 }
 
+// Height of the legend row reserved above the coverage bars. Shared by
+// _genomeSVG (which budgets the vertical space) and _drawCoverageTrack (which
+// draws into it) — the two must agree or the bars drift out of their band.
+const COV_LEG_H = 17;
+
+// SVG has no text metrics before layout, so the legend advances by an estimate
+// of each label's width at 9.5px sans-serif.
+const _legendTextW = s => s.length * 5.35 + 2;
+
+/* Legend block for the coverage band — drawn in its own row above the bars, so
+   the swatches sit next to the data they describe instead of in the shared
+   bottom legend. Each swatch carries its own "Q…" label: a single free-floating
+   "Q" reads as if it labelled the first colour. Returns the block width. */
+function _drawCovLegend(g, x, y, qual) {
+  const PADX = 7, SW = 10, SW_GAP = 4, ITEM_GAP = 11, H = 14;
+
+  const items = [{ label: 'Read coverage', lead: true }];
+  if (qual) {
+    items.push({ sw: 'var(--vq-success)', label: 'Q≥30'   });
+    items.push({ sw: 'var(--vq-warning)', label: 'Q20–29' });
+    items.push({ sw: 'var(--vq-danger)',  label: 'Q<20'   });
+  } else {
+    items.push({ sw: 'var(--vq-accent)', label: 'depth' });
+  }
+
+  // Lay out left→right, recording each item's x before drawing anything.
+  let w = PADX;
+  const xs = items.map(it => {
+    const at = w;
+    w += (it.sw ? SW + SW_GAP : 0) + _legendTextW(it.label) + ITEM_GAP;
+    return at;
+  });
+  w = w - ITEM_GAP + PADX;
+
+  const blk = g.append('g').attr('class', 'vq-cov-legend')
+    .attr('transform', `translate(${x}, ${y})`);
+  blk.append('rect')
+    .attr('width', w).attr('height', H).attr('rx', 4)
+    .attr('fill', 'var(--vq-surface-2)').attr('stroke', 'var(--vq-border)');
+
+  items.forEach((it, i) => {
+    let cx = xs[i];
+    if (it.sw) {
+      blk.append('rect')
+        .attr('x', cx).attr('y', H / 2 - 2.5).attr('width', SW).attr('height', 5)
+        .attr('rx', 1).attr('fill', it.sw).attr('opacity', it.label === 'depth' ? 0.35 : 0.9);
+      cx += SW + SW_GAP;
+    }
+    blk.append('text').attr('x', cx).attr('y', H / 2 + 3.2)
+      .style('font-size', '9.5px')
+      .style('font-weight', it.lead ? 600 : 400)
+      .style('fill', it.lead ? 'var(--vq-text-2)' : 'var(--vq-text-3)')
+      .text(it.label);
+  });
+  return w;
+}
+
 function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH) {
-  const top    = AXIS_Y + 12;
+  const legY   = AXIS_Y + 12;             // legend block row (reserved: COV_LEG_H)
+  const top    = legY + COV_LEG_H;        // bars start below it
   const bottom = top + areaH;
   const bins   = cov.bins;
   const nb     = bins.length;
@@ -1256,75 +1332,82 @@ function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH
 
   // Per-base quality (from the same BAM) aligned 1:1 with the depth bins.
   const qual   = (cov.quality_bins && cov.quality_bins.length === nb) ? cov.quality_bins : null;
+  // Strand-split depth (sense = forward, antisense = reverse), same binning.
+  const fwd    = (cov.bins_fwd && cov.bins_fwd.length === nb) ? cov.bins_fwd : null;
+  const rev    = (cov.bins_rev && cov.bins_rev.length === nb) ? cov.bins_rev : null;
+  const strand = fwd && rev;
 
   const binNt  = i => ((i + 0.5) / nb) * seqLen;       // bin centre in nt
   const xOf    = i => PAD_L + SCALE(binNt(i));
-  const yScale = d3.scaleLinear([0, maxD], [bottom, top]);
+  const g      = svg.append('g').attr('class', 'vq-cov-track');
+  const barCol = i => qual ? _qualColor(qual[i]) : 'var(--vq-accent)';
+  const bw     = Math.max(0.6, drawW / nb);
 
-  const g = svg.append('g').attr('class', 'vq-cov-track');
+  if (strand) {
+    // Two-sided track: sense reads grow up, antisense grow down from a central
+    // baseline. Both bars are coloured by base quality (same column colour).
+    const mid  = top + areaH / 2;
+    const maxS = Math.max(1, d3.max(fwd) || 0, d3.max(rev) || 0);
+    const yUp  = d3.scaleLinear([0, maxS], [mid, top]);      // forward → up
+    const yDn  = d3.scaleLinear([0, maxS], [mid, bottom]);   // reverse → down
 
-  if (qual) {
-    // Colour the coverage by base quality: one bar per bin, height = depth.
-    const bw = Math.max(0.6, drawW / nb);
-    g.selectAll('rect.vq-cov-bar')
-      .data(bins)
-      .join('rect')
-      .attr('class', 'vq-cov-bar')
-      .attr('x', (d, i) => xOf(i) - bw / 2)
-      .attr('y', d => yScale(d))
-      .attr('width', bw)
-      .attr('height', d => bottom - yScale(d))
-      .attr('fill', (d, i) => _qualColor(qual[i]))
-      .attr('opacity', 0.75);
+    g.selectAll('rect.vq-cov-fwd').data(fwd).join('rect')
+      .attr('x', (d, i) => xOf(i) - bw / 2).attr('y', d => yUp(d))
+      .attr('width', bw).attr('height', d => mid - yUp(d))
+      .attr('fill', (d, i) => barCol(i)).attr('opacity', 0.85);
+    g.selectAll('rect.vq-cov-rev').data(rev).join('rect')
+      .attr('x', (d, i) => xOf(i) - bw / 2).attr('y', mid)
+      .attr('width', bw).attr('height', d => yDn(d) - mid)
+      .attr('fill', (d, i) => barCol(i)).attr('opacity', 0.5);
+
+    g.append('line').attr('x1', PAD_L).attr('x2', PAD_L + drawW)
+      .attr('y1', mid).attr('y2', mid)
+      .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1);
+
+    // Gutter: strand markers + scale.
+    g.append('text').attr('x', PAD_L - 8).attr('y', top + 7).attr('text-anchor', 'end')
+      .attr('font-size', 8).attr('font-weight', 700).attr('fill', 'var(--vq-text-2)').text('＋');
+    g.append('text').attr('x', PAD_L - 8).attr('y', mid + 3).attr('text-anchor', 'end')
+      .attr('font-size', 9).attr('font-family', 'var(--vq-font-mono)').attr('font-weight', 700)
+      .attr('fill', 'var(--vq-text-2)').text('Cov');
+    g.append('text').attr('x', PAD_L - 8).attr('y', bottom - 1).attr('text-anchor', 'end')
+      .attr('font-size', 8).attr('font-weight', 700).attr('fill', 'var(--vq-text-2)').text('－');
   } else {
-    // No quality signal → original single-colour filled area.
-    const area = d3.area()
-      .x((d, i) => xOf(i))
-      .y0(bottom)
-      .y1(d => yScale(d))
-      .curve(d3.curveMonotoneX);
-    g.append('path')
-      .datum(bins)
-      .attr('d', area)
-      .attr('fill', 'var(--vq-accent)').attr('opacity', 0.30);
+    const yScale = d3.scaleLinear([0, maxD], [bottom, top]);
+    if (qual) {
+      g.selectAll('rect.vq-cov-bar').data(bins).join('rect')
+        .attr('class', 'vq-cov-bar')
+        .attr('x', (d, i) => xOf(i) - bw / 2).attr('y', d => yScale(d))
+        .attr('width', bw).attr('height', d => bottom - yScale(d))
+        .attr('fill', (d, i) => _qualColor(qual[i])).attr('opacity', 0.75);
+    } else {
+      const area = d3.area().x((d, i) => xOf(i)).y0(bottom).y1(d => yScale(d)).curve(d3.curveMonotoneX);
+      g.append('path').datum(bins).attr('d', area)
+        .attr('fill', 'var(--vq-accent)').attr('opacity', 0.30);
+    }
+    const line = d3.line().x((d, i) => xOf(i)).y(d => yScale(d)).curve(d3.curveMonotoneX);
+    g.append('path').datum(bins).attr('d', line).attr('fill', 'none')
+      .attr('stroke', 'var(--vq-accent)').attr('stroke-width', 1).attr('opacity', 0.85);
+    g.append('line').attr('x1', PAD_L).attr('x2', PAD_L + drawW)
+      .attr('y1', bottom).attr('y2', bottom)
+      .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1);
+    g.append('text').attr('x', PAD_L - 8).attr('y', top + areaH / 2 - 3).attr('text-anchor', 'end')
+      .attr('font-size', 9).attr('font-family', 'var(--vq-font-mono)').attr('font-weight', 700)
+      .attr('fill', 'var(--vq-text-2)').text('Cov');
+    g.append('text').attr('x', PAD_L - 8).attr('y', top + areaH / 2 + 8).attr('text-anchor', 'end')
+      .attr('font-size', 8).attr('fill', 'var(--vq-text-3)').text(`${Math.round(maxD)}×`);
   }
 
-  // Outline on top of the area.
-  const line = d3.line()
-    .x((d, i) => xOf(i))
-    .y(d => yScale(d))
-    .curve(d3.curveMonotoneX);
-  g.append('path')
-    .datum(bins)
-    .attr('d', line)
-    .attr('fill', 'none')
-    .attr('stroke', 'var(--vq-accent)').attr('stroke-width', 1).attr('opacity', 0.85);
-
-  // Baseline.
-  g.append('line')
-    .attr('x1', PAD_L).attr('x2', PAD_L + drawW)
-    .attr('y1', bottom).attr('y2', bottom)
-    .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1);
-
-  // Left-gutter label + max-depth tick.
+  // Legend block (left) and summary caption (right) share the reserved row.
+  _drawCovLegend(g, PAD_L, legY, qual);
+  const qCap = qual ? ` · Q̄ ${(cov.mean_quality ?? 0).toFixed(0)}` : '';
+  const cap  = strand
+    ? `sense ${(cov.mean_depth_fwd ?? 0).toFixed(1)}× · anti ${(cov.mean_depth_rev ?? 0).toFixed(1)}× · CV ${cov.cv.toFixed(2)}${qCap}`
+    : `mean ${cov.mean_depth.toFixed(1)}× · breadth ${(cov.breadth_1x * 100).toFixed(0)}% · CV ${cov.cv.toFixed(2)}${qCap}`;
   g.append('text')
-    .attr('x', PAD_L - 8).attr('y', top + areaH / 2 - 3)
+    .attr('x', PAD_L + drawW).attr('y', legY + 10)
     .attr('text-anchor', 'end').attr('font-size', 9)
-    .attr('font-family', 'var(--vq-font-mono)').attr('fill', 'var(--vq-text-3)')
-    .text('Cov');
-  g.append('text')
-    .attr('x', PAD_L - 8).attr('y', top + areaH / 2 + 8)
-    .attr('text-anchor', 'end').attr('font-size', 8)
-    .attr('fill', 'var(--vq-text-3)')
-    .text(`${Math.round(maxD)}×`);
-
-  // Summary caption (top-right of the band).
-  const qCaption = qual ? ` · Q̄ ${(cov.mean_quality ?? 0).toFixed(0)}` : '';
-  g.append('text')
-    .attr('x', PAD_L + drawW).attr('y', top - 2)
-    .attr('text-anchor', 'end').attr('font-size', 9)
-    .attr('fill', 'var(--vq-text-3)')
-    .text(`mean ${cov.mean_depth.toFixed(1)}× · breadth ${(cov.breadth_1x * 100).toFixed(0)}% · CV ${cov.cv.toFixed(2)}${qCaption}`);
+    .attr('fill', 'var(--vq-text-3)').text(cap);
 
   // Hover overlay → depth tooltip at the pointer position.
   g.append('rect')
@@ -1338,11 +1421,16 @@ function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH
       const qRow = qual
         ? `<span class="vq-tooltip__key">Quality</span><span>Q${(qual[bi] ?? 0).toFixed(0)}</span>`
         : '';
+      const strandRows = strand
+        ? `<span class="vq-tooltip__key">Sense (＋)</span><span>${fwd[bi].toFixed(1)}×</span>
+           <span class="vq-tooltip__key">Antisense (－)</span><span>${rev[bi].toFixed(1)}×</span>`
+        : '';
       VQ.tooltipShow(`
         <div class="vq-tooltip__title">Read coverage</div>
         <div class="vq-tooltip__row">
           <span class="vq-tooltip__key">Position</span><span>~${Math.round(nt).toLocaleString()} nt</span>
           <span class="vq-tooltip__key">Depth</span><span>${bins[bi].toFixed(1)}×</span>
+          ${strandRows}
           ${qRow}
           <span class="vq-tooltip__key">Mean</span><span>${cov.mean_depth.toFixed(1)}×</span>
           <span class="vq-tooltip__key">Max</span><span>${cov.max_depth.toFixed(0)}×</span>
@@ -1632,19 +1720,77 @@ function _fastaHighlightedHTML(seq) {
   return html;
 }
 
-// Shared tooltip body for the legend info (?) badge.
+// ── Info (?) tooltip bodies ────────────────────────────────────────────────
+
+// Shared row builders: `_tipRow(colour, text)` — pass '' as colour for a
+// bullet-less row that still aligns with the swatched ones.
+const _tipDot = c => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;`
+  + `background:${c};margin-right:7px;flex:0 0 auto;margin-top:3px"></span>`;
+const _tipRow = (c, t) =>
+  `<div style="display:flex;align-items:flex-start;margin:3px 0;max-width:250px">`
+  + `${c ? _tipDot(c) : '<span style="width:16px;flex:0 0 auto"></span>'}<span>${t}</span></div>`;
+const _tipNote = t =>
+  `<div style="margin-top:5px;color:var(--vq-text-3);font-size:11px;max-width:250px">${t}</div>`;
+const _tipLead = t =>
+  `<div style="margin-bottom:4px;color:var(--vq-text-3);font-size:11px;max-width:250px">${t}</div>`;
+
+// Genome map: what each track/glyph is. Coverage rows are gated on the profile
+// actually present for this sequence, so the tooltip never promises a track the
+// card did not draw.
+function _mapInfoHTML(seq) {
+  const cov    = (seq.coverage && (seq.coverage.bins || []).length) ? seq.coverage : null;
+  const nb     = cov ? cov.bins.length : 0;
+  const qual   = cov && (cov.quality_bins || []).length === nb;
+  const strand = cov && (cov.bins_fwd || []).length === nb
+                     && (cov.bins_rev || []).length === nb;
+  const lowcx  = ((seq.seq_quality || {}).low_complexity_regions || []).length;
+  return `
+    <div class="vq-tooltip__title">Genome map</div>
+    ${_tipLead('ORFs, HMM domains and read support along the contig, in nucleotide coordinates.')}
+    ${_tipRow('var(--vq-accent)',  'ORF (+) — arrow points 5′→3′ on the forward strand; ORFs are laned by reading frame.')}
+    ${_tipRow('var(--vq-warning)', 'ORF (−) — arrow points 3′→5′ on the reverse strand.')}
+    ${_tipRow('var(--vq-dom-1)',   'HMM domain — profile hit (RVDB / Vfam / Pfam / EggNOG) drawn inside its ORF; each target gets its own colour.')}
+    ${cov ? _tipRow(qual ? 'var(--vq-success)' : 'var(--vq-accent)',
+        qual ? 'Read coverage — bar height is depth, bar colour is mean base quality (green Q≥30, amber Q20–29, red Q&lt;20).'
+             : 'Read coverage — depth per bin, from the reads aligned back to the contig.') : ''}
+    ${strand ? _tipRow('', 'Sense reads grow up from the centre line, antisense grow down (＋ / － in the gutter).') : ''}
+    ${lowcx ? _tipRow('var(--vq-warning)', 'Amber band — low-complexity region; shading only, it never blocks the hover below it.') : ''}
+    ${_tipNote('Hover any ORF, domain or the coverage band for details.')}`;
+}
+
+// FASTA preview: the highlight palette (same regions the dot plot shows).
+function _fastaInfoHTML() {
+  return `
+    <div class="vq-tooltip__title">FASTA preview</div>
+    ${_tipLead('Sequence-quality regions are highlighted in place, in the same colours as the dot plot.')}
+    ${_tipRow('var(--vq-accent)',  'Direct repeat — both copies of a segment duplicated in the same orientation.')}
+    ${_tipRow('var(--vq-danger)',  'Inverted repeat — a segment and the reverse complement it matches.')}
+    ${_tipRow('var(--vq-warning)', 'Low complexity — dustmasker-flagged low-information region.')}
+    ${_tipNote('Where regions overlap, the strongest signal wins. Hover a highlight for its label.')}`;
+}
+
+// Heuristic score: the rules, mirroring score_heuristic.py's CALIBRATION block.
+function _heurInfoHTML() {
+  return `
+    <div class="vq-tooltip__title">Heuristic score · basic rules</div>
+    ${_tipLead('Deterministic 0–100 score computed from the evidence itself — no LLM involved.')}
+    ${_tipRow('', 'Three components: <strong>BLASTn 30%</strong>, <strong>BLASTx 30%</strong>, <strong>HMM 40%</strong>. Each BLAST component mixes identity (60%) and query coverage (40%); HMM mixes best bit score with hit multiplicity.')}
+    ${_tipRow('', 'A component that is <em>absent</em> is dropped and its weight redistributed over the rest — absent is not the same as zero.')}
+    ${_tipRow('', 'Low-coverage penalty ×0.5 inside a BLAST component when the hit covers &lt;30% of the query.')}
+    ${_tipRow('', 'Single-evidence penalty ×0.7 when only one component is present (no corroboration).')}
+    ${_tipRow('', 'False-positive penalty ×0.2 when the dominant BLASTn hit is non-viral at ≥90% identity and ≥80% coverage — this one also forces the <strong>non-viral</strong> class.')}
+    ${_tipNote('Class: viral-known needs ≥90% identity and ≥70% coverage in a BLAST channel; otherwise viral-unknown.')}`;
+}
+
+// Shared tooltip body for the sequence-quality legend info (?) badge.
 function _signalsInfoHTML() {
-  const dot = c => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;`
-    + `background:${c};margin-right:7px;flex:0 0 auto;margin-top:3px"></span>`;
-  const row = (c, t) =>
-    `<div style="display:flex;align-items:flex-start;margin:3px 0;max-width:240px">${c ? dot(c) : '<span style="width:16px;flex:0 0 auto"></span>'}<span>${t}</span></div>`;
   return `
     <div class="vq-tooltip__title">Sequence-quality signals</div>
-    ${row('var(--vq-accent)',  'Direct repeat — a segment duplicated elsewhere in the same orientation.')}
-    ${row('var(--vq-danger)',  'Inverted repeat — a segment matching the reverse complement of another.')}
-    ${row('var(--vq-warning)', 'Low complexity — dustmasker-flagged low-information region (AT-rich, homopolymer, …).')}
-    ${row('', 'Repeat score — fraction of k-mers (length k) that occur more than once in the sequence.')}
-    <div style="margin-top:5px;color:var(--vq-text-3);font-size:11px">The same colours mark these regions in the FASTA sequence.</div>`;
+    ${_tipRow('var(--vq-accent)',  'Direct repeat — a segment duplicated elsewhere in the same orientation.')}
+    ${_tipRow('var(--vq-danger)',  'Inverted repeat — a segment matching the reverse complement of another.')}
+    ${_tipRow('var(--vq-warning)', 'Low complexity — dustmasker-flagged low-information region (AT-rich, homopolymer, …).')}
+    ${_tipRow('', 'Repeat score — fraction of k-mers (length k) that occur more than once in the sequence.')}
+    ${_tipNote('The same colours mark these regions in the FASTA sequence.')}`;
 }
 
 window.vqInitViewer = vqInitViewer;

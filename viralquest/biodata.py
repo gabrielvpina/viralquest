@@ -387,6 +387,12 @@ class CoverageProfile:
     low_cov_regions: list[list[int]]    # internal [start, end] runs below the drop threshold
     quality_bins:    list[float] = field(default_factory=list)  # mean base-quality (Phred) per bin, aligned to `bins`
     mean_quality:    float = 0.0        # mean per-base read quality (Phred) across the sequence
+    # Strand-split depth (sense = forward-mapping reads, antisense = reverse),
+    # derived from the case of the mpileup read-bases column; aligned to `bins`.
+    bins_fwd:        list[float] = field(default_factory=list)  # forward (sense) depth per bin
+    bins_rev:        list[float] = field(default_factory=list)  # reverse (antisense) depth per bin
+    mean_depth_fwd:  float = 0.0        # mean forward-strand depth across the sequence
+    mean_depth_rev:  float = 0.0        # mean reverse-strand depth across the sequence
 
 
 @dataclass(slots=True)

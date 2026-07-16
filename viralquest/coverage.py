@@ -105,8 +105,8 @@ class CoveragePipeline:
             self._write_fasta(seqs, ref_fasta)
             if not self._align(ref_fasta, reads, bam):
                 return {}
-            depth, quality = self._compute_depth_and_quality(seqs, bam)
-            profiles = self._build_profiles(seqs, depth, quality)
+            depth, quality, fwd, rev = self._compute_pileup(seqs, bam)
+            profiles = self._build_profiles(seqs, depth, quality, fwd, rev)
         except Exception as exc:
             logger.error(f"CoveragePipeline failed — skipping coverage: {exc}")
             return {}
@@ -162,21 +162,63 @@ class CoveragePipeline:
             return False
         return True
 
-    def _compute_depth_and_quality(
-        self, seqs: list[NucSequence], bam: Path
-    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
-        """
-        Read per-base depth *and* mean base quality from the same BAM in one
-        ``samtools mpileup`` pass — no second alignment.
+    # Forward-strand base symbols in the mpileup read-bases column are uppercase
+    # (``.`` match, ``ACGTN`` mismatch); reverse-strand are lowercase (``,`` /
+    # ``acgtn``). Deletions (``*``) and reference skips (``><``) carry no strand.
+    _FWD_BASES = frozenset(".ACGTN")
+    _REV_BASES = frozenset(",acgtn")
 
-        Returns ``({seq_id: depth}, {seq_id: mean_quality})`` where quality is the
-        mean Phred score of the read bases stacked at each position (0 where no
-        reads map).  The pileup filters are all disabled (``-A -B -Q 0 -q 0``) so
-        depth matches the previous ``samtools depth -a`` count, and every position
-        is emitted (``-a``, ``-d 0`` removes the depth cap).
+    @classmethod
+    def _count_strands(cls, read_bases: str) -> tuple[int, int]:
+        """
+        Count forward vs reverse aligned bases in one mpileup read-bases string,
+        correctly skipping read-start markers (``^x``), read ends (``$``) and
+        insertion/deletion runs (``[+-]<len><bases>``).
+        """
+        fwd = rev = 0
+        i, n = 0, len(read_bases)
+        while i < n:
+            c = read_bases[i]
+            if c == "^":            # read start: next char is mapping quality
+                i += 2
+                continue
+            if c == "$":            # read end marker
+                i += 1
+                continue
+            if c in "+-":           # indel: sign, length, then <length> bases
+                i += 1
+                num = ""
+                while i < n and read_bases[i].isdigit():
+                    num += read_bases[i]
+                    i += 1
+                i += int(num) if num else 0
+                continue
+            if c in cls._FWD_BASES:
+                fwd += 1
+            elif c in cls._REV_BASES:
+                rev += 1
+            i += 1
+        return fwd, rev
+
+    def _compute_pileup(
+        self, seqs: list[NucSequence], bam: Path
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray],
+               dict[str, np.ndarray], dict[str, np.ndarray]]:
+        """
+        Read per-base depth, mean base quality **and strand-split depth** from the
+        same BAM in one ``samtools mpileup`` pass — no second alignment.
+
+        Returns ``(depth, quality, depth_fwd, depth_rev)`` keyed by seq_id. Strand
+        is taken from the case of the read-bases column (uppercase = forward /
+        sense, lowercase = reverse / antisense). The pileup filters are all
+        disabled (``-A -B -Q 0 -q 0``) so depth matches the previous
+        ``samtools depth -a`` count, and every position is emitted
+        (``-a``, ``-d 0`` removes the depth cap).
         """
         depth   = {s.id: np.zeros(s.length, dtype=np.float64) for s in seqs}
         quality = {s.id: np.zeros(s.length, dtype=np.float64) for s in seqs}
+        fwd     = {s.id: np.zeros(s.length, dtype=np.float64) for s in seqs}
+        rev     = {s.id: np.zeros(s.length, dtype=np.float64) for s in seqs}
 
         proc = subprocess.Popen(
             [self.samtools_bin, "mpileup",
@@ -197,6 +239,11 @@ class CoveragePipeline:
             if not (0 <= pos < arr_d.size):
                 continue
             arr_d[pos] = float(parts[3])
+            # read-bases column → forward / reverse strand split
+            if len(parts) >= 5 and parts[4] and parts[4] != "*":
+                f, r = self._count_strands(parts[4])
+                fwd[parts[0]][pos] = f
+                rev[parts[0]][pos] = r
             # base-quality column: one ASCII char (Phred+33) per stacked base
             if len(parts) >= 6 and parts[5] and parts[5] != "*":
                 quals = [ord(c) - 33 for c in parts[5]]
@@ -206,13 +253,15 @@ class CoveragePipeline:
         proc.wait()
         if proc.returncode != 0:
             raise RuntimeError(f"samtools mpileup failed: {err.strip()}")
-        return depth, quality
+        return depth, quality, fwd, rev
 
     def _build_profiles(
         self,
         seqs:    list[NucSequence],
         depth:   dict[str, np.ndarray],
         quality: dict[str, np.ndarray],
+        fwd:     dict[str, np.ndarray],
+        rev:     dict[str, np.ndarray],
     ) -> dict[str, CoverageProfile]:
         profiles: dict[str, CoverageProfile] = {}
         for seq in seqs:
@@ -236,6 +285,14 @@ class CoveragePipeline:
             qual_bins   = self._downsample_quality(qarr, covered) if qarr is not None else []
             mean_qual   = float(qarr[covered].mean()) if (qarr is not None and covered.any()) else 0.0
 
+            # Strand-split depth (sense = forward, antisense = reverse).
+            farr = fwd.get(seq.id)
+            rarr = rev.get(seq.id)
+            bins_fwd = self._downsample(farr) if farr is not None else []
+            bins_rev = self._downsample(rarr) if rarr is not None else []
+            mean_fwd = float(farr.mean()) if farr is not None else 0.0
+            mean_rev = float(rarr.mean()) if rarr is not None else 0.0
+
             profiles[seq.id] = CoverageProfile(
                 seq_id          = seq.id,
                 length          = int(arr.size),
@@ -247,23 +304,34 @@ class CoveragePipeline:
                 low_cov_regions = low_runs,
                 quality_bins    = qual_bins,
                 mean_quality    = round(mean_qual, 2),
+                bins_fwd        = bins_fwd,
+                bins_rev        = bins_rev,
+                mean_depth_fwd  = round(mean_fwd, 2),
+                mean_depth_rev  = round(mean_rev, 2),
             )
         return profiles
 
     @staticmethod
     def _export_tsv(profiles: "dict[str, CoverageProfile]", outdir: Path) -> None:
-        """Write one TSV per sequence with bin index, genomic position and mean depth."""
+        """
+        Write one TSV per sequence: bin index, genomic position, total mean depth
+        and the strand-split (sense / antisense) depth per bin.
+        """
         import re
         _safe = re.compile(r'[^\w\-.]')
         for profile in profiles.values():
             safe_name = _safe.sub('_', profile.seq_id)
             tsv_path  = outdir / f"{safe_name}.tsv"
             nb        = len(profile.bins)
+            fwd = profile.bins_fwd or []
+            rev = profile.bins_rev or []
             with open(tsv_path, "w", encoding="utf-8") as fh:
-                fh.write("bin\tposition_nt\tmean_depth\n")
+                fh.write("bin\tposition_nt\tmean_depth\tsense_depth\tantisense_depth\n")
                 for i, depth in enumerate(profile.bins):
                     pos = int(((i + 0.5) / nb) * profile.length)
-                    fh.write(f"{i + 1}\t{pos}\t{depth}\n")
+                    f = fwd[i] if i < len(fwd) else ""
+                    r = rev[i] if i < len(rev) else ""
+                    fh.write(f"{i + 1}\t{pos}\t{depth}\t{f}\t{r}\n")
 
     @classmethod
     def _downsample(cls, arr: np.ndarray) -> list[float]:
