@@ -1072,9 +1072,14 @@ body {
   color:       var(--vq-text-3);
 }
 .vq-score-col__penalty {
-  font-size:  11px;
-  color:      var(--vq-danger);
-  margin-top: 8px;
+  font-size:     11px;
+  font-weight:   600;
+  color:         var(--vq-danger);
+  margin-top:    8px;
+  padding:       5px 9px;
+  border-radius: 6px;
+  background:    rgba(210, 74, 61, .13);
+  border:        1px solid rgba(210, 74, 61, .28);
 }
 
 /* ============================================================
