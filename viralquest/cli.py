@@ -196,6 +196,10 @@ def _build_parser():
              "contigs shorter than 500 bp from the index (viral and HK-matched "
              "contigs are always included). Both changes directly reduce the SSHash "
              "index footprint. Recommended when salmon index runs out of memory.")
+    sal.add_argument("--skip-salmon", dest="skip_salmon", action="store_true",
+        help="Skip Salmon quantification but still process the reads: read "
+             "coverage (incl. sense/antisense) and sequence-quality signals run "
+             "as usual.")
 
     # Sequence quality ──────────────────────────────────────────────────────────
     # Runs only when --reads is given: dustmasker, self-BLASTn and jellyfish flag
@@ -338,6 +342,9 @@ def _show_rich_help() -> None:
         "  from the index. Viral and HK-matched contigs are always included\n"
         "  regardless of length. Both changes reduce the SSHash index footprint.\n"
         "  Recommended when [dim]salmon index[/dim] runs out of memory.\n\n"
+        "[bold cyan]--skip-salmon[/]\n"
+        "  Skip Salmon quantification but still process the reads: read coverage\n"
+        "  (incl. sense/antisense strands) and sequence-quality signals still run.\n\n"
         "[bold]Note:[/] --reads alone triggers de-novo mode. --transcriptome requires --reads.\n"
         "[bold]Note:[/] For metagenomics or metatranscriptomics samples, omit --transcriptome — "
         "the de-novo pathway is the appropriate mode and no host reference is needed.",
@@ -491,8 +498,13 @@ _LONG_READ_TYPES = ("ont", "pb", "hifi")
 
 
 def _salmon_enabled(args) -> bool:
-    """Salmon runs only for short reads; long reads use coverage (minimap2) only."""
-    return bool(args.reads) and args.read_type not in _LONG_READ_TYPES
+    """
+    Salmon runs only for short reads and only when not explicitly skipped;
+    long reads use coverage (minimap2) only.
+    """
+    return (bool(args.reads)
+            and not args.skip_salmon
+            and args.read_type not in _LONG_READ_TYPES)
 
 
 def _build_steps(args) -> list[str]:
@@ -696,11 +708,17 @@ def _run_pipeline(args):
     # ── 10. Salmon quantification ─────────────────────────────────────────────
     salmon_report = None
     if args.reads and not _salmon_enabled(args):
-        logger.warning(
-            f"Salmon quantification skipped: --read-type '{args.read_type}' is a long-read "
-            "technology, and Salmon's short-read mapping mode is not valid for long reads. "
-            "Read coverage (minimap2) still runs and is long-read aware."
-        )
+        if args.skip_salmon:
+            logger.warning(
+                "Salmon quantification skipped (--skip-salmon). Read coverage "
+                "(incl. sense/antisense) and sequence-quality signals still run."
+            )
+        else:
+            logger.warning(
+                f"Salmon quantification skipped: --read-type '{args.read_type}' is a long-read "
+                "technology, and Salmon's short-read mapping mode is not valid for long reads. "
+                "Read coverage (minimap2) still runs and is long-read aware."
+            )
     if _salmon_enabled(args):
         t = time.time()
         from .salmon_quant import SalmonQuantPipeline
