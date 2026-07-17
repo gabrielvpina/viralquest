@@ -1,5 +1,0 @@
-Name	Length	EffectiveLength	TPM	NumReads
-contig_random	600	369.087	248524.003992	9.000
-contig_lowcomplexity	500	269.087	265130.619452	7.000
-contig_direct_repeat	540	309.087	230819.168714	7.000
-contig_inverted_repeat	550	319.087	255526.207842	8.000
