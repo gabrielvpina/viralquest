@@ -1,0 +1,5 @@
+contig	length	mean_depth	max_depth	breadth_1x	mean_quality
+contig_random	600	4.5	8	0.9833	35.09
+contig_lowcomplexity	500	4.2	8	1.0	35.11
+contig_direct_repeat	540	3.89	8	0.9259	35.13
+contig_inverted_repeat	550	4.36	8	0.9909	35.19
