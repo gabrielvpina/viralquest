@@ -87,6 +87,7 @@ class SequenceQualityPipeline:
             if self.cleanup:
                 ref_fasta.unlink(missing_ok=True)
 
+        self._export(profiles, outdir)
         logger.success(f"Sequence quality signals built for {len(profiles)} sequence(s).")
         return profiles
 
@@ -97,6 +98,56 @@ class SequenceQualityPipeline:
         with open(path, "w", encoding="utf-8") as fh:
             for seq in seqs:
                 fh.write(f">{seq.id}\n{seq.sequence}\n")
+
+    # ── persistent export ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _export(profiles: "dict[str, SequenceQuality]", outdir: Path) -> None:
+        """
+        Persist the sequence-quality signals to disk (in-memory results also go to
+        the JSON/HTML report). Writes:
+
+          * ``<seq_id>.tsv`` — one row per structural feature (low-complexity
+            region or self-repeat), for every sequence that has at least one.
+            Coordinates are 1-based inclusive.
+          * ``summary.tsv``  — one row per sequence with the scalar signals.
+
+        Mirrors the per-sequence export style of ``coverage.py``.
+        """
+        _safe = re.compile(r"[^\w\-.]")
+        _STR  = {"plus": "+", "minus": "-"}
+
+        for prof in profiles.values():
+            rows: list[tuple] = []
+            # feature  q_start  q_end  s_start  s_end  strand  pct_id  length
+            for a, b in prof.low_complexity_regions:
+                rows.append(("low_complexity", a + 1, b + 1, "", "", "", "", b - a + 1))
+            for r in prof.self_repeats:
+                kind = "repeat_direct" if r.strand == "plus" else "repeat_inverted"
+                rows.append((kind, r.q_start + 1, r.q_end + 1,
+                             r.s_start + 1, r.s_end + 1,
+                             _STR.get(r.strand, r.strand), r.pct_id, r.length))
+            if not rows:
+                continue
+            safe = _safe.sub("_", prof.seq_id)
+            with open(outdir / f"{safe}.tsv", "w", encoding="utf-8") as fh:
+                fh.write("feature\tq_start\tq_end\ts_start\ts_end\tstrand\tpct_id\tlength\n")
+                for row in rows:
+                    fh.write("\t".join(str(x) for x in row) + "\n")
+
+        with open(outdir / "summary.tsv", "w", encoding="utf-8") as fh:
+            fh.write("seq_id\tlength\tlow_complexity_frac\tn_low_complexity\t"
+                     "n_repeats\tn_direct\tn_inverted\tkmer_size\tkmer_distinct\t"
+                     "kmer_total\tkmer_repeat_score\n")
+            for prof in profiles.values():
+                n_direct   = sum(1 for r in prof.self_repeats if r.strand == "plus")
+                n_inverted = len(prof.self_repeats) - n_direct
+                fh.write("\t".join(str(x) for x in (
+                    prof.seq_id, prof.length, prof.low_complexity_frac,
+                    len(prof.low_complexity_regions), len(prof.self_repeats),
+                    n_direct, n_inverted, prof.kmer_size, prof.kmer_distinct,
+                    prof.kmer_total, prof.kmer_repeat_score,
+                )) + "\n")
 
     # ── dustmasker ──────────────────────────────────────────────────────────────
 

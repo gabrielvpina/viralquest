@@ -215,6 +215,8 @@ SAMPLE_output/
 ├── coverage/                    # per-sequence read-coverage TSVs (if --reads)
 │   └── <seq_id>.tsv             #   bin · position · mean/sense/antisense depth
 ├── seq_quality/                 # sequence-quality signals (if --reads)
+│   ├── <seq_id>.tsv             #   per-feature: low-complexity + self-repeats
+│   └── summary.tsv              #   per-sequence scalars (low-cx frac, k-mer score…)
 ├── SAMPLE_viral_contigs.fasta   # confirmed viral sequences
 ├── SAMPLE_viralquest.json       # full structured report (JSON)
 ├── SAMPLE_viralquest.html       # self-contained interactive HTML report
