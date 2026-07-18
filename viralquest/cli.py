@@ -799,9 +799,12 @@ def _run_pipeline(args):
     yield from _tick(t)
 
     # ── 12. LLM scoring (optional) ────────────────────────────────────────────
+    # Score the same set the report emits (single source of truth): NR-confirmed
+    # in the --nr-db pathway, is_viral in RefSeq/HMM-only runs, all under --force.
     if args.model_type and args.model_name:
         t          = time.time()
-        viral_seqs = [s for s in seqs if s.blastx_nr_hits]
+        from .exporter import select_confirmed_sequences
+        viral_seqs = select_confirmed_sequences(seqs, force=args.force)
         from .score_ai import SequenceScorer, LlmMode
         mode = LlmMode.HIGH if args.llm_tokens == "high" else LlmMode.LOW
         SequenceScorer(model_type=args.model_type,

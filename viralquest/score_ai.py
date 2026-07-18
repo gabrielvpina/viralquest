@@ -17,8 +17,11 @@ from viralquest.biodata import (
 
 
 class LlmMode(Enum):
-    HIGH = "high"   # all hits, Pfam details included, full family description
-    LOW  = "low"    # best hits only, Pfam details omitted, standardised description
+    # Pfam domain `details` text is never sent to the LLM (removed to avoid
+    # token bloat on Pfam-rich sequences); the high/low distinction is in the
+    # other dimensions below.
+    HIGH = "high"   # all hits, full family description
+    LOW  = "low"    # best hits only, standardised family description
 
 
 # ---------------------------------------------------------------------------
@@ -46,8 +49,8 @@ def _blastn_dict(h: BlastnResult) -> dict:
     }
 
 
-def _domain_dict(d: HmmDomain, include_details: bool) -> dict:
-    r: dict = {
+def _domain_dict(d: HmmDomain) -> dict:
+    return {
         "database":    d.database,
         "target":      d.target,
         "score":       d.score,
@@ -55,18 +58,15 @@ def _domain_dict(d: HmmDomain, include_details: bool) -> dict:
         "description": d.description,
         "type":        d.type,
     }
-    if include_details:
-        r["details"] = d.details
-    return r
 
 
-def _orf_dict(orf: Orf, include_details: bool) -> dict:
+def _orf_dict(orf: Orf) -> dict:
     return {
         "name":        orf.name,
         "strand":      orf.strand,
         "frame":       orf.frame,
         "length_aa":   orf.length_aa,
-        "hmm_domains": [_domain_dict(d, include_details) for d in orf.domains],
+        "hmm_domains": [_domain_dict(d) for d in orf.domains],
     }
 
 
@@ -86,7 +86,6 @@ class PromptBuilder:
     @classmethod
     def build_input(cls, seq: NucSequence, mode: LlmMode) -> dict:
         high = mode == LlmMode.HIGH
-        include_details = high   # Pfam details only in high-token mode
 
         # --- taxonomy ---
         tax = seq.taxonomy
@@ -155,7 +154,7 @@ class PromptBuilder:
             "taxonomy":           taxonomy_dict,
             "blastx_hits":        blastx_hits,
             "blastn_hits":        blastn_hits,
-            "orfs":               [_orf_dict(o, include_details) for o in seq.orfs],
+            "orfs":               [_orf_dict(o) for o in seq.orfs],
             "viral_family_info":  family_info,
         }
 
@@ -374,8 +373,8 @@ class SequenceScorer:
     model_name : str
         Model identifier (e.g. "llama3.2", "gpt-4o", "claude-sonnet-4-6").
     mode : LlmMode
-        HIGH — all hits, Pfam details, full family description.
-        LOW  — best hits only, no Pfam details, standardised description.
+        HIGH — all hits, full family description.
+        LOW  — best hits only, standardised family description.
     api_key : str | None
         Required for openai / anthropic / google.
     low_mode_delay : float
