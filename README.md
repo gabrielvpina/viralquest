@@ -3,15 +3,14 @@
   <br><br>
   <strong>A pipeline for viral diversity analysis from assembled contigs</strong>
   <br><br>
-  <img src="https://img.shields.io/badge/version-3.0.0--beta-orange">
-  <img src="https://img.shields.io/badge/status-BETA-red">
-  <img src="https://img.shields.io/badge/platform-Linux64-8A2BE2">
+  <img src="https://img.shields.io/badge/version-3.0.0-brightgreen">
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-8A2BE2">
   <img src="https://img.shields.io/badge/python-3.12-blue">
 </div>
 
 ---
 
-> **BETA / TEST VERSION** — This is a development release. APIs, arguments, and output formats may change without notice. Not recommended for production use.
+> **Available for Linux and Apple (macOS) systems.**
 
 ## Overview
 
@@ -25,7 +24,7 @@ ViralQuest v3 detects and characterizes viral sequences from assembled metagenom
 - **Salmon quantification** with reference or de-novo pathway and bundled multi-kingdom housekeeping genes
 - **Read coverage profiling** (minimap2) — per-base depth track with sense/antisense strand split and base-quality colouring, long-read aware (Illumina / Nanopore / PacBio); coverage discontinuities flag potentially chimeric contigs
 - **Sequence quality checks** — dustmasker low-complexity, self-BLASTn repeat detection (direct / inverted, with dot plot), and jellyfish k-mer repetitiveness on confirmed viral contigs
-- **LLM scoring** via Ollama (local) or OpenAI / Anthropic / Google APIs (`google-genai`)
+- **Sequence scoring** — a deterministic heuristic score that always runs (no LLM/API required), plus optional **LLM scoring** via Ollama (local) or OpenAI / Anthropic / Google APIs (`google-genai`)
 - **Self-contained HTML report** with interactive genome map (ORF frames + HMM domains + read-coverage track), cluster analysis, taxonomy tree, BLAST tables, sequence-quality panels, and Salmon plots
 
 Paper: [https://link.springer.com/article/10.1186/s12859-026-06391-6](https://link.springer.com/article/10.1186/s12859-026-06391-6)
@@ -49,7 +48,6 @@ After create the new env, use `conda activate viralquest` to run the next steps.
 ```bash
 git clone https://github.com/gabrielvpina/viralquest.git
 cd viralquest
-git checkout total-refactor
 pip install -e .
 ```
 
@@ -142,7 +140,8 @@ viralquest \
 |---|---|
 | `-cpu` | CPU threads for Diamond, HMMsearch, BLASTn, and Salmon (default: 2) |
 | `--cap3` | Run CAP3 assembly before the pipeline |
-| `--min-identity` | Clustering identity threshold (default: 70%) |
+| `--min-identity` | Minimum % identity for intra-cluster BLASTn alignment (default: 90.0) |
+| `--min-coverage` | Minimum query coverage (%) for a sequence to qualify as a cluster member (default: 50.0); clusters with fewer than 2 qualifying members are dropped |
 | `--force` | Export all sequences, ignoring viral confirmation filters |
 
 #### Databases
@@ -275,7 +274,15 @@ Bundled housekeeping genes cover seven kingdoms: mammals, arthropods, plants, fi
 
 ---
 
-## LLM scoring
+## Scoring
+
+Every run produces a **heuristic score** for each exported sequence, and can optionally add an **LLM score** on top.
+
+### Heuristic scoring (always on)
+
+A deterministic, rule-based scorer runs automatically at the end of every pipeline — **no LLM, no NR database, and no API key required**. It scores exactly the set of sequences the report emits, so a `vq_score` is always present for each exported sequence even in fully offline runs. It requires no configuration or extra arguments.
+
+### LLM scoring (optional)
 
 Runs on the same set of confirmed sequences the report emits: NR-confirmed sequences in the `--nr-db` pathway, or RefSeq/HMM-confirmed (`is_viral`) sequences when NR is not used — and all sequences under `--force`. The Google backend uses the [`google-genai`](https://googleapis.github.io/python-genai/) package (`google-genai>=1.0.0`).
 
@@ -292,3 +299,35 @@ Runs on the same set of confirmed sequences the report emits: NR-confirmed seque
 Output per sequence: `vq_score` (0–100), `classification` (`viral-known` / `viral-unknown` / `non-viral`), and a free-text analysis paragraph.
 
 Setup guide: [wiki/Setup-AI-Summary-resource](https://github.com/gabrielvpina/viralquest/wiki/Setup-AI-Summary-resource)
+
+---
+
+## Multi-sample consolidated report (`viralquest-report`)
+
+`viralquest-report` merges several individual ViralQuest runs into a **single interactive HTML report**, with cross-sample clustering of the confirmed viral sequences. Point it at a directory containing one subdirectory per run (each holding its `*_viralquest.json`):
+
+```bash
+viralquest-report \
+  -in   results_dir/ \
+  -out  consolidated_report/
+```
+
+### Arguments
+
+| Argument | Description |
+|---|---|
+| `-in` / `--input` | Directory containing ViralQuest result directories (each with a `*_viralquest.json`) |
+| `-out` / `--outdir` | Output directory for the consolidated report |
+| `--min-identity` | BLASTn identity floor for cross-sample clusters |
+| `--min-coverage` | BLASTn coverage floor for cross-sample clusters |
+| `--blastn-bin` | `blastn` binary to use (default: `blastn`) |
+| `--no-clusters` | Skip cross-sample clustering (Overview + Viewer only) |
+| `--version` | Print version and exit |
+
+### Screenshots
+
+![General statistics from multiple samples in one report](data/screenshots/report-stats.png)
+
+![Viral clusters over all samples](data/screenshots/report-clusters.png)
+
+![Cluster align in different samples](data/screenshots/report-aligns.png)
