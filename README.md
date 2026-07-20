@@ -10,8 +10,6 @@
 
 ---
 
-> **Available for Linux and Apple (macOS) systems.**
-
 ## Overview
 
 ViralQuest v3 detects and characterizes viral sequences from assembled metagenomics or transcriptomics contigs. The pipeline integrates:
