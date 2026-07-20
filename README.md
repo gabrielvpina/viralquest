@@ -330,4 +330,4 @@ viralquest-report \
 
 ![Viral clusters over all samples](data/screenshots/report-clusters.png)
 
-![Cluster align in different samples](data/screenshots/report-aligns.png)
+![Cross-sample cluster align](data/screenshots/report-aligns.png)
