@@ -366,9 +366,7 @@ def _show_rich_help() -> None:
         "  k-mer size for the jellyfish repetitiveness score (default: 15).\n\n"
         "[bold cyan]--skip-seq-quality[/]\n"
         "  Skip this module entirely (saves the self-BLASTn / dot-plot time on\n"
-        "  runs with many or very long contigs).\n\n"
-        "[bold]Note:[/] each tool degrades gracefully — a missing binary only drops its\n"
-        "own signal.",
+        "  runs with many or very long contigs).",
         title="[bold cyan]SEQUENCE QUALITY[/bold cyan]",
         border_style="cyan", width=85, box=box.ROUNDED,
     ))
