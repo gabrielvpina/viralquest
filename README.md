@@ -160,9 +160,9 @@ viralquest \
 | `--blastn-online` | NCBI e-mail for qblast (no local DB required); captures accession and query coordinates |
 | `--blastn-online-db` | NCBI database for online BLASTn (default: `nt`) |
 
-#### Read-based analysis (reads → Salmon + coverage + sequence quality)
+#### Read-based analysis (reads → Salmon + coverage)
 
-Supplying `--reads` enables three read-based modules: **Salmon quantification** (short reads only), **read-coverage profiling** (minimap2, all read types), and **sequence-quality checks**. `--read-type` is required whenever `--reads` is used.
+Supplying `--reads` enables two read-based modules: **Salmon quantification** (short reads only) and **read-coverage profiling** (minimap2, all read types). `--read-type` is required whenever `--reads` is used.
 
 | Argument | Description |
 |---|---|
@@ -172,7 +172,15 @@ Supplying `--reads` enables three read-based modules: **Salmon quantification** 
 | `--hk-genes` | Text file of reference housekeeping gene IDs (one per line) for normalization; requires `--transcriptome` |
 | `--low-memory` | Low-RAM mode for the Salmon index (`-k 21`, and in de-novo mode drops background contigs < 500 bp). Use when `salmon index` runs out of memory |
 | `--skip-salmon` | Skip Salmon quantification but still run read coverage (incl. sense/antisense) and sequence-quality checks |
-| `--kmer` | k-mer size for the jellyfish repetitiveness score in the sequence-quality module (default: 15) |
+
+#### Sequence quality (always on)
+
+Structural checks on the confirmed viral sequences (dustmasker low-complexity, self-BLASTn repeats, jellyfish k-mer score, dot plot). These are computed from the assembled sequences alone, so they **run in every mode — `--reads` is not required**.
+
+| Argument | Description |
+|---|---|
+| `--kmer` | k-mer size for the jellyfish repetitiveness score (default: 15) |
+| `--skip-seq-quality` | Skip the sequence-quality module entirely (saves the self-BLASTn / dot-plot time on runs with many or very long contigs) |
 
 #### LLM scoring
 
@@ -211,7 +219,7 @@ SAMPLE_output/
 │   └── vq_quant/quant.sf
 ├── coverage/                    # per-sequence read-coverage TSVs (if --reads)
 │   └── <seq_id>.tsv             #   bin · position · mean/sense/antisense depth
-├── seq_quality/                 # sequence-quality signals (if --reads)
+├── seq_quality/                 # sequence-quality signals (unless --skip-seq-quality)
 │   ├── <seq_id>.tsv             #   per-feature: low-complexity + self-repeats
 │   └── summary.tsv              #   per-sequence scalars (low-cx frac, k-mer score…)
 ├── SAMPLE_viral_contigs.fasta   # confirmed viral sequences
@@ -239,7 +247,7 @@ The HTML report is fully self-contained (single file, no external dependencies) 
 
 ## Read-based analysis
 
-When `--reads` is supplied, three modules run on the confirmed viral sequences in addition to the assembly-based analysis. All three are optional and share the same read input; `--read-type` selects the sequencing technology.
+When `--reads` is supplied, two modules run on the confirmed viral sequences in addition to the assembly-based analysis: Salmon quantification and read-coverage profiling. Both are optional and share the same read input; `--read-type` selects the sequencing technology.
 
 ### Read coverage
 
@@ -250,15 +258,15 @@ Confirmed viral sequences are used as a small reference and the reads are aligne
 
 In the HTML viewer this renders as a two-sided track under the ORF lanes (sense grows up, antisense down). A roughly uniform profile indicates a well-assembled contig; an internal coverage discontinuity flags a possible chimeric / mis-assembled junction. Per-sequence depth is also exported to `coverage/<seq_id>.tsv`. Coverage runs for **any** read type — it is the read signal used when Salmon is skipped for long reads or via `--skip-salmon`.
 
-### Sequence quality
+## Sequence quality
 
-Structural checks on the confirmed viral contigs, written to `seq_quality/`:
+Structural checks on the confirmed viral contigs, written to `seq_quality/`. They derive only from the assembled sequences, so this module **runs in every execution — with or without `--reads`** (disable it with `--skip-seq-quality`):
 
 - **dustmasker** — low-complexity regions (shown as bands in the viewer);
 - **self-BLASTn** — internal direct and inverted repeats, visualised as a dot plot (slope +1 direct, −1 inverted);
 - **jellyfish** — a k-mer repetitiveness score (k set by `--kmer`, default 15).
 
-These flag assembly artefacts and repeat structure that can otherwise inflate or distort downstream interpretation.
+These flag assembly artefacts and repeat structure that can otherwise inflate or distort downstream interpretation. Each tool degrades gracefully: a missing binary only drops its own signal.
 
 ## Salmon quantification
 
