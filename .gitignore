@@ -18,6 +18,10 @@ dev/
 # macOS
 .DS_Store
 
-# dev 
+# dev
 example.json
 preview.html
+
+# Quarto docs site (rendered output)
+docs-md/_site/
+docs-md/.quarto/

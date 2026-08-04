@@ -16,7 +16,6 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/cap3-10.2011-h779adbc_3.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/diamond-2.1.24-hf93d47f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/entrez-direct-24.0-he881be0_0.tar.bz2
-      - conda: https://conda.anaconda.org/bioconda/linux-64/fastp-0.26.0-heae3180_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/htslib-1.23.1-h633afcb_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/k8-1.2-he8db53b_6.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/kmer-jellyfish-2.3.1-py312pl5321hf731ba3_6.tar.bz2
@@ -44,7 +43,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/c-ares-1.34.6-hb03c661_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/curl-8.20.0-hcf29cc6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-75.1-he02047a_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/isa-l-2.32.1-hb03c661_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-hb9d3cd8_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/krb5-1.22.2-ha1258a1_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.45.1-default_hbd61a6d_102.conda
@@ -188,7 +186,6 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/blast-2.17.0-h53185c9_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/diamond-2.2.4-h2b70331_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/entrez-direct-24.0-h193322a_0.tar.bz2
-      - conda: https://conda.anaconda.org/bioconda/osx-64/fastp-0.26.0-h9ea9c2a_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/htslib-1.23.1-h09fbe89_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/k8-1.2-h2ec61ea_6.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/kmer-jellyfish-2.3.1-py312pl5321hfc96be0_6.tar.bz2
@@ -252,7 +249,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/c-ares-1.34.6-hb5e19a0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/curl-8.21.0-h8f0b9e4_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/icu-75.1-h120a0e1_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-64/isa-l-2.32.1-ha1e9b39_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/krb5-1.22.2-h3ddfcb2_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/libblas-3.11.0-8_he492b99_openblas.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/libboost-1.85.0-hcca3243_4.conda
@@ -347,7 +343,6 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/blast-2.16.0-hb260f6e_5.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/diamond-2.2.2-h5b4e277_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/entrez-direct-22.4-hd5f1084_0.tar.bz2
-      - conda: https://conda.anaconda.org/bioconda/osx-arm64/fastp-0.26.0-hee05c9d_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/htslib-1.23-hfcd771d_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/k8-1.2-hda5e58c_6.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/kmer-jellyfish-2.3.1-py312pl5321h1f8763b_6.tar.bz2
@@ -412,7 +407,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/c-ares-1.34.6-hc919400_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/curl-8.20.0-hd5a2499_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/icu-75.1-hfee45f7_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/isa-l-2.31.1-h5505292_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/krb5-1.22.2-hfd3d5f3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libblas-3.11.0-8_h51639a9_openblas.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libboost-1.85.0-hf763ba5_4.conda
@@ -549,19 +543,6 @@ packages:
   purls: []
   size: 17127014
   timestamp: 1748473197798
-- conda: https://conda.anaconda.org/bioconda/linux-64/fastp-0.26.0-heae3180_0.tar.bz2
-  sha256: 9fccb182e2f79e8814e5774ee37b6deebd78fbb2d2471d1da3f5786929783b6c
-  md5: 0ce0a6d30416ad5667554c6662b62c4e
-  depends:
-  - isa-l >=2.31.1,<3.0a0
-  - libdeflate >=1.22,<1.26.0a0
-  - libgcc >=13
-  - libstdcxx >=13
-  license: MIT
-  license_family: MIT
-  purls: []
-  size: 267297
-  timestamp: 1749169745734
 - conda: https://conda.anaconda.org/bioconda/linux-64/htslib-1.23.1-h633afcb_0.conda
   sha256: d0977efb1885c9f00ca76ee13e7c0f9a8936bf271eec25ffa78606cd816a13c9
   md5: 209caa9e4ff0b9ed02dd09c3161917e5
@@ -861,21 +842,6 @@ packages:
     - entrez-direct >=24.0,<25.0a0
   size: 16468613
   timestamp: 1748473889737
-- conda: https://conda.anaconda.org/bioconda/osx-64/fastp-0.26.0-h9ea9c2a_0.tar.bz2
-  sha256: c46d9164ed1198914c0763859c21d4d98c84b02767b1151953f8208c3411261a
-  md5: 8c29ac9a67bf96bec46ba1b91602da7b
-  depends:
-  - isa-l >=2.31.1,<3.0a0
-  - libcxx >=18
-  - libdeflate >=1.22,<1.26.0a0
-  license: MIT
-  license_family: MIT
-  purls: []
-  run_exports:
-    weak:
-    - fastp >=0.26.0,<0.27.0a0
-  size: 244298
-  timestamp: 1749170498664
 - conda: https://conda.anaconda.org/bioconda/osx-64/htslib-1.23.1-h09fbe89_0.conda
   sha256: cbbf764d36ce34197b99ef6fb90c03044cf7813316b8a879f9a0cf4c67b62cc3
   md5: 2eccbeae9d6adf71bda98cce71633ef3
@@ -1127,18 +1093,6 @@ packages:
   purls: []
   size: 13706791
   timestamp: 1721746465282
-- conda: https://conda.anaconda.org/bioconda/osx-arm64/fastp-0.26.0-hee05c9d_0.tar.bz2
-  sha256: 7330dbb69bafb232cfdb7bed1a484a52acb6918c69677ba9ddaa7c108eca234b
-  md5: d6ce11e3dc1920a262f569f60968cc23
-  depends:
-  - isa-l >=2.31.1,<3.0a0
-  - libcxx >=18
-  - libdeflate >=1.22,<1.23.0a0
-  license: MIT
-  license_family: MIT
-  purls: []
-  size: 236038
-  timestamp: 1749169935836
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/htslib-1.23-hfcd771d_0.conda
   sha256: 6891c85e61b76953c82116cc210712ed9a62f22d749df92fe52fa932e4996555
   md5: 72877077c08fb32e6cc19911f95710ad
@@ -1444,20 +1398,6 @@ packages:
   purls: []
   size: 12129203
   timestamp: 1720853576813
-- conda: https://conda.anaconda.org/conda-forge/linux-64/isa-l-2.32.1-hb03c661_0.conda
-  sha256: bdcd52848058d7a5ef3fdd88b29701b51d03e948e49f5cc05036d8c8f7943f4e
-  md5: aee2e139304e7b59d3369222bb9eb288
-  depends:
-  - __glibc >=2.17,<3.0.a0
-  - libgcc >=14
-  license: BSD-3-Clause
-  license_family: BSD
-  purls: []
-  run_exports:
-    weak:
-    - isa-l >=2.32.1,<3.0a0
-  size: 168645
-  timestamp: 1783949090784
 - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-hb9d3cd8_0.conda
   sha256: 0960d06048a7185d3542d850986d807c6e37ca2e644342dd0c72feefcf26c2a4
   md5: b38117a3c920364aff79f870c984b4a3
@@ -3249,19 +3189,6 @@ packages:
     - icu >=75.1,<76.0a0
   size: 11761697
   timestamp: 1720853679409
-- conda: https://conda.anaconda.org/conda-forge/osx-64/isa-l-2.32.1-ha1e9b39_0.conda
-  sha256: 336575d1ffad9410d172a2fd3feef977db376036bf50348b26ae5750aa3ce8e2
-  md5: 3657f4c8f0a36473b3863b1be8b311d5
-  depends:
-  - __osx >=11.0
-  license: BSD-3-Clause
-  license_family: BSD
-  purls: []
-  run_exports:
-    weak:
-    - isa-l >=2.32.1,<3.0a0
-  size: 158557
-  timestamp: 1783949793847
 - conda: https://conda.anaconda.org/conda-forge/osx-64/krb5-1.22.2-h3ddfcb2_1.conda
   sha256: c6342c340b18651d14b6134e223904da6f6099665e45449efb683d4c68b28432
   md5: e070b249c4f9c6bddb7984a1a794e8df
@@ -4292,19 +4219,6 @@ packages:
     - icu >=75.1,<76.0a0
   size: 11857802
   timestamp: 1720853997952
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/isa-l-2.31.1-h5505292_1.conda
-  sha256: f0cad459ebfc209269cb7a964fc37d811aa973876c5508e529e414f379a38c23
-  md5: 00c87ad2b46e1863f514b831674f1a43
-  depends:
-  - __osx >=11.0
-  license: BSD-3-Clause
-  license_family: BSD
-  purls: []
-  run_exports:
-    weak:
-    - isa-l >=2.31.1,<3.0a0
-  size: 122475
-  timestamp: 1736497418302
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/krb5-1.22.2-hfd3d5f3_1.conda
   sha256: c740e4a2e7247776a9883158fdab50ae0732c8f67f96d8f1db8ad9da5e0b5222
   md5: 8780f41b013d19219faef9c82260744b
