@@ -202,11 +202,15 @@ def _build_parser():
              "as usual.")
 
     # Sequence quality ──────────────────────────────────────────────────────────
-    # Runs only when --reads is given: dustmasker, self-BLASTn and jellyfish flag
-    # structural issues (low complexity, repeats) on the assembled sequences.
-    rq = parser.add_argument_group("sequence quality (optional, needs --reads)")
+    # Always runs (reads are not required): dustmasker, self-BLASTn and jellyfish
+    # flag structural issues (low complexity, repeats) on the assembled sequences.
+    rq = parser.add_argument_group("sequence quality (always on)")
     rq.add_argument("--kmer", dest="kmer", type=int, default=15, metavar="K",
         help="k-mer size for the jellyfish repetitiveness score (default: 15).")
+    rq.add_argument("--skip-seq-quality", dest="skip_seq_quality", action="store_true",
+        help="Skip the sequence-quality module (dustmasker low-complexity, "
+             "self-BLASTn repeats, jellyfish k-mer score and dot plot). It runs "
+             "by default on the confirmed viral sequences, with or without --reads.")
 
     # AI scoring ───────────────────────────────────────────────────────────────
     ai = parser.add_argument_group("AI scoring (optional)")
@@ -349,6 +353,23 @@ def _show_rich_help() -> None:
         "[bold]Note:[/] For metagenomics or metatranscriptomics samples, omit --transcriptome — "
         "the de-novo pathway is the appropriate mode and no host reference is needed.",
         title="[bold cyan]SALMON QUANTIFICATION (optional)[/bold cyan]",
+        border_style="cyan", width=85, box=box.ROUNDED,
+    ))
+    console.print()
+
+    console.print(Panel(
+        "Structural checks on the confirmed viral sequences: [dim]dustmasker[/dim]\n"
+        "low-complexity regions, [dim]self-BLASTn[/dim] direct/inverted repeats (with a\n"
+        "dot plot) and a [dim]jellyfish[/dim] k-mer repetitiveness score.\n"
+        "Runs by default in every mode — [bold]reads are not required[/bold].\n\n"
+        "[bold cyan]--kmer[/]              [dim]K[/]\n"
+        "  k-mer size for the jellyfish repetitiveness score (default: 15).\n\n"
+        "[bold cyan]--skip-seq-quality[/]\n"
+        "  Skip this module entirely (saves the self-BLASTn / dot-plot time on\n"
+        "  runs with many or very long contigs).\n\n"
+        "[bold]Note:[/] each tool degrades gracefully — a missing binary only drops its\n"
+        "own signal.",
+        title="[bold cyan]SEQUENCE QUALITY[/bold cyan]",
         border_style="cyan", width=85, box=box.ROUNDED,
     ))
     console.print()
@@ -523,11 +544,12 @@ def _build_steps(args) -> list[str]:
     steps.append("HMMsearch  —  Pfam  (functional annotation)")
     steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
-    if args.reads:
-        if _salmon_enabled(args):
-            mode = "reference" if args.transcriptome else "de novo"
-            steps.append(f"Salmon quantification  —  {mode}")
+    if _salmon_enabled(args):
+        mode = "reference" if args.transcriptome else "de novo"
+        steps.append(f"Salmon quantification  —  {mode}")
+    if not args.skip_seq_quality:
         steps.append("Sequence quality  —  dustmask · self-BLAST · jellyfish")
+    if args.reads:
         steps.append("Read coverage profiling")
     steps.append("Heuristic scoring  —  rule-based vq_score")
     if args.model_type:
@@ -754,7 +776,9 @@ def _run_pipeline(args):
     # ── 10a. Sequence quality (dustmask · self-BLAST · jellyfish · dot plot) ──
     # Structural signals on the confirmed viral sequences — same set the coverage
     # track and exporter use, so every signal aligns with the report viewer.
-    if args.reads:
+    # Reads are not needed: the signals come from the assembled sequences alone,
+    # so this runs in every mode unless --skip-seq-quality is given.
+    if not args.skip_seq_quality:
         t = time.time()
         from .seq_quality import SequenceQualityPipeline
         from .exporter    import select_confirmed_sequences
