@@ -55,20 +55,44 @@ def _pixi_env_bin() -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def activate_pixi_env() -> Path | None:
+    """
+    Prepend the pixi default-env bin dir to PATH for this process (idempotent).
+
+    Every entry point that shells out to a bioinformatics binary should call
+    this first, so `blastn`, `diamond`, … resolve to the pixi installation
+    instead of whatever happens to sit on the user's PATH. Returns the bin dir,
+    or None when there is no pixi env to activate.
+    """
+    env_bin = _pixi_env_bin()
+    if env_bin is None:
+        return None
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    if str(env_bin) not in entries:
+        os.environ["PATH"] = os.pathsep.join([str(env_bin), *entries]).strip(os.pathsep)
+    return env_bin
+
+
+def resolve_tool(name: str, override: str | None = None) -> str | None:
+    """
+    Full path to a bioinformatics binary, preferring the pixi installation.
+
+    *override* is an explicit user-supplied binary: a path (used as-is when it
+    exists) or a bare name looked up on PATH. Without an override the pixi env
+    is activated and *name* is resolved from PATH. Returns None if not found.
+    """
+    activate_pixi_env()
+    target = override or name
+    if os.sep in target or (os.altsep and os.altsep in target):
+        candidate = Path(target).expanduser()
+        return str(candidate) if candidate.is_file() else None
+    return shutil.which(target)
+
+
 def missing_tools() -> list[str]:
     """Return names of required binaries not found on PATH or the pixi env."""
-    pixi_bin = _pixi_env_bin()
-
-    def available(name: str) -> bool:
-        if shutil.which(name):
-            return True
-        if pixi_bin and (pixi_bin / name).exists():
-            # found in pixi env — add it to PATH for this session
-            os.environ["PATH"] = str(pixi_bin) + ":" + os.environ.get("PATH", "")
-            return True
-        return False
-
-    return [name for name, _ in _REQUIRED_TOOLS if not available(name)]
+    activate_pixi_env()
+    return [name for name, _ in _REQUIRED_TOOLS if not shutil.which(name)]
 
 
 # ---------------------------------------------------------------------------
@@ -104,9 +128,7 @@ def _run_pixi_install(pixi_toml: Path) -> bool:
     print(f"  Running: pixi install  (cwd: {pixi_toml.parent})")
     ok = subprocess.run(["pixi", "install"], cwd=pixi_toml.parent).returncode == 0
     if ok:
-        env_bin = pixi_toml.parent / ".pixi" / "envs" / "default" / "bin"
-        if env_bin.exists():
-            os.environ["PATH"] = str(env_bin) + ":" + os.environ.get("PATH", "")
+        activate_pixi_env()
     return ok
 
 

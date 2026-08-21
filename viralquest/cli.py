@@ -1026,18 +1026,10 @@ def main() -> None:
         pass
 
     # Check bioinformatics binaries before doing anything else.
-    # If tools are missing, try to auto-activate the pixi environment first —
-    # the user may have run viralquest-setup but not reloaded their shell PATH.
-    import os
-    from viralquest.setup_env import missing_tools, _find_pixi_toml
+    # missing_tools() activates the pixi environment first — the user may have
+    # run viralquest-setup but not reloaded their shell PATH.
+    from viralquest.setup_env import missing_tools
     absent = missing_tools()
-    if absent:
-        pixi_toml = _find_pixi_toml()
-        if pixi_toml:
-            env_bin = pixi_toml.parent / ".pixi" / "envs" / "default" / "bin"
-            if env_bin.exists():
-                os.environ["PATH"] = str(env_bin) + ":" + os.environ.get("PATH", "")
-                absent = missing_tools()
 
     if absent:
         print(
