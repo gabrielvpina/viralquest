@@ -15,6 +15,12 @@ from viralquest.biodata import (
     ViralCluster,
 )
 
+# HMM banks whose role is FILTER (mirrors hmm.HMM_ROLES; kept local so the
+# exporter does not pull pyhmmer into its import graph). Their domains are
+# collapsed to the single best-scoring hit per bank on export; every other bank
+# is treated as CHARACTERIZE and keeps its non-overlapping domains.
+_FILTER_HMM_DBS = frozenset({"RVDB", "Vfam", "EggNOG"})
+
 
 # ---------------------------------------------------------------------------
 # Generic recursive converter
@@ -227,14 +233,51 @@ class ReportExporter:
 
     @staticmethod
     def _orf_to_dict(orf) -> dict:
-        """Serialize one Orf, keeping only the best-scoring hit per HMM target."""
+        """
+        Serialize one Orf, thinning its HMM domains by the role of each bank.
+
+        FILTER banks (RVDB / Vfam / EggNOG) answer one question — "is this
+        viral?" — and routinely fire several models of the same family over the
+        same stretch, which all render identically in the genome map and drown
+        the hit that matters. Only their top-scoring hit survives, one per bank.
+
+        CHARACTERIZE banks (Pfam) describe protein architecture, where distinct
+        domains at distinct positions are real signal. Every Pfam domain is kept
+        unless it overlaps a higher-scoring one, so a multi-domain ORF stays
+        legible without stacking rival calls for the same region.
+
+        Hit multiplicity is not lost: the ORF's ``raw_hmm_counts`` keeps the
+        per-database totals and ``pipeline_stats.hmm`` still counts every
+        threshold-passing hit.
+        """
         d = _to_serializable(orf)
-        best: dict[str, dict] = {}
+
+        best: dict[str, dict] = {}            # FILTER banks → single best hit
+        by_db: dict[str, list[dict]] = {}     # CHARACTERIZE banks → all hits
         for dom in d.get("domains", []):
-            t = dom.get("target", "")
-            if t not in best or dom.get("score", 0) > best[t].get("score", 0):
-                best[t] = dom
-        d["domains"] = list(best.values())
+            db = dom.get("database", "")
+            if db in _FILTER_HMM_DBS:
+                if db not in best or dom.get("score", 0) > best[db].get("score", 0):
+                    best[db] = dom
+            else:
+                by_db.setdefault(db, []).append(dom)
+
+        kept = list(best.values())
+        for doms in by_db.values():
+            # Greedy, highest score first: a domain is dropped only when it
+            # overlaps one already kept from the same bank.
+            for dom in sorted(doms, key=lambda x: x.get("score", 0), reverse=True):
+                a, b = dom.get("start", 0), dom.get("stop", 0)
+                if not any(
+                    a < k.get("stop", 0) and b > k.get("start", 0)
+                    for k in kept if k.get("database") == dom.get("database")
+                ):
+                    kept.append(dom)
+
+        # Deterministic order: left to right along the ORF, as the map draws them.
+        d["domains"] = sorted(
+            kept, key=lambda dom: (dom.get("start", 0), dom.get("database", ""))
+        )
         return d
 
     @staticmethod

@@ -25,7 +25,7 @@ from pathlib import Path
 
 # ── Version ───────────────────────────────────────────────────────────────────
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 __author__  = "Gabriel Rodrigues"
 __link__ = "https://github.com/gabrielvpina/viralquest"
 

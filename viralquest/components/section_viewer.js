@@ -1093,11 +1093,11 @@ function _genomeSVG(seq, containerWidth) {
   }
   const nLanes = 6;
 
-  // Pack domains into sub-lanes per ORF (deduplicated: best score per target)
+  // Pack domains into sub-lanes per ORF (deduplicated: best score per database)
   const orfsWithFrame = orfs.map(o => ({
     ...o,
     frameLane:    frameLane(o),
-    _domainLanes: _assignDomainLanes(_bestDomainPerTarget(o.domains || [])),
+    _domainLanes: _assignDomainLanes(_bestDomainPerDatabase(o.domains || [])),
   }));
   orfsWithFrame.forEach(o => {
     o._nDomLanes = Math.max(0, ...o._domainLanes.map(d => d.lane + 1));
@@ -1520,13 +1520,36 @@ function _orfArrowPoints(x1, x2, y, h, strand) {
   }
 }
 
-function _bestDomainPerTarget(domains) {
-  const best = {};
+/* HMM banks whose role is FILTER — see hmm.HMM_ROLES. */
+const _FILTER_HMM_DBS = new Set(['RVDB', 'Vfam', 'EggNOG']);
+
+/* Thin an ORF's domains by the role of each bank, mirroring the exporter so
+   reports written before that rule existed draw as cleanly as new ones.
+     FILTER banks (RVDB/Vfam/EggNOG) — top-scoring hit only, one per bank:
+       rival models of the same family over the same stretch look identical here.
+     CHARACTERIZE banks (Pfam)       — every domain, minus any that overlaps a
+       higher-scoring one: distinct domains at distinct positions are the
+       protein's architecture and worth drawing. */
+function _bestDomainPerDatabase(domains) {
+  const best = {};      // filter banks → single best hit
+  const rest = [];      // characterize banks → candidates, ranked below
+
   domains.forEach(d => {
-    const t = d.target || '';
-    if (!best[t] || d.score > best[t].score) best[t] = d;
+    const db = d.database || '';
+    if (_FILTER_HMM_DBS.has(db)) {
+      if (!best[db] || d.score > best[db].score) best[db] = d;
+    } else {
+      rest.push(d);
+    }
   });
-  return Object.values(best);
+
+  const kept = Object.values(best);
+  rest.sort((a, b) => b.score - a.score).forEach(d => {
+    const overlaps = kept.some(k =>
+      k.database === d.database && d.start < k.stop && d.stop > k.start);
+    if (!overlaps) kept.push(d);
+  });
+  return kept;
 }
 
 function _assignDomainLanes(domains) {
