@@ -695,6 +695,16 @@ body {
   cursor:       pointer;
 }
 
+/* Same pill, but sitting inside a .vq-body-label row (e.g. the per-sequence
+   low-complexity toggle next to "Genome map"): reset the label typography it
+   would otherwise inherit, and push it to the end of the row. */
+.vq-filter-check--inline {
+  margin-left:    auto;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight:    500;
+}
+
 /* ============================================================
    Retractable filter panel
    ============================================================ */

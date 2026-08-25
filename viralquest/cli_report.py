@@ -28,7 +28,7 @@ from viralquest.report_clusters import (
 from viralquest.report_data import build_report_data
 from viralquest.report_loader import load_samples
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 HTML_NAME = "viralquest_report.html"
 
@@ -57,8 +57,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"BLASTn coverage floor for cross-sample clusters (default {FLOOR_COVERAGE}).",
     )
     clu.add_argument(
-        "--blastn-bin", dest="blastn_bin", type=str, default="blastn",
-        help="blastn binary (default 'blastn').",
+        "--blastn-bin", dest="blastn_bin", type=str, default=None,
+        help="blastn binary (default: the pixi installation, then PATH).",
     )
     clu.add_argument(
         "--no-clusters", dest="no_clusters", action="store_true",
@@ -72,6 +72,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    # Same binary resolution as the main pipeline: the pixi environment is put
+    # on PATH so blastn (and anything else shelled out to) comes from there.
+    from viralquest.setup_env import activate_pixi_env, resolve_tool
+
+    activate_pixi_env()
+    if not args.no_clusters and resolve_tool("blastn", args.blastn_bin) is None:
+        logger.error(
+            "blastn not found (pixi environment or PATH). "
+            "Run 'viralquest-setup' to install it, pass --blastn-bin with an "
+            "explicit path, or use --no-clusters to skip cross-sample clustering."
+        )
+        return 1
 
     in_root = Path(args.input)
     out_dir = Path(args.outdir)

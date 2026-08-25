@@ -37,6 +37,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from viralquest.setup_env import resolve_tool
+
 # Build-time floor; also the minimum the report sliders expose.
 FLOOR_IDENTITY = 90.0
 FLOOR_COVERAGE = 70.0
@@ -127,7 +129,8 @@ def _run_blastn(rep_seq: str, members: list[dict], blastn_bin: str, min_identity
         except FileNotFoundError:
             raise RuntimeError(
                 f"blastn binary not found: {blastn_bin!r}. "
-                "Install BLAST+ (bioconda 'blast') to build cross-sample clusters."
+                "Run 'viralquest-setup' to install BLAST+ via pixi, or pass "
+                "--blastn-bin with an explicit path."
             )
 
     best: dict[str, dict] = {}
@@ -179,14 +182,22 @@ def _member(seq: dict, hit: dict | None, is_rep: bool) -> GeneralMember:
 
 def build_general_clusters(
     sequences:    list[dict],
-    blastn_bin:   str   = "blastn",
+    blastn_bin:   str | None = None,
     min_identity: float = FLOOR_IDENTITY,
     min_coverage: float = FLOOR_COVERAGE,
 ) -> list[GeneralCluster]:
     """
     Build cross-sample clusters from stamped sequence dicts (each needs
     ``gid``, ``sample``, ``id``, ``sequence``, ``length`` and blast hits).
+
+    *blastn_bin* is an optional explicit binary; by default blastn is resolved
+    from the pixi environment (same installation the main pipeline uses).
     """
+    # Resolve once: pixi env first, then PATH. Fall back to the bare name so
+    # _run_blastn raises its actionable RuntimeError when nothing is installed.
+    blastn_bin = resolve_tool("blastn", blastn_bin) or blastn_bin or "blastn"
+    logger.debug(f"Cross-sample clustering will use blastn: {blastn_bin}")
+
     # Greedy similarity clustering over the whole pool, longest-first.
     remaining = sorted(
         (s for s in sequences if s.get("sequence")),

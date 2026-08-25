@@ -23,7 +23,19 @@ const _VW = {
   colourIdx: 0,
   // Multi-select taxonomy filter state (checkbox dropdowns)
   tax: { family: new Set(), phylum: new Set(), genus: new Set() },
+  // Low-complexity highlighting (genome-map bands + FASTA highlight) is per
+  // sequence and on by default, so this holds only the ids the user switched
+  // OFF. Deliberately NOT reset by vqInitViewer so the choices survive a
+  // re-init (the multi-sample report re-mounts the viewer on every sample
+  // filter change). Exports read the live SVG, so they follow these flags.
+  lowCxOff: new Set(),
 };
+
+/* Should this sequence's low-complexity regions be highlighted? */
+function _showLowCx(seq) {
+  return !_VW.lowCxOff.has(seq.id);
+}
+
 
 /* Build a checkbox-dropdown filter field (multi-select).
    Lives inside the retractable filter panel; toggling is handled by the
@@ -593,6 +605,23 @@ function _renderList() {
   list.appendChild(frag);
 }
 
+/* Re-draw one card's low-complexity highlighting in place, without collapsing
+   it. The genome SVG is only rebuilt when it already exists (a card that was
+   never opened builds it lazily and picks up the current flag then).
+   Because the export helpers read the live SVG out of the DOM, redrawing here
+   is what makes this card's PNG/SVG/PDF exports honour its checkbox. */
+function _refreshLowCx(card, seq) {
+  if (!card || !seq) return;
+
+  const wrap = card.querySelector('.vq-genome-wrap');
+  if (wrap && wrap.querySelector('svg')) {
+    wrap.innerHTML = '';
+    wrap.appendChild(_genomeSVG(seq, wrap.clientWidth));
+  }
+  const fasta = card.querySelector('.vq-fasta');
+  if (fasta) fasta.innerHTML = _fastaHighlightedHTML(seq);
+}
+
 // ── Sequence card ──────────────────────────────────────────────────────────
 
 function _seqCard(seq) {
@@ -610,6 +639,11 @@ function _seqCard(seq) {
   const blastnCount  = (seq.blastn_hits || []).length;
   const refseqCount  = (seq.blastx_hits || []).length;
   const nrCount      = (seq.blastx_nr_hits || []).length;
+
+  // Per-sequence low-complexity toggle — only offered when this sequence has
+  // dust-masked regions of its own.
+  const lowCxCount = ((seq.seq_quality || {}).low_complexity_regions || []).length;
+  const hasLowCx   = lowCxCount > 0;
 
   // FASTA preview (header + sequence, seq-quality regions colour-highlighted).
   const hasFasta  = !!(seq.sequence || seq.sequence_nt);
@@ -669,6 +703,12 @@ function _seqCard(seq) {
               style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
                      border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
                      font-size:10px;font-weight:700;cursor:help">?</span>
+        ${hasLowCx ? `
+        <label class="vq-filter-check vq-filter-check--inline" id="lowcx-wrap-${safe}"
+               title="Amber shading over the ${lowCxCount} dustmasker-flagged low-complexity region${lowCxCount !== 1 ? 's' : ''} of this sequence, in the genome map and the FASTA preview. This sequence's exports follow the setting.">
+          <input type="checkbox" id="lowcx-${safe}" ${_showLowCx(seq) ? 'checked' : ''}>
+          Highlight low-complexity regions
+        </label>` : ''}
       </div>
       <div class="vq-genome-wrap" id="genome-wrap-${safe}"></div>
 
@@ -747,26 +787,36 @@ function _seqCard(seq) {
 
     </div>`;
 
-  // Info (?) hovers — bind a tooltip to a badge by id
-  const _bindInfo = (id, html) => {
+  // Info (?) hovers — bind a tooltip to a badge by id. `src` may be a function
+  // so a tooltip whose content depends on viewer state (the low-complexity
+  // toggle) is built at hover time rather than frozen at card creation.
+  const _bindInfo = (id, src) => {
     const el = card.querySelector('#' + id + '-' + safe);
     if (!el) return;
-    el.addEventListener('mousemove', e => VQ.tooltipShow(html, e));
+    const html = () => (typeof src === 'function' ? src() : src);
+    el.addEventListener('mousemove', e => VQ.tooltipShow(html(), e));
     el.addEventListener('mouseleave', VQ.tooltipHide);
     el.addEventListener('focus', () => {
       const r = el.getBoundingClientRect();
-      VQ.tooltipShow(html, { clientX: r.right, clientY: r.bottom });
+      VQ.tooltipShow(html(), { clientX: r.right, clientY: r.bottom });
     });
     el.addEventListener('blur', VQ.tooltipHide);
   };
-  _bindInfo('mapinfo',   _mapInfoHTML(seq));
-  _bindInfo('fastainfo', _fastaInfoHTML());
+  _bindInfo('mapinfo',   () => _mapInfoHTML(seq));
+  _bindInfo('fastainfo', () => _fastaInfoHTML(seq));
   _bindInfo('heurinfo',  _heurInfoHTML());
   _bindInfo('siginfo', _signalsInfoHTML());
   _bindInfo('taxinfo', `
     <div class="vq-tooltip__title">Top hit &amp; taxonomy</div>
     <div style="max-width:240px">Best BLASTx hit (NR preferred, else RefSeq).
     Taxonomic lineage resolved from <strong>ICTV</strong> and <strong>NCBI</strong> taxonomy.</div>`);
+
+  // Per-sequence low-complexity highlight toggle
+  card.querySelector('#lowcx-' + safe)?.addEventListener('change', e => {
+    if (e.target.checked) _VW.lowCxOff.delete(seq.id);
+    else                  _VW.lowCxOff.add(seq.id);
+    _refreshLowCx(card, seq);
+  });
 
   // Copy FASTA (header + sequence) to clipboard
   card.querySelector('#fasta-copy-' + safe)?.addEventListener('click', function () {
@@ -1043,11 +1093,11 @@ function _genomeSVG(seq, containerWidth) {
   }
   const nLanes = 6;
 
-  // Pack domains into sub-lanes per ORF (deduplicated: best score per target)
+  // Pack domains into sub-lanes per ORF (deduplicated: best score per database)
   const orfsWithFrame = orfs.map(o => ({
     ...o,
     frameLane:    frameLane(o),
-    _domainLanes: _assignDomainLanes(_bestDomainPerTarget(o.domains || [])),
+    _domainLanes: _assignDomainLanes(_bestDomainPerDatabase(o.domains || [])),
   }));
   orfsWithFrame.forEach(o => {
     o._nDomLanes = Math.max(0, ...o._domainLanes.map(d => d.lane + 1));
@@ -1087,10 +1137,22 @@ function _genomeSVG(seq, containerWidth) {
   }
 
   // ── Axis ────────────────────────────────────────────────────────────────
+  // Very long genomes scroll horizontally, so a fixed ~14 labels would leave
+  // the reader thousands of nt from the nearest coordinate. Past the threshold
+  // the tick count follows the drawn width (a label roughly every LONG_TICK_PX)
+  // and switches to thousands separators so the bigger numbers stay legible.
+  const LONG_SEQ_NT  = 50000;
+  const LONG_TICK_PX = 120;   // d3 snaps to nice steps → a label every ~100 px
+  const isLong = seqLen > LONG_SEQ_NT;
+  const nTicks = isLong
+    ? Math.max(8, Math.round(drawW / LONG_TICK_PX))
+    : Math.min(14, Math.max(4, Math.round(W / 120)));
+
   const gridH = totalH - AXIS_Y - 26;
   const axisG = svg.append('g')
     .attr('transform', `translate(${PAD_L}, ${AXIS_Y})`)
-    .call(d3.axisTop(SCALE).ticks(Math.min(14, Math.max(4, Math.round(W / 120)))).tickSize(0));
+    .call(d3.axisTop(SCALE).ticks(nTicks).tickSize(0)
+            .tickFormat(isLong ? d3.format(',') : null));
   axisG.selectAll('.tick line')
     .attr('y1', 0).attr('y2', gridH)
     .attr('stroke', 'var(--vq-border)').attr('stroke-dasharray', '3,3');
@@ -1102,7 +1164,10 @@ function _genomeSVG(seq, containerWidth) {
   if (cov) _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, COV_AREA_H);
 
   // ── Low-complexity bands (dustmasker) — behind the ORF lanes ─────────────
-  const sqBands = seq.seq_quality && (seq.seq_quality.low_complexity_regions || []).length
+  // Suppressed when this card's "Highlight low-complexity regions" checkbox is
+  // off; exports take the SVG as drawn, so the bands are omitted there too.
+  const sqBands = _showLowCx(seq)
+    && seq.seq_quality && (seq.seq_quality.low_complexity_regions || []).length
     ? seq.seq_quality.low_complexity_regions : null;
   if (sqBands) _drawLowComplexityBands(svg, sqBands, SCALE, PAD_L, AXIS_Y, AXIS_Y + gridH);
 
@@ -1455,13 +1520,36 @@ function _orfArrowPoints(x1, x2, y, h, strand) {
   }
 }
 
-function _bestDomainPerTarget(domains) {
-  const best = {};
+/* HMM banks whose role is FILTER — see hmm.HMM_ROLES. */
+const _FILTER_HMM_DBS = new Set(['RVDB', 'Vfam', 'EggNOG']);
+
+/* Thin an ORF's domains by the role of each bank, mirroring the exporter so
+   reports written before that rule existed draw as cleanly as new ones.
+     FILTER banks (RVDB/Vfam/EggNOG) — top-scoring hit only, one per bank:
+       rival models of the same family over the same stretch look identical here.
+     CHARACTERIZE banks (Pfam)       — every domain, minus any that overlaps a
+       higher-scoring one: distinct domains at distinct positions are the
+       protein's architecture and worth drawing. */
+function _bestDomainPerDatabase(domains) {
+  const best = {};      // filter banks → single best hit
+  const rest = [];      // characterize banks → candidates, ranked below
+
   domains.forEach(d => {
-    const t = d.target || '';
-    if (!best[t] || d.score > best[t].score) best[t] = d;
+    const db = d.database || '';
+    if (_FILTER_HMM_DBS.has(db)) {
+      if (!best[db] || d.score > best[db].score) best[db] = d;
+    } else {
+      rest.push(d);
+    }
   });
-  return Object.values(best);
+
+  const kept = Object.values(best);
+  rest.sort((a, b) => b.score - a.score).forEach(d => {
+    const overlaps = kept.some(k =>
+      k.database === d.database && d.start < k.stop && d.stop > k.start);
+    if (!overlaps) kept.push(d);
+  });
+  return kept;
 }
 
 function _assignDomainLanes(domains) {
@@ -1694,7 +1782,9 @@ function _fastaHighlightedHTML(seq) {
     for (let i = Math.max(0, a | 0); i <= Math.min(n - 1, b | 0); i++)
       if (v > code[i]) code[i] = v;
   };
-  (sq.low_complexity_regions || []).forEach(([a, b]) => mark(a, b, 1));
+  // Low-complexity spans follow this card's checkbox; repeats are always shown.
+  if (_showLowCx(seq))
+    (sq.low_complexity_regions || []).forEach(([a, b]) => mark(a, b, 1));
   // Repeats from the same dot-plot segments the legend counts — both copies of
   // each segment (query x-range and subject y-range) are marked.
   const rep = _dotplotRepeats(sq);
@@ -1754,18 +1844,21 @@ function _mapInfoHTML(seq) {
         qual ? 'Read coverage — bar height is depth, bar colour is mean base quality (green Q≥30, amber Q20–29, red Q&lt;20).'
              : 'Read coverage — depth per bin, from the reads aligned back to the contig.') : ''}
     ${strand ? _tipRow('', 'Sense reads grow up from the centre line, antisense grow down (＋ / － in the gutter).') : ''}
-    ${lowcx ? _tipRow('var(--vq-warning)', 'Amber band — low-complexity region; shading only, it never blocks the hover below it.') : ''}
+    ${lowcx && _showLowCx(seq) ? _tipRow('var(--vq-warning)', 'Amber band — low-complexity region; shading only, it never blocks the hover below it.') : ''}
+    ${lowcx && !_showLowCx(seq) ? _tipRow('', 'Low-complexity shading is off for this sequence — re-enable it with the checkbox next to the Genome map label.') : ''}
     ${_tipNote('Hover any ORF, domain or the coverage band for details.')}`;
 }
 
 // FASTA preview: the highlight palette (same regions the dot plot shows).
-function _fastaInfoHTML() {
+function _fastaInfoHTML(seq) {
   return `
     <div class="vq-tooltip__title">FASTA preview</div>
     ${_tipLead('Sequence-quality regions are highlighted in place, in the same colours as the dot plot.')}
     ${_tipRow('var(--vq-accent)',  'Direct repeat — both copies of a segment duplicated in the same orientation.')}
     ${_tipRow('var(--vq-danger)',  'Inverted repeat — a segment and the reverse complement it matches.')}
-    ${_tipRow('var(--vq-warning)', 'Low complexity — dustmasker-flagged low-information region.')}
+    ${_showLowCx(seq)
+        ? _tipRow('var(--vq-warning)', 'Low complexity — dustmasker-flagged low-information region.')
+        : _tipRow('', 'Low-complexity highlighting is off for this sequence — re-enable it with the checkbox next to the Genome map label.')}
     ${_tipNote('Where regions overlap, the strongest signal wins. Hover a highlight for its label.')}`;
 }
 
