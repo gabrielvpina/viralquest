@@ -1678,6 +1678,59 @@ body {
 ::-webkit-scrollbar-thumb   { background: var(--vq-border-dark); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--vq-muted); }
 
+/* ── Overflow rail (.vq-rail) ─────────────────────────────────────────────
+   Where a *long sequence* is what causes the overflow — the genome map runs
+   past the right edge of the card, the FASTA block past the bottom of its
+   box — the native scrollbar cannot be trusted to announce it: on macOS
+   Chrome draws an overlay bar that stays invisible until the user already
+   scrolls, and ignores ::-webkit-scrollbar sizing there entirely.
+
+   So an overflowing block gets a rail of its own: a real element, built by
+   section_viewer.js the moment the card opens and painted from that first
+   moment on. The full track shows how much sequence there is, the accent
+   thumb where the view sits in it, and both are draggable/clickable. The
+   block's native bar is switched off while its rail is up, so platforms
+   that *do* reserve scrollbar space don't end up with two. */
+
+.vq-railbox    { position: relative; }
+.vq-railbox--x { padding-bottom: 15px; }
+.vq-railbox--y { padding-right:  15px; }
+
+/* Set on the scrolling element itself while its rail is up. */
+.vq-scroll-railed { scrollbar-width: none; }
+.vq-scroll-railed::-webkit-scrollbar { width: 0; height: 0; }
+
+.vq-rail {
+  position:      absolute;
+  z-index:       2;
+  background:    var(--vq-accent-subtle);
+  border:        1px solid var(--vq-border-dark);
+  border-radius: 8px;
+  cursor:        pointer;
+  touch-action:  none;
+}
+
+.vq-rail--x { left: 0; right: 0;  bottom: 0; height: 13px; }
+.vq-rail--y { top:  0; bottom: 0; right:  0; width:  13px; }
+.vq-rail[hidden] { display: none; }
+
+.vq-rail__thumb {
+  position:      absolute;
+  top:           0;
+  left:          0;
+  border-radius: 7px;
+  background:    var(--vq-accent);
+  box-shadow:    0 1px 2px rgba(21, 49, 75, .22);
+  cursor:        grab;
+  transition:    background var(--vq-dur) var(--vq-ease);
+}
+
+.vq-rail--x .vq-rail__thumb { height: 100%; }
+.vq-rail--y .vq-rail__thumb { width:  100%; }
+
+.vq-rail__thumb:hover           { background: var(--vq-accent-dark); }
+.vq-rail--drag .vq-rail__thumb  { background: var(--vq-accent-dark); cursor: grabbing; }
+
 /* ============================================================
    About page
    ============================================================ */
@@ -1861,6 +1914,11 @@ body {
   .vq-section  { display: block !important; padding: 0; }
   .vq-card     { box-shadow: none !important; border: 1px solid #ccc; }
   .vq-genome-wrap { overflow: visible; }
+  /* On paper nothing scrolls, so the rail is noise and its reserved gutter
+     would only push the map around. */
+  .vq-rail        { display: none !important; }
+  .vq-railbox--x  { padding-bottom: 0; }
+  .vq-railbox--y  { padding-right:  0; }
   .vq-stat-chip--blob svg { max-width: 140px; }
 
   /* ── Stats-only print (triggered by "Print / Save PDF" button) ── */

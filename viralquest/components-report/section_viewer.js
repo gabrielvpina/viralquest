@@ -36,6 +36,151 @@ function _showLowCx(seq) {
   return !_VW.lowCxOff.has(seq.id);
 }
 
+/* ── Overflow rail ──────────────────────────────────────────────────────────
+   A long sequence overflows its box in two places: the genome map is drawn
+   wider than the card (horizontal scroll) and the FASTA preview taller than
+   its block (vertical scroll). The native scrollbar is a poor signal there —
+   on macOS it is an overlay bar that only appears once the user has already
+   scrolled, and Chrome ignores ::-webkit-scrollbar sizing in that mode — so
+   an overflowing block gets a rail built here instead: a real element, drawn
+   from the moment the card opens, track and thumb both visible, draggable.
+   The block's own scrollbar is hidden (.vq-scroll-railed) while it is up. */
+
+const _THUMB_MIN = 30;   // px — a 26 kb genome still gets a grabbable thumb
+
+const _railMetrics = (el, rail, axis) => {
+  const view    = axis === 'y' ? el.clientHeight   : el.clientWidth;
+  const content = axis === 'y' ? el.scrollHeight   : el.scrollWidth;
+  const track   = axis === 'y' ? rail.clientHeight : rail.clientWidth;
+  const thumb   = Math.max(_THUMB_MIN, Math.round(track * view / (content || 1)));
+  return { view, content, track, thumb, maxOff: track - thumb, span: content - view };
+};
+
+/* Size and place the thumb for the current scroll position; hide the whole
+   rail when this block turns out not to overflow after all (short sequence,
+   wide window). */
+function _drawRail(el, rail, axis) {
+  const over = axis === 'y'
+    ? el.scrollHeight > el.clientHeight + 1
+    : el.scrollWidth  > el.clientWidth  + 1;
+  rail.hidden = !over;
+  el.classList.toggle('vq-scroll-railed', over);
+  if (!over) return;
+
+  const m   = _railMetrics(el, rail, axis);
+  const pos = axis === 'y' ? el.scrollTop : el.scrollLeft;
+  const off = m.span > 0 ? Math.round(m.maxOff * (pos / m.span)) : 0;
+  const t   = rail.firstElementChild;
+  if (axis === 'y') {
+    t.style.height    = m.thumb + 'px';
+    t.style.transform = `translateY(${off}px)`;
+  } else {
+    t.style.width     = m.thumb + 'px';
+    t.style.transform = `translateX(${off}px)`;
+  }
+}
+
+function _wireRail(el, rail, axis) {
+  const thumb = rail.firstElementChild;
+  const draw  = () => _drawRail(el, rail, axis);
+
+  el.addEventListener('scroll', draw, { passive: true });
+  // The genome map is re-rendered in place (low-complexity toggle) and the
+  // card is re-laid out on every window resize; both change the metrics.
+  if (window.ResizeObserver) new ResizeObserver(draw).observe(el);
+
+  let drag = null;
+  thumb.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    drag = { at: axis === 'y' ? e.clientY : e.clientX,
+             pos: axis === 'y' ? el.scrollTop : el.scrollLeft };
+    rail.classList.add('vq-rail--drag');
+    try { thumb.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  thumb.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const m = _railMetrics(el, rail, axis);
+    if (m.maxOff <= 0) return;
+    // Thumb travel is a fraction of the track; scale it back up to content px.
+    const moved = (axis === 'y' ? e.clientY : e.clientX) - drag.at;
+    const next  = drag.pos + moved * m.span / m.maxOff;
+    if (axis === 'y') el.scrollTop = next; else el.scrollLeft = next;
+  });
+  const endDrag = e => {
+    if (!drag) return;
+    drag = null;
+    rail.classList.remove('vq-rail--drag');
+    try { thumb.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  thumb.addEventListener('pointerup', endDrag);
+  thumb.addEventListener('pointercancel', endDrag);
+
+  // Clicking the bare track centres the view on that point of the sequence.
+  rail.addEventListener('pointerdown', e => {
+    if (e.target === thumb) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const m = _railMetrics(el, rail, axis);
+    const r = rail.getBoundingClientRect();
+    const frac = axis === 'y' ? (e.clientY - r.top) / r.height
+                              : (e.clientX - r.left) / r.width;
+    const target = frac * m.content - m.view / 2;
+    el.scrollTo({ [axis === 'y' ? 'top' : 'left']: target, behavior: 'smooth' });
+  });
+}
+
+/* Give `el` a rail, wrapping it in a positioned box on first call. The rail
+   is a sibling, never a child: the genome wrap has its innerHTML replaced
+   when the map is redrawn, and a child rail would be wiped out with it (and
+   would scroll away with the content). Idempotent — cards re-open often. */
+function _ensureRail(el, axis) {
+  if (!el) return;
+  let box = el.parentElement;
+  if (!box || !box.classList.contains('vq-railbox')) {
+    box = document.createElement('div');
+    box.className = 'vq-railbox vq-railbox--' + axis;
+    el.parentNode.insertBefore(box, el);
+    box.appendChild(el);
+  }
+  let rail = box.querySelector(':scope > .vq-rail');
+  if (!rail) {
+    rail = document.createElement('div');
+    rail.className = 'vq-rail vq-rail--' + axis;
+    rail.setAttribute('aria-hidden', 'true');
+    rail.appendChild(Object.assign(document.createElement('div'),
+                                   { className: 'vq-rail__thumb' }));
+    box.appendChild(rail);
+    _wireRail(el, rail, axis);
+  }
+  _drawRail(el, rail, axis);
+}
+
+/* Rails for one open card's scrollable blocks. */
+function _syncCardOverflow(card) {
+  if (!card || !card.classList.contains('open')) return;
+  _ensureRail(card.querySelector('.vq-genome-wrap'), 'x');
+  _ensureRail(card.querySelector('.vq-fasta'), 'y');
+}
+
+/* The card width — and so whether the genome map overflows — follows the
+   window. ResizeObserver covers browsers that have it; this is the fallback
+   and also catches blocks whose own box didn't change size. Bound once:
+   vqInitViewer runs again on every sample filter change in the multi-sample
+   report, and each run would otherwise stack another listener. */
+let _resizeBound = false;
+function _bindOverflowResize() {
+  if (_resizeBound) return;
+  _resizeBound = true;
+  let t = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      document.querySelectorAll('.vq-seq-card.open').forEach(_syncCardOverflow);
+    }, 150);
+  });
+}
+
 
 /* Build a checkbox-dropdown filter field (multi-select).
    Lives inside the retractable filter panel; toggling is handled by the
@@ -317,6 +462,7 @@ function vqInitViewer(sequences, mountId) {
     });
   });
 
+  _bindOverflowResize();
   _sortFiltered();
   _renderList();
 }
@@ -617,9 +763,10 @@ function _refreshLowCx(card, seq) {
   if (wrap && wrap.querySelector('svg')) {
     wrap.innerHTML = '';
     wrap.appendChild(_genomeSVG(seq, wrap.clientWidth));
+    _ensureRail(wrap, 'x');
   }
   const fasta = card.querySelector('.vq-fasta');
-  if (fasta) fasta.innerHTML = _fastaHighlightedHTML(seq);
+  if (fasta) { fasta.innerHTML = _fastaHighlightedHTML(seq); _ensureRail(fasta, 'y'); }
 }
 
 // ── Sequence card ──────────────────────────────────────────────────────────
@@ -900,6 +1047,10 @@ function _toggleCard(card, seq, forceOpen = false) {
   if (blastBody && !blastBody.innerHTML) {
     blastBody.innerHTML = _blastTable(seq.blastn_hits || [], 'blastn');
   }
+
+  // Measured only now: the body is display:none until the card opens, so
+  // before this point every block reports a zero-sized client box.
+  _syncCardOverflow(card);
 }
 
 // ── BLAST hits table ────────────────────────────────────────────────────────
