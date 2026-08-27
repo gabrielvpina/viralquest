@@ -1731,6 +1731,20 @@ body {
 .vq-rail__thumb:hover           { background: var(--vq-accent-dark); }
 .vq-rail--drag .vq-rail__thumb  { background: var(--vq-accent-dark); cursor: grabbing; }
 
+/* The genome map's fixed frame panel: the lane labels (+1…−3) and, when
+   reads were mapped, the strand markers and depth scale. section_viewer.js
+   clones them out of the map into this overlay, which sits on the left edge
+   of the wrap as a *sibling* of the scrolling box — so it holds still by
+   construction, with nothing recomputed as the map scrolls under it. Sized
+   in px from the map's own measurements, hence no width/height here. */
+.vq-genome-panel {
+  position:       absolute;
+  top:            0;
+  left:           0;
+  z-index:        1;
+  pointer-events: none;   /* the map underneath keeps its ORF tooltips */
+}
+
 /* ============================================================
    About page
    ============================================================ */
@@ -1917,6 +1931,9 @@ body {
   /* On paper nothing scrolls, so the rail is noise and its reserved gutter
      would only push the map around. */
   .vq-rail        { display: none !important; }
+  /* Printing lays the map out in full, so the panel would overlay a gutter
+     that is already there. */
+  .vq-genome-panel { display: none !important; }
   .vq-railbox--x  { padding-bottom: 0; }
   .vq-railbox--y  { padding-right:  0; }
   .vq-stat-chip--blob svg { max-width: 140px; }
