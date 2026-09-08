@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import shutil
@@ -267,6 +268,22 @@ def _parse_fasta_iter(path: Path):
         yield seq_id, desc, "".join(buf)
 
 
+def _parse_fasta_headers(path: Path):
+    """Yield (seq_id, description) for each record — headers only, no sequence.
+
+    Used when a first pass over a large transcriptome only needs to build an
+    ID index; keeps peak memory flat regardless of transcriptome size.
+    """
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if not line.startswith(">"):
+                continue
+            parts = line[1:].rstrip().split(None, 1)
+            if not parts:
+                continue
+            yield parts[0], (parts[1] if len(parts) > 1 else "")
+
+
 # ---------------------------------------------------------------------------
 # ConservedFastaLoader
 # ---------------------------------------------------------------------------
@@ -306,10 +323,21 @@ class ReferenceHkLoader:
     """
     Extracts reference housekeeping gene sequences from the user transcriptome.
 
-    Reads gene IDs from a plain-text file (one ID per line, ``#`` comments
-    ignored) and finds matching sequences in the transcriptome FASTA.
-    Matching is exact and case-sensitive against the first whitespace-delimited
-    token of each header (same rule as the first word of a ``>`` line).
+    Reads gene IDs from a plain-text file (one ID per line; ``#`` comments and
+    blank lines ignored, ``>`` prefixes stripped, first column of a TSV/CSV
+    line taken) and finds the matching records in the transcriptome FASTA.
+
+    Matching is deliberately tolerant: HK lists are normally copied out of NCBI
+    tables, spreadsheets or gene-symbol lists and rarely reproduce the FASTA
+    header verbatim. For every wanted ID the tiers below are tried in order and
+    the first hit wins. Tiers 2-5 only accept a key that resolves to exactly one
+    transcript, so a loose ID can never silently grab the wrong sequence:
+
+      1. exact first header token                  ``NM_001101.5``
+      2. case-insensitive first token              ``nm_001101.5``
+      3. accession without trailing version        ``NM_001101``
+      4. gene symbol in parentheses in the header  ``... beta (ACTB), mRNA``
+      5. identifier-looking token in the header    ``... ACTB ...``
 
     Returns
     -------
@@ -317,6 +345,18 @@ class ReferenceHkLoader:
       - list[tuple[str, str, str]]   (``VQ_REFHK_``-prefixed entries)
       - set[str]                     original IDs (for transcriptome exclusion)
     """
+
+    _TIER_NAMES = (
+        "exact ID",
+        "case-insensitive ID",
+        "unversioned accession",
+        "gene symbol",
+        "header token",
+    )
+
+    _SYMBOL_RE = re.compile(r"\(([A-Za-z0-9][A-Za-z0-9_.\-]{1,24})\)")
+    _TOKEN_RE  = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.\-]{2,}")
+    _VERSION_RE = re.compile(r"\.\d+$")
 
     @classmethod
     def load(
@@ -329,36 +369,135 @@ class ReferenceHkLoader:
             logger.warning(f"ReferenceHkLoader: no IDs found in '{hk_genes_file}'.")
             return [], set()
 
-        entries:   list[tuple[str, str, str]] = []
-        found_ids: set[str] = set()
+        logger.info(
+            f"ReferenceHkLoader: {len(wanted)} HK ID(s) read from "
+            f"'{hk_genes_file.name}'."
+        )
 
-        for seq_id, desc, seq in _parse_fasta_iter(transcriptome):
-            if seq_id in wanted:
-                entries.append((f"VQ_REFHK_{seq_id}", desc, seq))
-                found_ids.add(seq_id)
+        tiers = cls._build_header_index(transcriptome)
 
-        missing = wanted - found_ids
+        chosen:     dict[str, str] = {}    # transcriptome seq_id -> wanted ID
+        tier_stats: dict[str, int] = {}
+        missing:    set[str]       = set()
+        redundant:  set[str]       = set()
+
+        for want in sorted(wanted):
+            hit = cls._resolve(want, tiers, taken=set(chosen))
+            if hit is None:
+                # Distinguish "no such transcript" from "the transcript it points
+                # at was already claimed by an earlier ID in the list".
+                if cls._resolve(want, tiers, taken=set()) is None:
+                    missing.add(want)
+                else:
+                    redundant.add(want)
+                continue
+            seq_id, tier = hit
+            chosen[seq_id] = want
+            tier_stats[tier] = tier_stats.get(tier, 0) + 1
+
         if missing:
             sample = ", ".join(sorted(missing)[:10])
             logger.warning(
-                f"ReferenceHkLoader: {len(missing)} ID(s) not found in transcriptome: "
-                f"{sample}" + ("…" if len(missing) > 10 else "")
+                f"ReferenceHkLoader: {len(missing)}/{len(wanted)} ID(s) not found "
+                f"in '{transcriptome.name}': {sample}"
+                + ("…" if len(missing) > 10 else "")
+            )
+        if redundant:
+            sample = ", ".join(sorted(redundant)[:10])
+            logger.info(
+                f"ReferenceHkLoader: {len(redundant)} ID(s) resolve to a transcript "
+                f"already claimed by another entry in the list: {sample}"
+                + ("…" if len(redundant) > 10 else "")
             )
 
+        if not chosen:
+            logger.warning(
+                "ReferenceHkLoader: no HK ID matched the transcriptome headers — "
+                "the 'Reference Housekeeping Genes' card will be missing from the "
+                "HTML report. Check that the IDs correspond to the first word of "
+                f"the '>' lines in '{transcriptome.name}'."
+            )
+            return [], set()
+
+        entries:   list[tuple[str, str, str]] = []
+        found_ids: set[str] = set()
+        for seq_id, desc, seq in _parse_fasta_iter(transcriptome):
+            if seq_id in chosen and seq_id not in found_ids:
+                entries.append((f"VQ_REFHK_{seq_id}", desc, seq))
+                found_ids.add(seq_id)
+
+        detail = ", ".join(f"{n}× {t}" for t, n in tier_stats.items())
         logger.info(
             f"ReferenceHkLoader: {len(entries)} reference HK gene(s) loaded "
-            f"from '{hk_genes_file.name}'."
+            f"from '{hk_genes_file.name}' ({detail})."
         )
         return entries, found_ids
+
+    # --- internals -----------------------------------------------------------
+
+    @classmethod
+    def _build_header_index(
+        cls,
+        transcriptome: Path,
+    ) -> list[dict[str, list[str]]]:
+        """Build one lookup dict per matching tier: ``{key: [seq_id, ...]}``."""
+        tiers: list[dict[str, list[str]]] = [{} for _ in cls._TIER_NAMES]
+
+        def _add(tier: int, key: str, seq_id: str) -> None:
+            if key:
+                tiers[tier].setdefault(key, []).append(seq_id)
+
+        for seq_id, desc in _parse_fasta_headers(transcriptome):
+            low = seq_id.lower()
+            _add(0, seq_id, seq_id)
+            _add(1, low, seq_id)
+            _add(2, cls._VERSION_RE.sub("", low), seq_id)
+            for sym in cls._SYMBOL_RE.findall(desc):
+                _add(3, sym.lower(), seq_id)
+            for tok in cls._TOKEN_RE.findall(desc):
+                _add(4, tok.lower(), seq_id)
+
+        return tiers
+
+    @classmethod
+    def _resolve(
+        cls,
+        want:  str,
+        tiers: list[dict[str, list[str]]],
+        taken: set[str],
+    ) -> tuple[str, str] | None:
+        """Return ``(seq_id, tier_name)`` for the first tier that resolves."""
+        low  = want.lower()
+        keys = (want, low, cls._VERSION_RE.sub("", low), low, low)
+
+        for i, key in enumerate(keys):
+            candidates = [s for s in tiers[i].get(key, ()) if s not in taken]
+            if not candidates:
+                continue
+            # The exact tier may legitimately repeat an ID; looser tiers must be
+            # unambiguous or they are skipped.
+            if i == 0 or len(set(candidates)) == 1:
+                return candidates[0], cls._TIER_NAMES[i]
+            logger.debug(
+                f"ReferenceHkLoader: '{want}' is ambiguous at tier "
+                f"'{cls._TIER_NAMES[i]}' ({len(set(candidates))} transcripts) — "
+                "skipping this tier."
+            )
+        return None
 
     @staticmethod
     def _read_ids(path: Path) -> set[str]:
         ids: set[str] = set()
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    ids.add(line)
+        with open(path, encoding="utf-8-sig") as fh:
+            for raw in fh:
+                line = raw.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                if line.startswith(">"):
+                    line = line[1:].strip()
+                token = re.split(r"[\s,;]+", line)[0].strip().strip("\"'")
+                if token:
+                    ids.add(token)
         return ids
 
 
@@ -475,9 +614,17 @@ class CombinedFastaWriter:
     Writes the merged reference FASTA for reference-pathway Salmon indexing:
 
       1. Viral sequences                      (prefix ``VQ_VIRAL_``)
-      2. Conserved bundled HK genes           (prefix ``VQ_CONS_{KINGDOM}_``)
-      3. User reference HK genes (optional)   (prefix ``VQ_REFHK_``)
+      2. User reference HK genes (optional)   (prefix ``VQ_REFHK_``)
+      3. Conserved bundled HK genes           (prefix ``VQ_CONS_{KINGDOM}_``)
       4. User transcriptome (original IDs, skipping ref-HK IDs)
+
+    Records are de-duplicated **by sequence content**, not only by ID. Salmon
+    discards sequence-identical transcripts at index time unless told otherwise,
+    and the discarded ones never reach ``quant.sf`` — so a user HK gene that is
+    byte-identical to a bundled conserved gene (very common: both come from
+    RefSeq) would silently vanish from the report. Doing the de-duplication here
+    keeps it deterministic and lets the write order define the priority:
+    viral > ref-HK > conserved > transcriptome.
 
     Returns
     -------
@@ -498,47 +645,71 @@ class CombinedFastaWriter:
         viral_ids:     set[str]       = set()
         conserved_map: dict[str, str] = {}
         skip_ids = hk_original_ids or set()
-        seen:          set[str]       = set()
+        seen_ids:  set[str]            = set()
+        seen_seqs: dict[bytes, str]    = {}
+        dup_seq_counts: dict[str, int] = {}
 
-        def _write(fh, record_id: str, sequence: str, desc: str = "") -> bool:
-            if record_id in seen:
+        def _write(fh, record_id: str, sequence: str, desc: str = "",
+                   category: str = "transcriptome") -> bool:
+            if record_id in seen_ids:
                 logger.warning(f"Duplicate FASTA ID '{record_id}' — skipping to avoid salmon index failure.")
                 return False
-            seen.add(record_id)
+
+            digest = hashlib.sha1(sequence.upper().encode()).digest() if sequence else None
+            if digest is not None:
+                owner = seen_seqs.get(digest)
+                if owner is not None:
+                    dup_seq_counts[category] = dup_seq_counts.get(category, 0) + 1
+                    logger.debug(
+                        f"Sequence-identical duplicate: '{record_id}' == '{owner}' "
+                        "— skipping (salmon would discard it at index time anyway)."
+                    )
+                    return False
+                seen_seqs[digest] = record_id
+
+            seen_ids.add(record_id)
             header = f">{record_id}" + (f" {desc}" if desc else "")
             fh.write(f"{header}\n{sequence}\n")
             return True
 
         with open(output_path, "w", encoding="utf-8") as fh:
 
-            # 1 — viral sequences
+            # 1 — viral sequences (highest priority, never de-duplicated away)
             for seq in viral_seqs:
                 prefixed = f"VQ_VIRAL_{seq.id}"
-                if _write(fh, prefixed, seq.sequence):
+                if _write(fh, prefixed, seq.sequence, category="viral"):
                     viral_ids.add(prefixed)
 
-            # 2 — conserved bundled HK genes (all kingdoms)
+            # 2 — user reference HK genes (VQ_REFHK_) — written before the
+            #     bundled set so a shared RefSeq record is kept as ref-HK
+            for prefixed_id, desc, sequence in (ref_hk or []):
+                _write(fh, prefixed_id, sequence, desc, category="ref_hk")
+
+            # 3 — conserved bundled HK genes (all kingdoms)
             for kingdom, entries in conserved.items():
                 for prefixed_id, desc, sequence in entries:
-                    if _write(fh, prefixed_id, sequence, desc):
+                    if _write(fh, prefixed_id, sequence, desc, category="conserved"):
                         conserved_map[prefixed_id] = kingdom
-
-            # 3 — user reference HK genes (VQ_REFHK_)
-            for prefixed_id, desc, sequence in (ref_hk or []):
-                _write(fh, prefixed_id, sequence, desc)
 
             # 4 — user transcriptome, skipping ref-HK IDs
             for seq_id, desc, seq in _parse_fasta_iter(user_transcriptome):
                 if seq_id in skip_ids:
                     continue
-                _write(fh, seq_id, seq, desc)
+                _write(fh, seq_id, seq, desc, category="transcriptome")
 
         ref_hk_n = len(ref_hk) if ref_hk else 0
         logger.info(
-            f"Combined FASTA: {len(viral_ids)} viral + "
-            f"{len(conserved_map)} bundled HK + {ref_hk_n} ref HK + transcriptome "
+            f"Combined FASTA: {len(viral_ids)} viral + {ref_hk_n} ref HK + "
+            f"{len(conserved_map)} bundled HK + transcriptome "
             f"→ '{output_path.name}'"
         )
+        if dup_seq_counts:
+            detail = ", ".join(f"{n} {cat}" for cat, n in sorted(dup_seq_counts.items()))
+            logger.info(
+                f"Combined FASTA: {sum(dup_seq_counts.values())} sequence-identical "
+                f"duplicate(s) removed ({detail}) — a lower-priority copy of a "
+                "sequence already in the index."
+            )
         return viral_ids, conserved_map
 
 
@@ -640,6 +811,11 @@ class SalmonIndexBuilder:
             "-i", str(index_dir),
             "-p", str(self.threads),
             "-k", str(self.kmer_len),
+            # Without this, salmon silently drops sequence-identical transcripts
+            # and they never appear in quant.sf. The FASTA writers already
+            # de-duplicate with an explicit priority, so nothing is lost here —
+            # the flag only stops salmon from making that decision on its own.
+            "--keepDuplicates",
         ]
         logger.info(f"Salmon index: '{ref_fasta.name}' → '{index_dir.name}' ...")
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -1011,6 +1187,8 @@ class SalmonQuantPipeline:
 
             all_entries = QuantsfParser.parse(quant_sf, conserved_map)
 
+            self._check_ref_hk(all_entries, ref_hk, hk_genes_file)
+
             blast_hits = self._aligner.align(user_transcriptome, confirmed, tmp_dir)
 
             report = self._assemble(
@@ -1028,6 +1206,45 @@ class SalmonQuantPipeline:
                 logger.debug("SalmonQuantPipeline: temporary files removed.")
 
         return report
+
+    @staticmethod
+    def _check_ref_hk(
+        entries:       list[SalmonEntry],
+        ref_hk:        list[tuple[str, str, str]],
+        hk_genes_file: Path | None,
+    ) -> None:
+        """Warn loudly when --hk-genes was given but produced nothing usable.
+
+        The HTML report only renders the 'Reference Housekeeping Genes' card
+        when ``ref_hk_quant`` is non-empty, so an empty list is otherwise
+        indistinguishable from 'no --hk-genes given'.
+        """
+        if hk_genes_file is None:
+            return
+
+        got = {e.name for e in entries if e.seq_type == "ref_hk"}
+
+        if not ref_hk:
+            logger.warning(
+                f"--hk-genes ('{hk_genes_file}') produced no reference HK gene: "
+                "no ID matched the transcriptome headers. The 'Reference "
+                "Housekeeping Genes' card will be absent from the report."
+            )
+            return
+
+        missing = {pid for pid, _, _ in ref_hk} - got
+        if missing:
+            sample = ", ".join(sorted(missing)[:10])
+            logger.warning(
+                f"{len(missing)}/{len(ref_hk)} reference HK gene(s) were written to "
+                f"the index but are absent from quant.sf: {sample}"
+                + ("…" if len(missing) > 10 else "")
+            )
+        else:
+            logger.success(
+                f"{len(got)} reference HK gene(s) quantified — "
+                "'Reference Housekeeping Genes' card will be rendered."
+            )
 
     # --- de-novo pathway ------------------------------------------------------
 
