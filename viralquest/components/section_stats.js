@@ -732,6 +732,10 @@ function _renderSalmonChart(salmon) {
       salmon.ref_hk_count
         ? _miniRow('HK ref genes',         _fmt(salmon.ref_hk_count))
         : '',
+      salmon.conserved_count
+        ? _miniRow('Conserved HK detected',
+                   `${_fmt(salmon.conserved_detected)} / ${_fmt(salmon.conserved_count)}`)
+        : '',
       salmon.pfam_hk_count
         ? _miniRow('Pfam HK seqs',         _fmt(salmon.pfam_hk_count))
         : '',

@@ -163,6 +163,9 @@ def _build_heuristic_stats(seqs: list[dict], ps: dict) -> dict:
 def _build_salmon_stats(salmon_quant: dict | None) -> dict:
     if not salmon_quant:
         return {"present": False}
+    conserved = salmon_quant.get("conserved_quant") or []
+    conserved_count = len(conserved)
+    conserved_detected = sum(1 for e in conserved if (e.get("tpm") or 0) > 0)
     return {
         "present":         True,
         "pathway":         salmon_quant.get("pathway", "reference"),
@@ -171,6 +174,11 @@ def _build_salmon_stats(salmon_quant: dict | None) -> dict:
         "viral_expressed": sum(1 for e in (salmon_quant.get("viral_quant") or []) if (e.get("tpm") or 0) > 0),
         "ref_hk_count":    len(salmon_quant.get("ref_hk_quant") or []),
         "pfam_hk_count":   len(salmon_quant.get("pfam_hk_quant") or []),
+        # Conserved genes are bundled per kingdom and only the host's own set
+        # ever collects reads, so the detected count carries the signal — the
+        # bare total (tens of thousands) says nothing on its own.
+        "conserved_count":    conserved_count,
+        "conserved_detected": conserved_detected,
     }
 
 

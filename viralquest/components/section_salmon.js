@@ -304,9 +304,20 @@ function _draw() {
   _drawPfamHkPanel();
 }
 
-// ── Housekeeping medians per kingdom ───────────────────────────────────────
+// ── Housekeeping summary per kingdom ───────────────────────────────────────
+//
+// The conserved panel is dominated by zeros: every kingdom ships thousands of
+// genes and only the handful belonging to the actual host ever collects reads
+// (a typical arthropod library detects ~10 of ~1700 ARTHROPODS genes). A plain
+// median over every gene is therefore 0.0 for *every* kingdom, which collapsed
+// both this panel and the viral-panel overlay onto x=0.
+//
+// So: rank kingdoms by `sum`, never by a measure of position. A lone stray gene
+// at high TPM (one FISH transcript at ~31 TPM) would otherwise outrank the real
+// host (ARTHROPODS, ~0.6 median but ~2500 TPM total). `median` is kept for the
+// overlay reference lines but is computed over detected genes only.
 
-function _hkMedians() {
+function _hkSummary() {
   const cons   = (_SQ.data.conserved_quant || []);
   const metric = _SQ.metric;
   const byKingdom = {};
@@ -314,11 +325,33 @@ function _hkMedians() {
     const k = c.kingdom || 'Unknown';
     (byKingdom[k] ??= []).push(c[metric] ?? 0);
   });
-  return Object.keys(byKingdom).map(k => ({
-    kingdom: k,
-    values:  byKingdom[k],
-    median:  d3.quantile(byKingdom[k].slice().sort(d3.ascending), 0.5) ?? 0,
-  }));
+  return Object.keys(byKingdom).map(k => {
+    const values = byKingdom[k];
+    const nz     = values.filter(v => v > 0).sort(d3.ascending);
+    return {
+      kingdom:  k,
+      values,
+      detected: nz.length,
+      total:    values.length,
+      sum:      d3.sum(values),
+      max:      d3.max(values) ?? 0,
+      median:   nz.length ? (d3.quantile(nz, 0.5) ?? 0) : 0,
+    };
+  }).sort((a, b) => b.sum - a.sum);
+}
+
+// Kingdoms worth drawing a reference line for — one with nothing detected has
+// no expression level to mark, and would just stack another line on x=0.
+const _hkOverlayRows = () => _hkSummary().filter(h => h.detected > 0);
+
+// Kingdom totals span 0 → thousands; keep small values readable without
+// letting the big ones run past the label gutter.
+function _fmtVal(v) {
+  if (v == null || isNaN(v)) return '—';
+  if (v === 0)    return '0';
+  if (v >= 1000)  return v.toFixed(0);
+  if (v >= 10)    return v.toFixed(1);
+  return v.toFixed(2);
 }
 
 // ── Viral panel ────────────────────────────────────────────────────────────
@@ -394,14 +427,15 @@ function _drawViralPanel() {
   const ROW_H = 30;
   const drawW = W - PAD_L - PAD_R;
 
+  const HK = _SQ.showHK ? _hkOverlayRows() : [];
+
   const allVals = viralFiltered.map(v => v[metric] ?? 0).slice();
-  if (_SQ.showHK) _hkMedians().forEach(h => allVals.push(h.median));
+  HK.forEach(h => allVals.push(h.median));
   const dataMax  = d3.max(allVals) || 1;
   const scaleMax = maxFilter != null ? maxFilter : dataMax;
 
   const xScale = d3.scaleLinear([0, scaleMax], [0, drawW]);
 
-  const HK      = _SQ.showHK ? _hkMedians() : [];
   const overlayH = HK.length ? 24 : 0;
   const PAD_B   = 60 + overlayH;
   const H       = PAD_T + keys.length * ROW_H + PAD_B;
@@ -534,7 +568,8 @@ function _drawViralPanel() {
           <div class="vq-tooltip__title">${VQ.esc(_kgLabel(h.kingdom))} housekeeping</div>
           <div class="vq-tooltip__row">
             <span class="vq-tooltip__key">Median ${label}</span><span>${h.median.toFixed(2)}</span>
-            <span class="vq-tooltip__key">Genes</span><span>${h.values.length}</span>
+            <span class="vq-tooltip__key">Total ${label}</span><span>${h.sum.toFixed(2)}</span>
+            <span class="vq-tooltip__key">Detected</span><span>${h.detected} / ${h.total}</span>
           </div>`, evt))
         .on('mouseleave', VQ.tooltipHide);
 
@@ -549,7 +584,7 @@ function _drawViralPanel() {
     svg.append('text')
       .attr('x', PAD_L).attr('y', overlayY)
       .attr('font-size', 11).attr('fill', 'var(--vq-text-2)')
-      .text('Housekeeping (median ' + label + '):');
+      .text('Housekeeping (median ' + label + ' of detected genes):');
     let lx = PAD_L + 200;
     HK.forEach(h => {
       svg.append('line')
@@ -580,8 +615,13 @@ function _drawConsPanel() {
   const metric = _SQ.metric;
   const label  = metric === 'tpm' ? 'TPM' : 'Reads';
 
+  const kingdoms  = _hkSummary();
+  const detected  = d3.sum(kingdoms, k => k.detected);
+
   const countEl = document.getElementById('sq-cons-count');
-  if (countEl) countEl.textContent = `${cons.length} gene${cons.length !== 1 ? 's' : ''}`;
+  if (countEl) countEl.textContent = cons.length
+    ? `${detected} / ${cons.length} detected`
+    : '0 genes';
 
   if (!cons.length) {
     const msg = _SQ.pathway === 'de_novo'
@@ -591,26 +631,19 @@ function _drawConsPanel() {
     return;
   }
 
-  const byKingdom = {};
-  cons.forEach(c => {
-    const k = c.kingdom || 'Unknown';
-    (byKingdom[k] ??= []).push(c[metric] ?? 0);
-  });
-
-  const kingdoms = Object.keys(byKingdom).map(k => {
-    const vals = byKingdom[k].slice().sort(d3.ascending);
-    return { k, vals, median: d3.quantile(vals, 0.5) ?? 0 };
-  }).sort((a, b) => b.median - a.median);
-
-  const maxVal = d3.max(kingdoms.map(x => x.median)) || 1;
+  const maxVal = d3.max(kingdoms, x => x.sum) || 1;
   const W      = Math.max(wrap.clientWidth || 280, 250);
   const PAD_L  = 96;
-  const PAD_R  = 44;
-  const ROW_H  = 28;
+  const PAD_R  = 56;
+  const ROW_H  = 34;
   const BAR_H  = 12;
   const H      = kingdoms.length * ROW_H + 36;
 
-  const xScale = d3.scaleLinear([0, maxVal], [0, W - PAD_L - PAD_R]);
+  // Symlog, not linear: the host kingdom outweighs the incidental ones by three
+  // orders of magnitude, and a linear axis flattens every non-host kingdom to
+  // nothing. Symlog (not log) because kingdoms with zero detected genes are the
+  // common case and must still land on a real zero.
+  const xScale = d3.scaleSymlog([0, maxVal], [0, W - PAD_L - PAD_R]);
 
   const svg = d3.create('svg')
     .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
@@ -621,17 +654,18 @@ function _drawConsPanel() {
   svg.append('text')
     .attr('x', PAD_L).attr('y', 14)
     .attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
-    .text(`Median ${label} per kingdom`);
+    .text(`Total ${label} per kingdom · log`);
 
   kingdoms.forEach((row, i) => {
-    const y = 26 + i * ROW_H;
+    const y    = 26 + i * ROW_H;
+    const isOn = row.detected > 0;
 
     svg.append('text')
       .attr('x', PAD_L - 8).attr('y', y + BAR_H / 2 + 3.5)
       .attr('text-anchor', 'end')
       .attr('font-size', 11)
-      .attr('fill', 'var(--vq-text-2)')
-      .text(_kgLabel(row.k));
+      .attr('fill', isOn ? 'var(--vq-text-2)' : 'var(--vq-text-3)')
+      .text(_kgLabel(row.kingdom));
 
     svg.append('rect')
       .attr('x', PAD_L).attr('y', y)
@@ -639,25 +673,44 @@ function _drawConsPanel() {
       .attr('rx', 2)
       .attr('fill', 'var(--vq-bg)');
 
-    const bw = Math.max(xScale(row.median), 2);
+    // A kingdom with nothing detected draws no bar at all — an undetected
+    // kingdom is the signal here, so it must not look like a small measurement.
+    const bw = isOn ? Math.max(xScale(row.sum), 2) : 0;
+    if (bw) {
+      svg.append('rect')
+        .attr('x', PAD_L).attr('y', y)
+        .attr('width', bw).attr('height', BAR_H)
+        .attr('rx', 2)
+        .attr('fill', 'var(--vq-success)').attr('opacity', 0.85);
+    }
+
     svg.append('rect')
       .attr('x', PAD_L).attr('y', y)
-      .attr('width', bw).attr('height', BAR_H)
-      .attr('rx', 2)
-      .attr('fill', 'var(--vq-success)').attr('opacity', 0.85)
+      .attr('width', W - PAD_L - PAD_R).attr('height', BAR_H)
+      .attr('fill', 'transparent')
       .on('mousemove', evt => VQ.tooltipShow(`
-        <div class="vq-tooltip__title">${VQ.esc(_kgLabel(row.k))}</div>
+        <div class="vq-tooltip__title">${VQ.esc(_kgLabel(row.kingdom))}</div>
         <div class="vq-tooltip__row">
-          <span class="vq-tooltip__key">Median ${label}</span><span>${row.median.toFixed(2)}</span>
-          <span class="vq-tooltip__key">Genes</span><span>${row.vals.length}</span>
+          <span class="vq-tooltip__key">Total ${label}</span><span>${_fmtVal(row.sum)}</span>
+          <span class="vq-tooltip__key">Detected</span><span>${row.detected} / ${row.total}</span>
+          <span class="vq-tooltip__key">Median ${label}</span><span>${isOn ? _fmtVal(row.median) : '—'}</span>
+          <span class="vq-tooltip__key">Max ${label}</span><span>${_fmtVal(row.max)}</span>
         </div>`, evt))
       .on('mouseleave', VQ.tooltipHide);
 
     svg.append('text')
-      .attr('x', PAD_L + bw + 6).attr('y', y + BAR_H / 2 + 3.5)
-      .attr('font-size', 10).attr('fill', 'var(--vq-text-3)')
+      .attr('x', W - PAD_R + 6).attr('y', y + BAR_H / 2 + 3.5)
+      .attr('font-size', 10)
+      .attr('fill', isOn ? 'var(--vq-text-2)' : 'var(--vq-text-3)')
       .attr('font-variant-numeric', 'tabular-nums')
-      .text(row.median.toFixed(1));
+      .text(_fmtVal(row.sum));
+
+    svg.append('text')
+      .attr('x', PAD_L).attr('y', y + BAR_H + 11)
+      .attr('font-size', 9)
+      .attr('fill', 'var(--vq-text-3)')
+      .attr('font-variant-numeric', 'tabular-nums')
+      .text(`${row.detected}/${row.total} detected`);
   });
 
   wrap.appendChild(svg.node());
