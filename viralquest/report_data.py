@@ -86,8 +86,9 @@ def _summarize_salmon(s: SampleReport) -> dict | None:
     for row in conserved.values():
         row["tpm_sum"] = round(row["tpm_sum"], 3)
 
-    ref_hk    = [_tpm(e) for e in (sq.get("ref_hk_quant") or [])]
-    ref_found = sorted(v for v in ref_hk if v > 0)
+    ref_entries = sq.get("ref_hk_quant") or []
+    ref_hk      = [_tpm(e) for e in ref_entries]
+    ref_found   = sorted(v for v in ref_hk if v > 0)
 
     return {
         "pathway":       sq.get("pathway"),
@@ -100,6 +101,18 @@ def _summarize_salmon(s: SampleReport) -> dict | None:
             "detected": len(ref_found),
             "tpm_sum":  round(sum(ref_hk), 3),
             "median":   round(median(ref_found), 3) if ref_found else None,
+            # Gene-level rows, so the report's heatmap can put housekeeping
+            # genes on the same axis as the viral clusters.  A curated panel is
+            # tens of genes, not thousands, so this stays small.  The
+            # ``VQ_REFHK_`` prefix is an index-building detail — strip it once
+            # here rather than in every consumer.
+            "genes": [
+                {
+                    "name": (e.get("name") or "").removeprefix("VQ_REFHK_"),
+                    "tpm":  round(_tpm(e), 3),
+                }
+                for e in ref_entries
+            ],
         },
     }
 

@@ -2115,3 +2115,30 @@ body {
                    max-height: 240px; overflow-y: auto; }
 .qt-cluster-list .vr-sample { gap: 8px; padding: 3px 4px; border-radius: 6px; }
 .qt-cluster-list .vr-sample:hover { background: var(--vq-surface-2); }
+
+/* ── Cluster heatmap ─────────────────────────────────────────────────────── */
+
+/* Two pickers side by side while there is room; they stack on narrow screens
+   so neither list is ever squeezed to an unusable width. */
+.hm-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--vq-space-3);
+  margin-bottom: var(--vq-space-4);
+}
+.hm-picker__acts { display: inline-flex; gap: 4px; }
+.hm-list         { max-height: 220px; overflow-y: auto; }
+
+.hm-controls {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--vq-space-3) var(--vq-space-4);
+  padding: var(--vq-space-3) var(--vq-space-4);
+  border-bottom: 1px solid var(--vq-border);
+}
+.hm-ctl {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--vq-text-3);
+}
+.hm-ctl select        { min-width: 120px; }
+.hm-ctl--check        { cursor: pointer; color: var(--vq-text-2); }
+
