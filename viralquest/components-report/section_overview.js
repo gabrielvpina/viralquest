@@ -49,6 +49,9 @@ function vqInitOverview(report) {
   const totalClusters = (report.clusters || []).length;
   const anyLLM  = samples.some(s => (s.llm_scores || []).length);
   const anyHeur = samples.some(s => (s.heuristic_scores || []).length);
+  const salmonSamples = samples.filter(s => s.salmon);
+  const anySalmon = salmonSamples.length > 0;
+  const anyConserved = salmonSamples.some(s => Object.keys(s.salmon.conserved || {}).length);
 
   const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString();
 
@@ -85,7 +88,22 @@ function vqInitOverview(report) {
         <div class="vq-chart-card__body" id="ov-steps-body"></div>
       </div>
 
+      ${anyConserved ? `
+      <!-- Host attribution — full width, one column per sample -->
+      <div class="vq-chart-card" id="ov-kingdoms-card" style="min-height:auto">
+        <div class="vq-chart-card__head">
+          <div>
+            <div class="vq-chart-card__title">Conserved Housekeeping by Kingdom</div>
+            <div class="vq-chart-card__sub">
+              total TPM and detected genes per kingdom — host provenance and contamination
+            </div>
+          </div>
+        </div>
+        <div class="vq-chart-card__body" id="ov-kingdoms-body"></div>
+      </div>` : ''}
+
       <div class="vq-masonry">
+        ${anySalmon ? _card('ov-maprate', 'Salmon Mapping Rate per Sample', '% of reads mapped') : ''}
         ${_card('ov-seqs',    'Confirmed Sequences per Sample', 'final viral contigs')}
         ${_card('ov-fams',    'Viral Family Diversity per Sample', 'distinct families')}
         ${_card('ov-famdist', 'Family Distribution per Sample', 'composition, all samples')}
@@ -99,6 +117,11 @@ function vqInitOverview(report) {
 
   // ── Render charts ───────────────────────────────────────────────────────
   _renderStepsMatrix(document.getElementById('ov-steps-body'), samples);
+  if (anyConserved) _renderKingdomMatrix(_body('ov-kingdoms'), salmonSamples);
+  if (anySalmon)
+    _barChart(_body('ov-maprate'),
+              salmonSamples.map(s => ({ label: s.sample, value: s.salmon.mapping_rate ?? 0 })),
+              { unit: '%' });
   _barChart(_body('ov-seqs'),    samples.map(s => ({ label: s.sample, value: s.n_confirmed || 0 })));
   _lineDotChart(_body('ov-fams'), samples.map(s => ({ label: s.sample, value: Object.keys(s.families || {}).length })));
   _stackedFamilies(_body('ov-famdist'), samples);
@@ -183,9 +206,10 @@ const _rowH = n => Math.max(16, Math.min(34, Math.round(360 / Math.max(n, 1))));
 
 // ── Horizontal bar chart ────────────────────────────────────────────────────
 
-function _barChart(host, data) {
+function _barChart(host, data, opts) {
   if (!host) return;
   if (!data.length) { host.innerHTML = `<div class="vq-empty">No data.</div>`; return; }
+  const unit = (opts && opts.unit) || '';
 
   const W = 440, padL = 110, padR = 48, padT = 8;
   const rh = _rowH(data.length), gap = 6;
@@ -205,7 +229,7 @@ function _barChart(host, data) {
       .attr('rx', 3).attr('fill', QUANT);
     g.append('text').attr('x', x(d.value) + 6).attr('y', y + rh / 2)
       .attr('dominant-baseline', 'central').attr('class', 'ov-value-label')
-      .text(d.value.toLocaleString());
+      .text(d.value.toLocaleString() + unit);
   });
 }
 
@@ -397,6 +421,75 @@ function _scoreBoxes(host, samples, key) {
         `<b>${VQ.esc(r.label)}</b><br>n=${r.n} · mean ${r.mean.toFixed(1)}<br>range ${r.min.toFixed(0)}–${r.max.toFixed(0)}`, e))
       .on('mouseleave', () => VQ.tooltipHide());
   });
+}
+
+// ── Conserved housekeeping: kingdom × sample ────────────────────────────────
+
+/* Kingdom totals span three orders of magnitude between the host kingdom and
+   the incidental ones, so cell shading is symlog — a linear ramp paints every
+   non-host kingdom the same blank white and throws away the contamination
+   signal.  A kingdom with nothing detected is left deliberately unshaded: an
+   undetected kingdom is the finding, and must not read as a small measurement. */
+function _renderKingdomMatrix(host, samples) {
+  if (!host) return;
+  const esc = VQ.esc;
+
+  const kingdoms = [...new Set(
+    samples.flatMap(s => Object.keys(s.salmon.conserved || {}))
+  )];
+  if (!kingdoms.length) { host.innerHTML = `<div class="vq-empty">No conserved housekeeping data.</div>`; return; }
+
+  const cell = (s, k) => (s.salmon.conserved || {})[k] || null;
+  const totalFor = k => d3.sum(samples, s => (cell(s, k) || {}).tpm_sum || 0);
+  kingdoms.sort((a, b) => totalFor(b) - totalFor(a) || a.localeCompare(b));
+
+  const maxTpm = d3.max(samples.flatMap(s => kingdoms.map(k => (cell(s, k) || {}).tpm_sum || 0))) || 1;
+  const shade  = d3.scaleSymlog().domain([0, maxTpm]).range([0, 0.85]);
+
+  const rows = kingdoms.map(k => {
+    const cells = samples.map(s => {
+      const c = cell(s, k);
+      if (!c) return `<td class="ov-kg-cell" title="${esc(k)} — not quantified in ${esc(s.sample)}">·</td>`;
+      const on = c.detected > 0;
+      const bg = on ? `background:color-mix(in srgb, var(--vq-success) ${(shade(c.tpm_sum) * 100).toFixed(1)}%, transparent)` : '';
+      const tip = `${k} · ${s.sample}\nTotal TPM: ${_fmtTpm(c.tpm_sum)}\nDetected: ${c.detected} / ${c.n} genes`;
+      return `<td class="ov-kg-cell${on ? '' : ' ov-kg-cell--off'}" style="${bg}" title="${esc(tip)}">
+                <span class="ov-kg-cell__v">${on ? _fmtTpm(c.tpm_sum) : '0'}</span>
+                <span class="ov-kg-cell__n">${c.detected}/${c.n}</span>
+              </td>`;
+    }).join('');
+    return `<tr><td class="ov-matrix__sample" title="${esc(k)}">${esc(_kgLabel(k))}</td>${cells}</tr>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div class="ov-matrix-wrap">
+      <table class="ov-matrix">
+        <thead>
+          <tr>
+            <th class="ov-matrix__sample">Kingdom</th>
+            ${samples.map(s => `<th title="${esc(s.sample)}">${esc(_trunc(s.sample, 14))}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="ov-legend">
+      <span class="ov-legend__item">cell: total TPM · detected/total genes</span>
+      <span class="ov-legend__item">shading is log-scaled; unshaded = nothing detected</span>
+    </div>`;
+}
+
+/* Kingdom keys arrive upper-case from the bundled FASTA prefixes. */
+function _kgLabel(k) {
+  return String(k || '').charAt(0) + String(k || '').slice(1).toLowerCase();
+}
+
+function _fmtTpm(v) {
+  if (v == null || isNaN(v)) return '—';
+  if (v === 0)   return '0';
+  if (v >= 1000) return v.toFixed(0);
+  if (v >= 10)   return v.toFixed(1);
+  return v.toFixed(2);
 }
 
 // ── utils ───────────────────────────────────────────────────────────────────

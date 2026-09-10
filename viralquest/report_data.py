@@ -6,7 +6,7 @@ Shape produced by :func:`build_report_data`::
 
     {
       "meta":      {generated, viralquest_version, n_samples, input_root},
-      "samples":   [ <per-sample overview summary>, ... ],
+      "samples":   [ <per-sample overview summary, incl. salmon rollup>, ... ],
       "sequences": [ <every stamped sequence, for the viewer>, ... ],
       "clusters":  [ <cross-sample clusters>, ... ],   # filled in stage 2
       "has_clusters": bool,
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+from statistics import median
 
 from viralquest.report_loader import SampleReport
 
@@ -50,6 +51,57 @@ def _best_species(seq: dict) -> str | None:
         if hits:
             return hits[0].get("species") or None
     return None
+
+
+def _summarize_salmon(s: SampleReport) -> dict | None:
+    """
+    Kingdom-level rollup of a sample's Salmon quantification.
+
+    Deliberately a rollup and never the rows: ``conserved_quant`` carries ~11k
+    bundled housekeeping genes per sample and only the handful belonging to the
+    real host ever collects reads, so shipping the table would bloat the HTML
+    for data the report only ever aggregates.
+
+    ``detected`` (genes with TPM > 0) is the load-bearing number, not a measure
+    of position — a median over a kingdom is 0.0 for every kingdom, and a median
+    over just the detected genes lets a single stray transcript outrank the
+    actual host.  Totals and detection counts are what separate the two.
+    """
+    sq = s.salmon_quant
+    if not sq:
+        return None
+
+    def _tpm(entry: dict) -> float:
+        return entry.get("tpm") or 0.0
+
+    conserved: dict[str, dict] = {}
+    for entry in sq.get("conserved_quant", []) or []:
+        kingdom = entry.get("kingdom") or "Unknown"
+        row = conserved.setdefault(kingdom, {"n": 0, "detected": 0, "tpm_sum": 0.0})
+        row["n"] += 1
+        tpm = _tpm(entry)
+        row["tpm_sum"] += tpm
+        if tpm > 0:
+            row["detected"] += 1
+    for row in conserved.values():
+        row["tpm_sum"] = round(row["tpm_sum"], 3)
+
+    ref_hk    = [_tpm(e) for e in (sq.get("ref_hk_quant") or [])]
+    ref_found = sorted(v for v in ref_hk if v > 0)
+
+    return {
+        "pathway":       sq.get("pathway"),
+        "mapping_rate":  sq.get("mapping_rate"),
+        "total_reads":   sq.get("total_reads"),
+        "viral_tpm_sum": round(sum(_tpm(e) for e in (sq.get("viral_quant") or [])), 3),
+        "conserved":     conserved,
+        "ref_hk": {
+            "n":        len(ref_hk),
+            "detected": len(ref_found),
+            "tpm_sum":  round(sum(ref_hk), 3),
+            "median":   round(median(ref_found), 3) if ref_found else None,
+        },
+    }
 
 
 def _summarize_sample(s: SampleReport) -> dict:
@@ -87,6 +139,7 @@ def _summarize_sample(s: SampleReport) -> dict:
         "llm_scores":   llm_scores,
         "n_clusters":   0,   # filled in stage 2 (cross-sample clusters per sample)
         "steps":        _detect_steps(s),
+        "salmon":       _summarize_salmon(s),
     }
 
 

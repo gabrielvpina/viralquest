@@ -2038,6 +2038,14 @@ body {
 .ov-step--yes   { color: var(--vq-success); font-weight: 700; }
 .ov-step--no    { color: var(--vq-text-3); }
 
+/* Kingdom × sample cells: value on top, detected/total underneath. The tint is
+   applied inline (log-scaled per cell), so only layout lives here. */
+.ov-kg-cell            { font-variant-numeric: tabular-nums; line-height: 1.25; white-space: nowrap; }
+.ov-kg-cell__v         { display: block; font-weight: 600; color: var(--vq-text); }
+.ov-kg-cell__n         { display: block; font-size: 10px; color: var(--vq-text-3); }
+.ov-kg-cell--off       { color: var(--vq-text-3); }
+.ov-kg-cell--off .ov-kg-cell__v { font-weight: 400; color: var(--vq-text-3); }
+
 /* Legend (family distribution) */
 .ov-legend      { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 14px 4px; }
 .ov-legend__item{ display: inline-flex; align-items: center; gap: 5px;
