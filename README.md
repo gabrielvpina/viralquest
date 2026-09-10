@@ -3,7 +3,7 @@
   <br><br>
   <strong>A pipeline for viral diversity analysis from assembled contigs</strong>
   <br><br>
-  <img src="https://img.shields.io/badge/version-3.0.1-brightgreen">
+  <img src="https://img.shields.io/badge/version-3.0.2-brightgreen">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-8A2BE2">
   <img src="https://img.shields.io/badge/python-3.12-blue">
 </div>
