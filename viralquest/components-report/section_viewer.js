@@ -1155,6 +1155,24 @@ function _toggleCard(card, seq, forceOpen = false) {
 
 // ── BLAST hits table ────────────────────────────────────────────────────────
 
+/* NCBI database for a hit table: BLASTn subject accessions are nucleotide
+   records, both BLASTx tabs (RefSeq and NR) are protein records. */
+const _NCBI_DB = { blastn: 'nuccore', refseq: 'protein', nr: 'protein' };
+
+/* Link an accession to its NCBI record, or return null when it cannot safely
+   be turned into one.
+
+   Only bare accessions are linked. BLAST subject ids are usually clean
+   ("MW310370", "YP_009305131.1", "BEP11643.1"), but some databases emit
+   pipe-packed ids ("gi|123|ref|NP_001.1|") and local databases emit names that
+   NCBI would 404 on — linking those would promise a record that isn't there,
+   so they stay plain text. */
+function _ncbiUrl(accession, kind) {
+  const db = _NCBI_DB[kind];
+  if (!db || !accession || !/^[A-Za-z0-9_]+(\.[0-9]+)?$/.test(accession)) return null;
+  return `https://www.ncbi.nlm.nih.gov/${db}/${encodeURIComponent(accession)}`;
+}
+
 function _blastTable(hits, kind) {
   if (!hits.length) {
     return `<div class="vq-empty" style="padding:24px 16px">No ${kind} hits.</div>`;
@@ -1170,9 +1188,14 @@ function _blastTable(hits, kind) {
     const qrange    = (h.query_start != null && h.query_end != null)
       ? `${h.query_start}–${h.query_end}`
       : '—';
+    const url = _ncbiUrl(accession, kind);
+    const accCell = url
+      ? `<a class="vq-acc-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer"
+            title="Open ${esc(accession)} at NCBI">${esc(accession)}</a>`
+      : esc(accession);
     return `
     <tr>
-      <td class="vq-td--mono">${esc(accession)}</td>
+      <td class="vq-td--mono">${accCell}</td>
       <td>${esc(title)}</td>
       <td class="vq-td--num">${pident != null ? pident.toFixed(1) + '%' : '—'}</td>
       <td class="vq-td--num">${qcov != null ? (+qcov).toFixed(1) + '%' : '—'}</td>

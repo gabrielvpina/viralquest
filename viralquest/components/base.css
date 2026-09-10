@@ -1669,6 +1669,21 @@ body {
 .vq-table .vq-td--mono     { font-family: var(--vq-font-mono); font-size: 11px; }
 .vq-table .vq-td--num      { font-variant-numeric: tabular-nums; }
 
+/* Accession → NCBI. Underlined only on hover so a column of them does not read
+   as a wall of rules, but kept in the primary colour so it is discoverable as a
+   link without hovering. */
+.vq-acc-link {
+  color:           var(--vq-primary);
+  text-decoration: none;
+  border-bottom:   1px dotted var(--vq-border);
+}
+.vq-acc-link:hover,
+.vq-acc-link:focus-visible {
+  color:           var(--vq-primary-light);
+  border-bottom:   1px solid var(--vq-primary-light);
+}
+.vq-acc-link:focus-visible { outline: 2px solid var(--vq-primary-light); outline-offset: 2px; }
+
 /* ============================================================
    Scrollbar
    ============================================================ */
