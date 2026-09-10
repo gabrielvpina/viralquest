@@ -353,7 +353,7 @@ function vqInitViewer(sequences) {
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
         <input class="vq-input" id="viewer-search" type="search"
-               placeholder="Search ID, species, family, genus, phylum…"
+               placeholder="Search ID, species, lineage, BLAST hits…"
                aria-label="Search sequences">
       </div>
       <select class="vq-select" id="viewer-sort" aria-label="Sort sequences">
@@ -637,6 +637,48 @@ function _scorePanel(seq, safe) {
 
 // ── Filtering ──────────────────────────────────────────────────────────────
 
+/* Free-text haystack backing the search box.
+ *
+ * Species names are scattered across the record: BLASTx hits carry a parsed
+ * `species`, BLASTn hits carry none at all and only name the organism inside
+ * `stitle`, and `taxonomy.species` is usually null (4 of 27 sequences in the
+ * bundled example) while `taxonomy.scientific_name` is always set. Subject
+ * titles go in whole, so protein descriptions and accessions are searchable
+ * too — which is what a free-text box should do.
+ *
+ * Cached per sequence: _applyFilters runs on every keystroke and a sequence
+ * carries ~11 hits on average. The cache is a WeakMap rather than a property
+ * so it stays off the sequence objects, which the exporters serialize.
+ */
+const _HAY = new WeakMap();
+
+function _searchHay(s) {
+  const cached = _HAY.get(s);
+  if (cached !== undefined) return cached;
+
+  const t     = s.taxonomy || {};
+  const parts = [
+    s.id,
+    t.scientific_name, t.species, t.genus, t.subfamily, t.family,
+    t.order, t.class, t.phylum, t.kingdom, t.clade, t.no_rank,
+    s.heuristic_output?.blastn_species,
+  ];
+
+  ['blastx_hits', 'blastx_nr_hits', 'blastn_hits'].forEach(key => {
+    (s[key] || []).forEach(hit => {
+      parts.push(
+        hit.species,                          // BLASTx only
+        hit.subject_title ?? hit.stitle,      // BLASTn names the organism here
+        hit.subject_id   ?? hit.accession,
+      );
+    });
+  });
+
+  const hay = parts.filter(Boolean).join(' ').toLowerCase();
+  _HAY.set(s, hay);
+  return hay;
+}
+
 function _hitPassesBlastFilter(hit, identMin, identMax, covMin, covMax) {
   const pident = hit.pct_identity ?? hit.pident;
   const qcov   = hit.query_coverage ?? hit.qcovhsp;
@@ -732,11 +774,7 @@ function _applyFilters() {
 
   _VW.filtered = _VW.sequences.filter(s => {
     const t = s.taxonomy || {};
-    if (q) {
-      const hay = [s.id, t.species, t.family, t.genus, t.phylum, t.order]
-        .filter(Boolean).join(' ').toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
+    if (q && !_searchHay(s).includes(q)) return false;
     if (phySet.size && !phySet.has(t.phylum)) return false;
     if (famSet.size && !famSet.has(t.family)) return false;
     if (genSet.size && !genSet.has(t.genus))  return false;
