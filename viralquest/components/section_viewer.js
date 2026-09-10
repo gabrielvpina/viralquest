@@ -36,6 +36,212 @@ function _showLowCx(seq) {
   return !_VW.lowCxOff.has(seq.id);
 }
 
+/* ── Overflow rail ──────────────────────────────────────────────────────────
+   A long sequence overflows its box in two places: the genome map is drawn
+   wider than the card (horizontal scroll) and the FASTA preview taller than
+   its block (vertical scroll). The native scrollbar is a poor signal there —
+   on macOS it is an overlay bar that only appears once the user has already
+   scrolled, and Chrome ignores ::-webkit-scrollbar sizing in that mode — so
+   an overflowing block gets a rail built here instead: a real element, drawn
+   from the moment the card opens, track and thumb both visible, draggable.
+   The block's own scrollbar is hidden (.vq-scroll-railed) while it is up. */
+
+const _THUMB_MIN = 30;   // px — a 26 kb genome still gets a grabbable thumb
+
+const _railMetrics = (el, rail, axis) => {
+  const view    = axis === 'y' ? el.clientHeight   : el.clientWidth;
+  const content = axis === 'y' ? el.scrollHeight   : el.scrollWidth;
+  const track   = axis === 'y' ? rail.clientHeight : rail.clientWidth;
+  const thumb   = Math.max(_THUMB_MIN, Math.round(track * view / (content || 1)));
+  return { view, content, track, thumb, maxOff: track - thumb, span: content - view };
+};
+
+/* Size and place the thumb for the current scroll position; hide the whole
+   rail when this block turns out not to overflow after all (short sequence,
+   wide window). */
+function _drawRail(el, rail, axis) {
+  const over = axis === 'y'
+    ? el.scrollHeight > el.clientHeight + 1
+    : el.scrollWidth  > el.clientWidth  + 1;
+  rail.hidden = !over;
+  el.classList.toggle('vq-scroll-railed', over);
+  if (!over) return;
+
+  const m   = _railMetrics(el, rail, axis);
+  const pos = axis === 'y' ? el.scrollTop : el.scrollLeft;
+  const off = m.span > 0 ? Math.round(m.maxOff * (pos / m.span)) : 0;
+  const t   = rail.firstElementChild;
+  if (axis === 'y') {
+    t.style.height    = m.thumb + 'px';
+    t.style.transform = `translateY(${off}px)`;
+  } else {
+    t.style.width     = m.thumb + 'px';
+    t.style.transform = `translateX(${off}px)`;
+  }
+}
+
+/* ── Pinned frame panel ────────────────────────────────────────────────────
+   The map's left gutter — the frame labels +1…−3 and, when reads were
+   mapped, the strand markers and depth scale — is what tells the reader
+   which lane an ORF sits in. Scrolled 20 kb into a genome it would be long
+   gone, so it is lifted out of the scrolling box entirely: the panel is a
+   separate <svg> laid over the left edge of the wrap, a sibling of it rather
+   than a child, and therefore simply never moves. Nothing recomputes while
+   the user scrolls.
+
+   The panel is a clone of the map's own .vq-gutter group, so the two can't
+   drift apart — the geometry has exactly one definition, in _genomeSVG —
+   and the map keeps its own copy underneath, which is what makes exports
+   (which read the map svg alone) come out complete and unchanged. */
+function _pinGutter(wrap) {
+  const box = wrap && wrap.parentElement;
+  if (!box || !box.classList.contains('vq-railbox')) return;
+
+  const old = box.querySelector(':scope > .vq-genome-panel');
+  if (old) old.remove();
+
+  const svg = wrap.querySelector('svg.vq-genome-svg');
+  const gut = svg && svg.querySelector(':scope > .vq-gutter');
+  // Nothing to pin while the whole map fits: the map's own gutter is in view.
+  if (!gut || wrap.scrollWidth <= wrap.clientWidth + 1) return;
+
+  const vb    = svg.viewBox && svg.viewBox.baseVal;
+  const gutW  = +svg.getAttribute('data-gutter-w') || 0;
+  const shown = svg.getBoundingClientRect();
+  if (!vb || !vb.width || !gutW || !shown.width) return;
+  // The map is drawn 1 user unit per pixel while it scrolls, but a card
+  // narrower than the svg's 600px floor renders it smaller than its viewBox;
+  // measuring instead of assuming keeps the panel on the same lanes.
+  const scale = shown.width / vb.width;
+
+  const panel = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  panel.setAttribute('class', 'vq-genome-panel');
+  panel.setAttribute('viewBox', `0 0 ${gutW} ${vb.height}`);
+  panel.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+  panel.setAttribute('aria-hidden', 'true');
+  panel.style.width  = (gutW * scale) + 'px';
+  panel.style.height = shown.height + 'px';
+
+  const clone = gut.cloneNode(true);
+  clone.removeAttribute('class');
+  // On the panel the divider is its own edge against the moving map, so it
+  // is always drawn — unlike the copy inside the map, which stays hidden so
+  // exported maps don't carry a rule down their left side.
+  const edge = clone.querySelector('.vq-gutter__edge');
+  if (edge) edge.setAttribute('opacity', 1);
+  panel.appendChild(clone);
+  box.appendChild(panel);
+}
+
+function _wireRail(el, rail, axis) {
+  const thumb = rail.firstElementChild;
+  const draw  = () => _drawRail(el, rail, axis);
+
+  el.addEventListener('scroll', draw, { passive: true });
+  // The genome map is re-rendered in place (low-complexity toggle) and the
+  // card is re-laid out whenever it changes width; both change the metrics,
+  // and the pinned panel is sized from them. Scrolling does neither, which
+  // is the point: the panel is placed once and then left alone.
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => { draw(); _pinGutter(el); }).observe(el);
+  }
+
+  let drag = null;
+  thumb.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    drag = { at: axis === 'y' ? e.clientY : e.clientX,
+             pos: axis === 'y' ? el.scrollTop : el.scrollLeft };
+    rail.classList.add('vq-rail--drag');
+    try { thumb.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  thumb.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const m = _railMetrics(el, rail, axis);
+    if (m.maxOff <= 0) return;
+    // Thumb travel is a fraction of the track; scale it back up to content px.
+    const moved = (axis === 'y' ? e.clientY : e.clientX) - drag.at;
+    const next  = drag.pos + moved * m.span / m.maxOff;
+    if (axis === 'y') el.scrollTop = next; else el.scrollLeft = next;
+  });
+  const endDrag = e => {
+    if (!drag) return;
+    drag = null;
+    rail.classList.remove('vq-rail--drag');
+    try { thumb.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  thumb.addEventListener('pointerup', endDrag);
+  thumb.addEventListener('pointercancel', endDrag);
+
+  // Clicking the bare track centres the view on that point of the sequence.
+  rail.addEventListener('pointerdown', e => {
+    if (e.target === thumb) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const m = _railMetrics(el, rail, axis);
+    const r = rail.getBoundingClientRect();
+    const frac = axis === 'y' ? (e.clientY - r.top) / r.height
+                              : (e.clientX - r.left) / r.width;
+    const target = frac * m.content - m.view / 2;
+    el.scrollTo({ [axis === 'y' ? 'top' : 'left']: target, behavior: 'smooth' });
+  });
+}
+
+/* Give `el` a rail, wrapping it in a positioned box on first call. The rail
+   is a sibling, never a child: the genome wrap has its innerHTML replaced
+   when the map is redrawn, and a child rail would be wiped out with it (and
+   would scroll away with the content). Idempotent — cards re-open often. */
+function _ensureRail(el, axis) {
+  if (!el) return;
+  let box = el.parentElement;
+  if (!box || !box.classList.contains('vq-railbox')) {
+    box = document.createElement('div');
+    box.className = 'vq-railbox vq-railbox--' + axis;
+    el.parentNode.insertBefore(box, el);
+    box.appendChild(el);
+  }
+  let rail = box.querySelector(':scope > .vq-rail');
+  if (!rail) {
+    rail = document.createElement('div');
+    rail.className = 'vq-rail vq-rail--' + axis;
+    rail.setAttribute('aria-hidden', 'true');
+    rail.appendChild(Object.assign(document.createElement('div'),
+                                   { className: 'vq-rail__thumb' }));
+    box.appendChild(rail);
+    _wireRail(el, rail, axis);
+  }
+  _drawRail(el, rail, axis);
+}
+
+/* Rails for one open card's scrollable blocks, plus the genome map's pinned
+   frame panel. Both are laid out from measurements, so this runs on open and
+   after anything that changes the card's geometry — never during a scroll. */
+function _syncCardOverflow(card) {
+  if (!card || !card.classList.contains('open')) return;
+  const wrap = card.querySelector('.vq-genome-wrap');
+  _ensureRail(wrap, 'x');
+  _pinGutter(wrap);
+  _ensureRail(card.querySelector('.vq-fasta'), 'y');
+}
+
+/* The card width — and so whether the genome map overflows — follows the
+   window. ResizeObserver covers browsers that have it; this is the fallback
+   and also catches blocks whose own box didn't change size. Bound once:
+   vqInitViewer runs again on every sample filter change in the multi-sample
+   report, and each run would otherwise stack another listener. */
+let _resizeBound = false;
+function _bindOverflowResize() {
+  if (_resizeBound) return;
+  _resizeBound = true;
+  let t = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      document.querySelectorAll('.vq-seq-card.open').forEach(_syncCardOverflow);
+    }, 150);
+  });
+}
+
 
 /* Build a checkbox-dropdown filter field (multi-select).
    Lives inside the retractable filter panel; toggling is handled by the
@@ -317,6 +523,7 @@ function vqInitViewer(sequences) {
     });
   });
 
+  _bindOverflowResize();
   _sortFiltered();
   _renderList();
 }
@@ -617,9 +824,11 @@ function _refreshLowCx(card, seq) {
   if (wrap && wrap.querySelector('svg')) {
     wrap.innerHTML = '';
     wrap.appendChild(_genomeSVG(seq, wrap.clientWidth));
+    _ensureRail(wrap, 'x');
+    _pinGutter(wrap);   // the panel is a clone of the map just replaced
   }
   const fasta = card.querySelector('.vq-fasta');
-  if (fasta) fasta.innerHTML = _fastaHighlightedHTML(seq);
+  if (fasta) { fasta.innerHTML = _fastaHighlightedHTML(seq); _ensureRail(fasta, 'y'); }
 }
 
 // ── Sequence card ──────────────────────────────────────────────────────────
@@ -900,6 +1109,10 @@ function _toggleCard(card, seq, forceOpen = false) {
   if (blastBody && !blastBody.innerHTML) {
     blastBody.innerHTML = _blastTable(seq.blastn_hits || [], 'blastn');
   }
+
+  // Measured only now: the body is display:none until the card opens, so
+  // before this point every block reports a zero-sized client box.
+  _syncCardOverflow(card);
 }
 
 // ── BLAST hits table ────────────────────────────────────────────────────────
@@ -1136,6 +1349,31 @@ function _genomeSVG(seq, containerWidth) {
     svg.attr('width', W).attr('height', totalH).style('min-width', W + 'px');
   }
 
+  // ── Left gutter ─────────────────────────────────────────────────────────
+  // Everything drawn left of PAD_L — the frame labels and the coverage strand
+  // markers — goes in this one group rather than straight onto the svg. It
+  // stays part of the map (so an exported map is complete), and _pinGutter
+  // clones it into the fixed panel that overlays the left edge of the wrap
+  // while the map scrolls. Declared here so the drawing code below can reach
+  // it, moved to the end of the svg once the rest is drawn so it paints over
+  // the tracks; the opaque backdrop is what stops content showing through.
+  svg.attr('data-gutter-w', PAD_L);            // read back by _pinGutter
+  const gutterG = svg.append('g').attr('class', 'vq-gutter');
+  gutterG.append('rect')
+    .attr('x', 0).attr('y', 0)
+    .attr('width', PAD_L - 4).attr('height', totalH)
+    .attr('fill', 'var(--vq-surface)');
+  // Drawn only on the pinned panel, where it is the edge against the moving
+  // map; hidden in the map itself, which would otherwise carry a rule down
+  // its left side into every export. An `opacity` attribute rather than a
+  // stylesheet rule, since an exported svg travels without base.css.
+  gutterG.append('line')
+    .attr('class', 'vq-gutter__edge')
+    .attr('x1', PAD_L - 4).attr('x2', PAD_L - 4)
+    .attr('y1', 0).attr('y2', totalH - 26)
+    .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1)
+    .attr('opacity', 0);
+
   // ── Axis ────────────────────────────────────────────────────────────────
   // Very long genomes scroll horizontally, so a fixed ~14 labels would leave
   // the reader thousands of nt from the nearest coordinate. Past the threshold
@@ -1161,7 +1399,7 @@ function _genomeSVG(seq, containerWidth) {
     .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)');
 
   // ── Read-coverage track ─────────────────────────────────────────────────
-  if (cov) _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, COV_AREA_H);
+  if (cov) _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, COV_AREA_H, gutterG);
 
   // ── Low-complexity bands (dustmasker) — behind the ORF lanes ─────────────
   // Suppressed when this card's "Highlight low-complexity regions" checkbox is
@@ -1181,7 +1419,8 @@ function _genomeSVG(seq, containerWidth) {
       .attr('fill', i % 2 ? 'var(--vq-surface-2)' : 'transparent')
       .attr('opacity', 0.5);
 
-    svg.append('text')
+    // Frame label — into the gutter group, which the pinned panel clones.
+    gutterG.append('text')
       .attr('x', PAD_L - 8)
       .attr('y', y + ORF_H / 2 + 4)
       .attr('text-anchor', 'end')
@@ -1316,6 +1555,10 @@ function _genomeSVG(seq, containerWidth) {
       .text(`↔ ${seqLen.toLocaleString()} nt · scroll horizontally`);
   }
 
+  // Re-appended last so the gutter paints over the tracks that run beneath
+  // it; appendChild moves the node rather than copying it.
+  svg.node().appendChild(gutterG.node());
+
   return svg.node();
 }
 
@@ -1387,7 +1630,10 @@ function _drawCovLegend(g, x, y, qual) {
   return w;
 }
 
-function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH) {
+/* `gutter` is the left-gutter group from _genomeSVG: the strand markers and
+   the depth scale go into it rather than into the track, so the fixed panel
+   (a clone of that group) keeps them in view while the coverage scrolls. */
+function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH, gutter) {
   const legY   = AXIS_Y + 12;             // legend block row (reserved: COV_LEG_H)
   const top    = legY + COV_LEG_H;        // bars start below it
   const bottom = top + areaH;
@@ -1430,12 +1676,13 @@ function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH
       .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1);
 
     // Gutter: strand markers + scale.
-    g.append('text').attr('x', PAD_L - 8).attr('y', top + 7).attr('text-anchor', 'end')
+    const gut = gutter || g;
+    gut.append('text').attr('x', PAD_L - 8).attr('y', top + 7).attr('text-anchor', 'end')
       .attr('font-size', 8).attr('font-weight', 700).attr('fill', 'var(--vq-text-2)').text('＋');
-    g.append('text').attr('x', PAD_L - 8).attr('y', mid + 3).attr('text-anchor', 'end')
+    gut.append('text').attr('x', PAD_L - 8).attr('y', mid + 3).attr('text-anchor', 'end')
       .attr('font-size', 9).attr('font-family', 'var(--vq-font-mono)').attr('font-weight', 700)
       .attr('fill', 'var(--vq-text-2)').text('Cov');
-    g.append('text').attr('x', PAD_L - 8).attr('y', bottom - 1).attr('text-anchor', 'end')
+    gut.append('text').attr('x', PAD_L - 8).attr('y', bottom - 1).attr('text-anchor', 'end')
       .attr('font-size', 8).attr('font-weight', 700).attr('fill', 'var(--vq-text-2)').text('－');
   } else {
     const yScale = d3.scaleLinear([0, maxD], [bottom, top]);
@@ -1456,10 +1703,11 @@ function _drawCoverageTrack(svg, cov, SCALE, seqLen, PAD_L, drawW, AXIS_Y, areaH
     g.append('line').attr('x1', PAD_L).attr('x2', PAD_L + drawW)
       .attr('y1', bottom).attr('y2', bottom)
       .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1);
-    g.append('text').attr('x', PAD_L - 8).attr('y', top + areaH / 2 - 3).attr('text-anchor', 'end')
+    const gut = gutter || g;
+    gut.append('text').attr('x', PAD_L - 8).attr('y', top + areaH / 2 - 3).attr('text-anchor', 'end')
       .attr('font-size', 9).attr('font-family', 'var(--vq-font-mono)').attr('font-weight', 700)
       .attr('fill', 'var(--vq-text-2)').text('Cov');
-    g.append('text').attr('x', PAD_L - 8).attr('y', top + areaH / 2 + 8).attr('text-anchor', 'end')
+    gut.append('text').attr('x', PAD_L - 8).attr('y', top + areaH / 2 + 8).attr('text-anchor', 'end')
       .attr('font-size', 8).attr('fill', 'var(--vq-text-3)').text(`${Math.round(maxD)}×`);
   }
 

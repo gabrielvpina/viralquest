@@ -188,8 +188,9 @@ def _build_parser():
     sal.add_argument("--hk-genes", dest="hk_genes", type=str,
         default=None, metavar="IDS.txt",
         help="Text file with reference housekeeping gene IDs (one per line) for "
-             "normalization. IDs must exactly match the first word of the FASTA "
-             "header in --transcriptome (case-sensitive). Requires --transcriptome.")
+             "normalization. Matched against the --transcriptome headers by "
+             "accession (with or without the .version suffix, case-insensitive) "
+             "or by gene symbol found in the header. Requires --transcriptome.")
     sal.add_argument("--low-memory", dest="low_memory", action="store_true",
         help="Low-RAM mode for Salmon: builds the index with a smaller k-mer size "
              "(-k 21 instead of 31) and, in de-novo mode, excludes background "
@@ -338,8 +339,9 @@ def _show_rich_help() -> None:
         "  assembled contigs directly, using BLASTn to find HK-matching contigs.\n\n"
         "[bold cyan]--hk-genes[/]       [dim]IDS.txt[/]\n"
         "  Text file with reference HK gene IDs (one per line) for normalization.\n"
-        "  IDs must exactly match the first word of the --transcriptome header\n"
-        "  (case-sensitive). Requires --transcriptome.\n\n"
+        "  Matched against the --transcriptome headers by accession (with or\n"
+        "  without the [dim].version[/dim] suffix, case-insensitive) or by gene symbol\n"
+        "  present in the header. Requires --transcriptome.\n\n"
         "[bold cyan]--low-memory[/]\n"
         "  Low-RAM mode for [dim]salmon index[/dim]: uses [dim]-k 21[/dim] (instead of 31) and,\n"
         "  in de-novo mode, excludes background contigs shorter than 500 bp\n"
