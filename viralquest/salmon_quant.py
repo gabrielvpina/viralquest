@@ -30,6 +30,24 @@ class PfamHkFinder:
     ORFs stored in each NucSequence, then links hits to Salmon quantification data.
 
     Only the de-novo pathway is supported.
+
+    DISABLED — not wired into the pipeline (see SalmonQuantPipeline.__init__ and
+    _run_de_novo).  ``pfam_hk_quant`` is therefore always ``[]`` and every
+    downstream consumer already treats that as "panel absent".  Housekeeping
+    normalization currently comes only from the predefined gene sets written
+    into the Salmon index: the user's reference HK list (``VQ_REFHK_``) and the
+    bundled per-kingdom conserved genes (``VQ_CONS_``).
+
+    Known defects to settle before re-enabling:
+      · ``_search`` reads ``top_hits.query_name``, removed in pyhmmer 0.10+;
+        the attribute is ``top_hits.query.name`` (as in hmm.py's HmmSearcher).
+        The AttributeError is swallowed by the broad except, so the step
+        silently yields zero hits on every run.
+      · ``_HK_FILE`` / ``_KINGDOMS_DIR`` resolve to ``<package>/../data``, which
+        only exists in a source checkout — ``data/`` is not listed in
+        pyproject's package-data.
+      · ``_search``'s docstring claims GA inclusion thresholds, but hmmsearch is
+        called without ``bit_cutoffs="gathering"``, so plain E-value cutoffs apply.
     """
 
     _HK_FILE = Path(__file__).parent.parent / "data" / "salmon-quant" / "hk_pfam_domains.json"
@@ -1103,7 +1121,11 @@ class SalmonQuantPipeline:
             blastn_bin, e_value, threads, min_pident, min_qcov,
         )
         self._hk_blaster  = ContigHkBlaster(blastn_bin, e_value, threads)
-        self._pfam_hk     = PfamHkFinder(pfam_hmm_path, threads) if pfam_hmm_path else None
+        # Pfam-domain HK identification is parked — see PfamHkFinder's docstring.
+        # ``pfam_hmm_path`` is still accepted so callers need no change when it
+        # comes back.
+        # self._pfam_hk   = PfamHkFinder(pfam_hmm_path, threads) if pfam_hmm_path else None
+        self._pfam_hk     = None
         self.cleanup      = cleanup
         self.low_memory   = low_memory
 
@@ -1286,9 +1308,12 @@ class SalmonQuantPipeline:
 
             all_entries = QuantsfParser.parse(quant_sf, conserved_map)
 
-            pfam_hk: list[PfamHkEntry] = []
-            if self._pfam_hk is not None:
-                pfam_hk = self._pfam_hk.find(viral_seqs, quant_sf)
+            # Pfam-domain HK identification is parked; the de-novo run keeps the
+            # HK-matched contigs that ContigHkBlaster already put in the index
+            # (``VQ_CONS_*``), which is what conserved_quant reports.
+            # pfam_hk: list[PfamHkEntry] = []
+            # if self._pfam_hk is not None:
+            #     pfam_hk = self._pfam_hk.find(viral_seqs, quant_sf)
 
             report = self._assemble(
                 reads        = reads,
@@ -1296,7 +1321,7 @@ class SalmonQuantPipeline:
                 entries      = all_entries,
                 blast_hits   = [],
                 pathway      = "de_novo",
-                pfam_hk      = pfam_hk,
+                # pfam_hk    = pfam_hk,
             )
 
         finally:

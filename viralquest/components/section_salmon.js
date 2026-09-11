@@ -14,7 +14,7 @@
    Right card:  housekeeping genes (reference) OR HK-matched contigs (de novo).
    Ref-HK card: reference housekeeping genes (reference pathway + --hk-genes only).
    Toggle:      TPM ↔ NumReads.
-   Toggle:      overlay housekeeping medians in the main plot.
+   Toggle:      overlay per-kingdom housekeeping maxima in the main plot.
    ============================================================ */
 
 const _SQ = {
@@ -314,8 +314,13 @@ function _draw() {
 //
 // So: rank kingdoms by `sum`, never by a measure of position. A lone stray gene
 // at high TPM (one FISH transcript at ~31 TPM) would otherwise outrank the real
-// host (ARTHROPODS, ~0.6 median but ~2500 TPM total). `median` is kept for the
-// overlay reference lines but is computed over detected genes only.
+// host (ARTHROPODS, ~0.6 median but ~2500 TPM total).
+//
+// The viral-panel overlay marks each kingdom's `max` — the single most
+// expressed housekeeping gene. That is the line a viral contig has to clear to
+// be "more transcribed than the host's housekeeping", which is the comparison
+// the overlay exists to make; a median sits far below it and understates the
+// bar. `median` is kept for the tooltip, computed over detected genes only.
 
 function _hkSummary() {
   const cons   = (_SQ.data.conserved_quant || []);
@@ -430,7 +435,7 @@ function _drawViralPanel() {
   const HK = _SQ.showHK ? _hkOverlayRows() : [];
 
   const allVals = viralFiltered.map(v => v[metric] ?? 0).slice();
-  HK.forEach(h => allVals.push(h.median));
+  HK.forEach(h => allVals.push(h.max));
   const dataMax  = d3.max(allVals) || 1;
   const scaleMax = maxFilter != null ? maxFilter : dataMax;
 
@@ -556,7 +561,7 @@ function _drawViralPanel() {
   if (HK.length) {
     const overlayY = H - PAD_B + 36;
     HK.forEach((h, i) => {
-      const x = PAD_L + xScale(h.median);
+      const x = PAD_L + xScale(h.max);
       svg.append('line')
         .attr('x1', x).attr('x2', x)
         .attr('y1', PAD_T).attr('y2', H - PAD_B)
@@ -567,6 +572,7 @@ function _drawViralPanel() {
         .on('mousemove', evt => VQ.tooltipShow(`
           <div class="vq-tooltip__title">${VQ.esc(_kgLabel(h.kingdom))} housekeeping</div>
           <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">Max ${label}</span><span>${h.max.toFixed(2)}</span>
             <span class="vq-tooltip__key">Median ${label}</span><span>${h.median.toFixed(2)}</span>
             <span class="vq-tooltip__key">Total ${label}</span><span>${h.sum.toFixed(2)}</span>
             <span class="vq-tooltip__key">Detected</span><span>${h.detected} / ${h.total}</span>
@@ -584,7 +590,7 @@ function _drawViralPanel() {
     svg.append('text')
       .attr('x', PAD_L).attr('y', overlayY)
       .attr('font-size', 11).attr('fill', 'var(--vq-text-2)')
-      .text('Housekeeping (median ' + label + ' of detected genes):');
+      .text('Housekeeping (max ' + label + '):');
     let lx = PAD_L + 200;
     HK.forEach(h => {
       svg.append('line')
@@ -596,7 +602,7 @@ function _drawViralPanel() {
         .attr('x', lx + 22).attr('y', overlayY)
         .attr('font-size', 11)
         .attr('fill', 'var(--vq-text-3)')
-        .text(`${_kgLabel(h.kingdom)} (${h.median.toFixed(1)})`);
+        .text(`${_kgLabel(h.kingdom)} (${h.max.toFixed(1)})`);
       lx += 22 + (h.kingdom.length + 8) * 6.2;
     });
   }
