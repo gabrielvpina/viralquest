@@ -53,7 +53,9 @@ def _to_serializable(obj: Any) -> Any:
     return obj
 
 
-def select_confirmed_sequences(nuc_seqs: list, force: bool = False) -> list:
+def select_confirmed_sequences(
+    nuc_seqs: list, force: bool = False, nr_run: bool | None = None,
+) -> list:
     """
     The set of sequences that appear in the final report — single source of truth.
 
@@ -62,13 +64,16 @@ def select_confirmed_sequences(nuc_seqs: list, force: bool = False) -> list:
       - NR was run   → is_viral AND has NR BLASTx hits  (the --nr-db pathway)
       - NR not run   → is_viral                         (RefSeq / HMM only)
 
-    "NR was run" is detected data-driven (any sequence carries NR hits) rather
-    than from the CLI flag, so the report and any per-sequence side computations
-    (e.g. read coverage) always agree on which sequences are final.
+    *nr_run* should come from the CLI flag (--nr-db). An NR search that ran but
+    returned no viral hits must yield zero confirmed sequences — not fall back
+    to the permissive RefSeq/HMM rule. Only when *nr_run* is None (callers
+    without access to the flag) is it inferred from the data.
     """
     if force:
         return list(nuc_seqs)
-    if any(s.blastx_nr_hits for s in nuc_seqs):
+    if nr_run is None:
+        nr_run = any(s.blastx_nr_hits for s in nuc_seqs)
+    if nr_run:
         return [s for s in nuc_seqs if s.is_viral and s.blastx_nr_hits]
     return [s for s in nuc_seqs if s.is_viral]
 
@@ -108,9 +113,12 @@ class ReportExporter:
         own downstream filtering.  Clusters are also exported in full.
     """
 
-    def __init__(self, include_llm: bool = True, force: bool = False):
+    def __init__(
+        self, include_llm: bool = True, force: bool = False, nr_run: bool | None = None,
+    ):
         self.include_llm = include_llm
         self.force       = force
+        self.nr_run      = nr_run
 
     # --- public ---------------------------------------------------------------
 
@@ -123,6 +131,7 @@ class ReportExporter:
         version:        str                      = "unknown",
         salmon_report:  SalmonQuantReport | None = None,
         cap3:           dict | None              = None,
+        blastn:         dict | None              = None,
     ) -> dict:
         """
         Build the report dictionary, optionally write it to *output_path*,
@@ -138,8 +147,14 @@ class ReportExporter:
         salmon_report : if given, a ``salmon_quant`` key is added to the JSON
         cap3          : CAP3 assembly stats (``used``/``contigs``/``singlets``)
                         when --cap3 ran; None otherwise
+        blastn        : BLASTn run status (mode, db, queried, failed ids)
+                        when BLASTn ran; None otherwise
         """
-        confirmed = select_confirmed_sequences(nuc_seqs, force=self.force)
+        nr_run = (
+            self.nr_run if self.nr_run is not None
+            else any(s.blastx_nr_hits for s in nuc_seqs)
+        )
+        confirmed = select_confirmed_sequences(nuc_seqs, force=self.force, nr_run=nr_run)
         if self.force:
             confirmed_clusters = clusters
             logger.warning(
@@ -149,7 +164,7 @@ class ReportExporter:
         else:
             filter_label = (
                 "NR BLASTx viral confirmation"
-                if any(s.blastx_nr_hits for s in nuc_seqs)
+                if nr_run
                 else "RefSeq / HMM viral confirmation (NR not run)"
             )
             dropped = len(nuc_seqs) - len(confirmed)
@@ -165,7 +180,9 @@ class ReportExporter:
 
         report = {
             "meta":           self._build_meta(input_fasta, version),
-            "pipeline_stats": self._build_pipeline_stats(nuc_seqs, confirmed, confirmed_clusters, cap3),
+            "pipeline_stats": self._build_pipeline_stats(
+                nuc_seqs, confirmed, confirmed_clusters, cap3, blastn, nr_run,
+            ),
             "sequences":      [self._seq_to_dict(s) for s in confirmed],
             "clusters":       [self._cluster_to_dict(c) for c in confirmed_clusters],
         }
@@ -300,6 +317,8 @@ class ReportExporter:
         confirmed: list,
         clusters:  list,
         cap3:      dict | None = None,
+        blastn:    dict | None = None,
+        nr_run:    bool = False,
     ) -> dict:
         """
         Aggregate counts from the full (pre-filter) sequence set so the HTML
@@ -341,6 +360,7 @@ class ReportExporter:
                 "total_confirmed":    len(confirmed),
                 "total_input":        len(all_seqs),
                 "total_viral_flagged": viral_seqs,
+                "nr_run":             nr_run,
             },
             "hmm": {
                 "rvdb_hits":   db_counts["RVDB"],
@@ -373,6 +393,11 @@ class ReportExporter:
         # CAP3 — only present when the optional --cap3 assembly step ran.
         if cap3:
             stats["cap3"] = cap3
+
+        # BLASTn — only present when BLASTn ran. Distinguishes "no hits" from
+        # "query failed": failed sequences carry an empty blastn_hits list too.
+        if blastn:
+            stats["blastn"] = blastn
 
         return stats
 
