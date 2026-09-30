@@ -35,8 +35,10 @@ def _detect_steps(s: SampleReport) -> dict[str, bool]:
     blast = ps.get("blast", {}) or {}
     seqs  = s.sequences
 
-    nr = bool(blast.get("nr_unique_seqs")) or any(seq.get("blastx_nr_hits") for seq in seqs)
-    blastn = bool(blast.get("blastn_unique_seqs")) or any(seq.get("blastn_hits") for seq in seqs)
+    nr = (bool(blast.get("nr_run")) or bool(blast.get("nr_unique_seqs"))
+          or any(seq.get("blastx_nr_hits") for seq in seqs))
+    blastn = (bool((ps.get("blastn", {}) or {}).get("run")) or bool(blast.get("blastn_unique_seqs"))
+              or any(seq.get("blastn_hits") for seq in seqs))
     salmon = s.salmon_quant is not None
     llm = bool((ps.get("llm", {}) or {}).get("present")) or any(seq.get("llm_output") for seq in seqs)
     cap3 = bool((ps.get("cap3", {}) or {}).get("used"))
