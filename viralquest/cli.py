@@ -21,6 +21,7 @@ import shutil
 import sys
 import time
 from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Version ───────────────────────────────────────────────────────────────────
@@ -478,35 +479,274 @@ def _validate_args(args, console) -> None:
 
 # ── Live-mode display helpers ─────────────────────────────────────────────────
 
-def _build_live_display(log_buf: deque, steps: list[str], current: int, progress):
-    from rich.layout import Layout
-    from rich.panel import Panel
-    from rich.text import Text
+_BANNER_GRADIENT = ("#8be9fd", "#6fd3f7", "#4fc3f7", "#29b6f6", "#0ea5e9", "#0284c7")
 
-    layout = Layout()
-    layout.split_column(
-        Layout(name="banner",   size=9),
-        Layout(name="log",      ratio=1),
-        Layout(name="progress", size=3),
-    )
+_LEVEL_STYLE = {
+    "TRACE":    "dim",
+    "DEBUG":    "dim",
+    "INFO":     "cyan",
+    "SUCCESS":  "green",
+    "WARNING":  "yellow",
+    "ERROR":    "bold red",
+    "CRITICAL": "bold white on red",
+}
 
-    layout["banner"].update(
-        Panel(Text(_BANNER_RAW, style="bold cyan", no_wrap=True),
-              border_style="blue", padding=(0, 1))
-    )
 
-    log_content = "\n".join(log_buf) if log_buf else "[dim]Waiting for output…[/dim]"
-    layout["log"].update(
-        Panel(log_content,
-              title=f"[bold cyan]Log[/bold cyan]  "
-                    f"[dim]{steps[current] if current < len(steps) else 'done'}[/dim]",
-              border_style="blue",
-              subtitle=f"[dim]step {min(current+1, len(steps))}/{len(steps)}[/dim]")
-    )
+def _fmt_clock(sec: float) -> str:
+    """Elapsed time as m:ss (or h:mm:ss) for the live screen."""
+    sec = int(max(sec, 0))
+    h, rem = divmod(sec, 3600)
+    m, s   = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
-    layout["progress"].update(Panel(progress, border_style="blue", padding=(0, 1)))
 
-    return layout
+def _fmt_step_time(sec: float) -> str:
+    if sec < 60:
+        return f"{sec:.1f}s"
+    return _fmt_clock(sec)
+
+
+class _LiveState:
+    """Mutable pipeline state read by the live screen on every refresh."""
+
+    def __init__(self, steps: list[str]):
+        self.steps       = steps
+        self.current     = 0                 # index of the running step
+        self.timings: dict[int, float] = {}
+        self.run_start   = time.time()
+        self.step_start  = time.time()
+        self.batch: str | None = None        # e.g. "3/12" during Diamond batches
+        self.failed: int | None = None       # index of the step that raised
+        self.done        = False
+        self.end: float | None = None        # set when finished/failed → clock stops
+        self.warnings    = 0
+        self.errors      = 0
+
+    def finish_step(self, idx: int, elapsed: float) -> None:
+        self.timings[idx] = elapsed
+        self.current      = idx + 1
+        self.step_start   = time.time()
+        self.batch        = None
+        self.done         = self.current >= len(self.steps)
+        if self.done:
+            self.end = time.time()
+
+    def fail(self) -> None:
+        self.failed = self.current
+        self.end    = time.time()
+
+    def elapsed(self) -> float:
+        return (self.end or time.time()) - self.run_start
+
+
+class _LogTail:
+    """Last log records that fit the panel height, coloured by level.
+
+    Records are kept as plain data and rendered as Text (never parsed as
+    markup), so messages like "diamond [refseq]" display verbatim.
+    """
+
+    def __init__(self, records: deque):
+        self.records = records
+
+    def __rich_console__(self, console, options):
+        from rich.text import Text
+
+        height = options.height or 20
+        rows   = list(self.records)[-height:]
+        if not rows:
+            yield Text("Waiting for output…", style="dim italic")
+            return
+        for ts, level, message in rows:
+            line = Text(no_wrap=True, overflow="ellipsis")
+            line.append(f"{ts} ", style="dim")
+            line.append(f"{level:<8} ", style=_LEVEL_STYLE.get(level, ""))
+            line.append(message.splitlines()[0] if message else "",
+                        style="red" if level in ("ERROR", "CRITICAL") else "")
+            yield line
+
+
+class _LiveScreen:
+    """Full live layout: header · step checklist | log · progress footer.
+
+    Rebuilt on every Live refresh, so elapsed timers, the spinner and the
+    log tail keep moving during long steps (not only when a step finishes).
+    """
+
+    def __init__(self, state: _LiveState, records: deque, info: dict):
+        from rich.spinner import Spinner
+
+        self.state   = state
+        self.records = records
+        self.info    = info
+        self.spinner = Spinner("dots", style="bold cyan")   # reused → animates
+
+    # ── pieces ────────────────────────────────────────────────────────────
+    def _banner(self):
+        from rich.text import Text
+
+        text = Text(no_wrap=True, overflow="crop")
+        lines = _BANNER_RAW.strip("\n").splitlines()
+        for i, line in enumerate(lines):
+            text.append(line + ("\n" if i < len(lines) - 1 else ""),
+                        style=f"bold {_BANNER_GRADIENT[i % len(_BANNER_GRADIENT)]}")
+        return text
+
+    def _info(self):
+        from rich.table import Table
+
+        o    = self.info
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column(style="dim", justify="right", no_wrap=True, min_width=7)
+        grid.add_column(no_wrap=True, overflow="ellipsis")
+        grid.add_row("version", f"[bold]v{__version__}[/]")
+        grid.add_row("input",   f"[bold]{o['input']}[/]")
+        grid.add_row("output",  str(o["outdir"]))
+        grid.add_row("threads", str(o["threads"]))
+
+        def mod(name, on, value=""):
+            return (f"[green]●[/] {name} [dim]{value}[/]".rstrip() if on
+                    else f"[dim]○ {name}[/]")
+        reads = f"{len(o['reads'])} files · {o['read_type']}" if o["reads"] else ""
+        grid.add_row("modules", "  ".join([
+            mod("CAP3",   o["cap3"]),
+            mod("NR",     o["nr_db"],  o["nr_db"] or ""),
+            mod("BLASTn", o["blastn"], o["blastn"] or ""),
+        ]))
+        grid.add_row("", "  ".join([
+            mod("reads", o["reads"], reads),
+            mod("LLM",   o["llm"],   o["llm"] or ""),
+        ]))
+        return grid
+
+    def _header(self, width: int):
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        if width < 84:   # banner would not fit — compact title line
+            title = Text.assemble(("ViralQuest", "bold #29b6f6"),
+                                  (f"  v{__version__}  ·  {self.info['input']}", "dim"))
+            return Panel(title, border_style="#0284c7", padding=(0, 1)), 3
+
+        if width >= 128:
+            row = Table.grid(padding=(0, 3), expand=True)
+            row.add_column(no_wrap=True)
+            row.add_column(ratio=1, vertical="middle")
+            row.add_row(self._banner(), self._info())
+            body = row
+        else:
+            body = self._banner()
+        return Panel(body, border_style="#0284c7", padding=(0, 2)), 8
+
+    def _steps_panel(self):
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        st    = self.state
+        now   = st.end or time.time()
+        table = Table.grid(padding=(0, 1), expand=True)
+        table.add_column(width=2, no_wrap=True)
+        table.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
+        table.add_column(justify="right", no_wrap=True)
+
+        for i, label in enumerate(st.steps):
+            if st.failed == i:
+                icon, name, tm = (Text("✗", style="bold red"),
+                                  Text(label, style="bold red"),
+                                  Text(_fmt_step_time(now - st.step_start), style="red"))
+            elif i in st.timings:
+                icon, name, tm = (Text("✓", style="bold green"),
+                                  Text(label, style="default"),
+                                  Text(_fmt_step_time(st.timings[i]), style="dim green"))
+            elif i == st.current and not st.done and st.failed is None:
+                extra = f"  [{st.batch}]" if st.batch else ""
+                icon, name, tm = (self.spinner,
+                                  Text(label + extra, style="bold cyan"),
+                                  Text(_fmt_step_time(now - st.step_start), style="bold cyan"))
+            else:
+                icon, name, tm = Text("·", style="dim"), Text(label, style="dim"), Text("")
+            table.add_row(icon, name, tm)
+
+        done_n = len(st.timings)
+        return Panel(table, title="[bold]Pipeline[/]", title_align="left",
+                     subtitle=f"[dim]{done_n}/{len(st.steps)} steps[/]", subtitle_align="right",
+                     border_style="#0284c7", padding=(0, 1))
+
+    def _log_panel(self):
+        from rich.panel import Panel
+
+        st = self.state
+        if st.failed is not None:
+            title = "[bold]Log[/]  [red]failed[/]"
+        elif st.done:
+            title = "[bold]Log[/]  [green]complete[/]"
+        else:
+            title = f"[bold]Log[/]  [dim]{st.steps[st.current]}[/]"
+        return Panel(_LogTail(self.records), title=title, title_align="left",
+                     border_style="#0284c7", padding=(0, 1))
+
+    def _footer(self):
+        from rich.panel import Panel
+        from rich.progress_bar import ProgressBar
+        from rich.table import Table
+
+        st    = self.state
+        total = len(st.steps)
+        done  = len(st.timings)
+        if st.failed is not None:
+            status, colour = "[bold red]failed[/]", "red"
+        elif st.done:
+            status, colour = "[bold green]complete[/]", "green"
+        else:
+            status, colour = "[cyan]running[/]", "cyan"
+
+        counters = []
+        if st.warnings:
+            counters.append(f"[yellow]▲ {st.warnings} warning{'s' if st.warnings > 1 else ''}[/]")
+        if st.errors:
+            counters.append(f"[red]✗ {st.errors} error{'s' if st.errors > 1 else ''}[/]")
+
+        row = Table.grid(padding=(0, 2), expand=True)
+        row.add_column(no_wrap=True)
+        row.add_column(ratio=1)
+        row.add_column(no_wrap=True, justify="right")
+        row.add_row(
+            status,
+            ProgressBar(total=total, completed=done, complete_style=colour,
+                        finished_style=colour, style="grey23"),
+            f"[bold]{done}[/][dim]/{total}[/]   "
+            + ("   ".join(counters) + "   " if counters else "")
+            + f"[dim]elapsed[/] [bold]{_fmt_clock(st.elapsed())}[/]",
+        )
+        return Panel(row, border_style="#0284c7", padding=(0, 1))
+
+    # ── layout ────────────────────────────────────────────────────────────
+    def __rich_console__(self, console, options):
+        from rich.layout import Layout
+
+        width = options.max_width
+        header, header_h = self._header(width)
+        steps_w = min(max(len(s) for s in self.state.steps) + 14, 72, int(width * 0.55))
+
+        layout = Layout()
+        layout.split_column(
+            Layout(header,          name="header", size=header_h),
+            Layout(name="body",     ratio=1),
+            Layout(self._footer(),  name="footer", size=3),
+        )
+        if width >= 100:
+            layout["body"].split_row(
+                Layout(self._steps_panel(), name="steps", size=steps_w),
+                Layout(self._log_panel(),   name="log",   ratio=1),
+            )
+        else:   # narrow terminal: stack steps over log
+            layout["body"].split_column(
+                Layout(self._steps_panel(), name="steps", size=len(self.state.steps) + 2),
+                Layout(self._log_panel(),   name="log",   ratio=1),
+            )
+        yield layout
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -535,12 +775,12 @@ def _build_steps(args) -> list[str]:
         "Diamond BLASTx  —  RefSeq viral filter",
         "HMMsearch  —  RVDB · Vfam · EggNOG  (viral confirmation)",
     ]
+    if args.nr_db:
+        steps.append(f"Diamond BLASTx NR  —  {Path(args.nr_db).name}")
     if args.blastn_local:
         steps.append(f"BLASTn local  —  {Path(args.blastn_local).name}")
     elif args.blastn_online:
         steps.append(f"BLASTn online  —  {args.blastn_online_db}")
-    if args.nr_db:
-        steps.append(f"Diamond BLASTx NR  —  {Path(args.nr_db).name}")
     steps.append("HMMsearch  —  Pfam  (functional annotation)")
     steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
@@ -552,12 +792,37 @@ def _build_steps(args) -> list[str]:
     if args.reads:
         steps.append("Read coverage profiling")
     steps.append("Heuristic scoring  —  rule-based vq_score")
-    if args.model_type:
+    if args.model_type and args.model_name:
         token_tag = f"[{args.llm_tokens}]" if args.llm_tokens else ""
         steps.append(f"LLM scoring  —  {args.model_type} / {args.model_name}  {token_tag}".rstrip())
     steps.append("Export JSON report")
     steps.append("Build HTML report")
     return steps
+
+
+def _workflow_options(args) -> dict:
+    """User-chosen options shown in the report's workflow card (never secrets)."""
+    if args.blastn_local:
+        blastn = f"local · {Path(args.blastn_local).name}"
+    elif args.blastn_online:
+        blastn = f"online · {args.blastn_online_db}"
+    else:
+        blastn = None
+    return {
+        "input":            Path(args.input).name,
+        "threads":          args.cpu,
+        "cap3":             bool(args.cap3),
+        "nr_db":            Path(args.nr_db).name if args.nr_db else None,
+        "blastn":           blastn,
+        "reads":            [Path(r).name for r in (args.reads or [])],
+        "read_type":        args.read_type if args.reads else None,
+        "transcriptome":    Path(args.transcriptome).name if args.transcriptome else None,
+        "skip_salmon":      bool(args.skip_salmon),
+        "skip_seq_quality": bool(args.skip_seq_quality),
+        "llm":              (f"{args.model_type} / {args.model_name}"
+                             if args.model_type and args.model_name else None),
+        "force":            bool(args.force),
+    }
 
 
 def _run_pipeline(args):
@@ -588,12 +853,32 @@ def _run_pipeline(args):
     stem       = Path(args.input).stem
     organizer  = OutputOrganizer(outdir, stem)
     step       = 0
+    labels     = _build_steps(args)
+    run_start  = time.time()
+    started_at = datetime.now(timezone.utc).isoformat()
+    workflow: list[dict] = []   # one entry per step (incl. skipped) → report's workflow card
 
-    def _tick(start: float):
+    def _record(key: str, elapsed: float, status: str, details, message) -> None:
+        workflow.append({
+            "key":     key,
+            "label":   labels[step] if step < len(labels) else key,
+            "status":  status,               # done | partial | error | skipped
+            "seconds": round(elapsed, 2),
+            "details": details or {},
+            "message": message,
+        })
+
+    def _tick(start: float, key: str, details: dict | None = None,
+              status: str = "done", message: str | None = None):
         nonlocal step
         elapsed = time.time() - start
+        _record(key, elapsed, status, details, message)
         yield ("step", step, elapsed)
         step += 1
+
+    def _skip(key: str, label: str, reason: str) -> None:
+        workflow.append({"key": key, "label": label, "status": "skipped",
+                         "seconds": None, "details": {}, "message": reason})
 
     # ── 1. Parse / assemble ───────────────────────────────────────────────────
     t  = time.time()
@@ -618,14 +903,19 @@ def _run_pipeline(args):
     else:
         seqs = fp.sequences
         assembled_fasta = Path(args.input)
-    yield from _tick(t)
+    parse_details = {"Input sequences": len(fp.sequences)}
+    if cap3_info:
+        parse_details |= {"CAP3 contigs": cap3_info["contigs"],
+                          "CAP3 singlets": cap3_info["singlets"]}
+    parse_details["Sequences carried forward"] = len(seqs)
+    yield from _tick(t, "parse", parse_details)
 
     # ── 2. ORF finding ────────────────────────────────────────────────────────
     t        = time.time()
     analyzer = OrfAnalyzer()
     for seq in seqs:
         analyzer.find_n_save_orfs(seq)
-    yield from _tick(t)
+    yield from _tick(t, "orfs", {"ORFs found": sum(len(s.orfs) for s in seqs)})
 
     # ── 3. Diamond RefSeq filter ──────────────────────────────────────────────
     t    = time.time()
@@ -643,7 +933,12 @@ def _run_pipeline(args):
         min_coverage = 0.0  if args.nr_db else 40.0,
     )
     organizer.finalize_diamond_refseq(tsvs)
-    yield from _tick(t)
+    yield from _tick(t, "refseq", {
+        "Database":            Path(args._db["viral_dmnd"]).name,
+        "Sequences with hits": sum(1 for s in seqs if s.blastx_hits),
+        "Flagged viral":       sum(1 for s in seqs if s.is_viral),
+        "Filter":              "none (NR confirms)" if args.nr_db else "identity ≥ 50% · coverage ≥ 40%",
+    })
 
     # ── 4. HMM viral confirmation (RVDB + Vfam + EggNOG) ─────────────────────
     t        = time.time()
@@ -656,7 +951,10 @@ def _run_pipeline(args):
             HmmResultAttacher.attach(hmm_hits, orf_map, meta, db_name)
             organizer.save_hmm_table(hmm_hits, db_name)
     HmmViralFlagSetter.flag(seqs)
-    yield from _tick(t)
+    yield from _tick(t, "hmm", {
+        "Databases":                  " · ".join(db_name for _, _, db_name in args._hmm_filter),
+        "Flagged viral (RefSeq+HMM)": sum(1 for s in seqs if s.is_viral),
+    })
 
     # ── 5. Diamond NR characterisation (optional) ─────────────────────────────
     if args.nr_db:
@@ -675,7 +973,13 @@ def _run_pipeline(args):
             hits_nr = DiamondOutputParser.parse(nr_tsv)
             DiamondResultAttacher.attach(hits_nr, seqs, DiamondPhase.NR_CHARACTERIZE)
         organizer.finalize_diamond_nr(nr_tsv)
-        yield from _tick(t)
+        yield from _tick(t, "nr", {
+            "Database":        Path(args.nr_db).name,
+            "Queried":         len(viral),
+            "Viral NR hits":   sum(1 for s in seqs if s.blastx_nr_hits),
+        })
+    else:
+        _skip("nr", "Diamond BLASTx NR", "--nr-db not set")
 
     # ── 6. BLASTn ─────────────────────────────────────────────────────────────
     if args.blastn_local or args.blastn_online:
@@ -704,18 +1008,32 @@ def _run_pipeline(args):
             "failed":     len(blastn.failed_ids),
             "failed_ids": blastn.failed_ids,
         }
+        bn_status, bn_msg = "done", None
         if blastn_seqs and len(blastn.failed_ids) == len(blastn_seqs):
+            bn_status = "error"
+            bn_msg    = "every query failed — see the log for the cause"
             logger.error(
                 "BLASTn: every query failed — the report will carry no BLASTn "
                 "hits. See the log above for the cause."
             )
         elif blastn.failed_ids:
+            bn_status = "partial"
+            bn_msg    = f"{len(blastn.failed_ids)} of {len(blastn_seqs)} queries failed"
             logger.warning(
                 f"BLASTn: {len(blastn.failed_ids)}/{len(blastn_seqs)} query(ies) "
                 f"failed — listed in pipeline_stats.blastn.failed_ids."
             )
         organizer.save_blastn_table(blastn_hits)
-        yield from _tick(t)
+        yield from _tick(t, "blastn", {
+            "Mode":      blastn_info["mode"],
+            "Database":  (Path(args.blastn_local).name if args.blastn_local
+                          else args.blastn_online_db),
+            "Queried":   len(blastn_seqs),
+            "With hits": sum(1 for s in seqs if s.blastn_hits),
+            "Failed":    len(blastn.failed_ids),
+        }, status=bn_status, message=bn_msg)
+    else:
+        _skip("blastn", "BLASTn", "--blastn-local / --blastn-online not set")
 
     # ── 7. Pfam characterisation (confirmed viral only) ───────────────────────
     t          = time.time()
@@ -731,7 +1049,11 @@ def _run_pipeline(args):
             )
             HmmResultAttacher.attach(pfam_hits, pfam_orf_map, pfam_meta, "Pfam")
             organizer.save_hmm_table(pfam_hits, "Pfam")
-    yield from _tick(t)
+    yield from _tick(t, "pfam", {
+        "Queried":      len(viral_seqs),
+        "Pfam domains": sum(1 for s in viral_seqs for o in s.orfs
+                            for d in o.domains if d.database == "Pfam"),
+    })
 
     # ── 8. Taxonomy annotation ────────────────────────────────────────────────
     t = time.time()
@@ -739,18 +1061,28 @@ def _run_pipeline(args):
     ViralFamilyAnnotator(
         str(args._db["fam_high"]), str(args._db["fam_low"])
     ).annotate(seqs)
-    yield from _tick(t)
+    yield from _tick(t, "taxonomy", {
+        "With taxonomy": sum(1 for s in seqs if s.taxonomy is not None),
+    })
 
     # ── 9. Clustering ─────────────────────────────────────────────────────────
     t            = time.time()
     tracker      = SequenceTracker(min_identity=args.min_identity, min_coverage=args.min_coverage)
     viral_for_cl = [s for s in seqs if s.is_viral]
     clusters     = tracker.track(viral_for_cl)
-    yield from _tick(t)
+    yield from _tick(t, "clusters", {
+        "Viral sequences": len(viral_for_cl),
+        "Clusters":        len(clusters),
+    })
 
     # ── 10. Salmon quantification ─────────────────────────────────────────────
     salmon_report = None
-    if args.reads and not _salmon_enabled(args):
+    if not args.reads:
+        _skip("salmon", "Salmon quantification", "--reads not set")
+    elif not _salmon_enabled(args):
+        _skip("salmon", "Salmon quantification",
+              "--skip-salmon" if args.skip_salmon
+              else f"long-read input (--read-type {args.read_type})")
         if args.skip_salmon:
             logger.warning(
                 "Salmon quantification skipped (--skip-salmon). Read coverage "
@@ -765,6 +1097,7 @@ def _run_pipeline(args):
     if _salmon_enabled(args):
         t = time.time()
         from .salmon_quant import SalmonQuantPipeline
+        salmon_error = None
         try:
             salmon_report = SalmonQuantPipeline(
                 threads=args.cpu,
@@ -779,6 +1112,7 @@ def _run_pipeline(args):
                 hk_genes_file      = Path(args.hk_genes) if args.hk_genes else None,
             )
         except Exception as exc:
+            salmon_error = str(exc) or type(exc).__name__
             logger.error(f"Salmon quantification failed — skipping: {exc}")
 
         # Populate salmon_tpm / salmon_reads on each viral sequence so the
@@ -792,7 +1126,11 @@ def _run_pipeline(args):
                 if seq.id in tpm_map:
                     seq.salmon_tpm, seq.salmon_reads = tpm_map[seq.id]
 
-        yield from _tick(t)
+        yield from _tick(t, "salmon", {
+            "Mode":                 "reference" if args.transcriptome else "de novo",
+            "Read files":           len(args.reads),
+            "Viral quantified":     len(salmon_report.viral_quant) if salmon_report else 0,
+        }, status="error" if salmon_error else "done", message=salmon_error)
 
     # ── 10a. Sequence quality (dustmask · self-BLAST · jellyfish · dot plot) ──
     # Structural signals on the confirmed viral sequences — same set the coverage
@@ -810,7 +1148,13 @@ def _run_pipeline(args):
         for seq in seqs:
             if seq.id in sq_map:
                 seq.seq_quality = sq_map[seq.id]
-        yield from _tick(t)
+        yield from _tick(t, "seq_quality", {
+            "Sequences analysed": len(viral_for_sq),
+            "With signals":       len(sq_map),
+            "k-mer size":         args.kmer if args.kmer is not None else "auto",
+        })
+    else:
+        _skip("seq_quality", "Sequence quality", "--skip-seq-quality")
 
     # ── 10b. Read coverage (per-base depth track) ─────────────────────────────
     # Runs for any --reads input (short or long); minimap2 is long-read aware,
@@ -832,7 +1176,13 @@ def _run_pipeline(args):
         )
         for seq in seqs:
             seq.coverage = cov_map.get(seq.id)
-        yield from _tick(t)
+        yield from _tick(t, "coverage", {
+            "Read type":          args.read_type,
+            "Sequences profiled": len(viral_for_cov),
+            "With coverage":      sum(1 for s in viral_for_cov if s.coverage is not None),
+        })
+    else:
+        _skip("coverage", "Read coverage profiling", "--reads not set")
 
     # ── 11. Heuristic scoring (always; no LLM, no NR, no API key) ─────────────
     # Scores exactly the sequences the exporter will emit, so the report's
@@ -840,8 +1190,9 @@ def _run_pipeline(args):
     t = time.time()
     from .exporter import select_confirmed_sequences
     from .score_heuristic import HeuristicScorer
-    HeuristicScorer().score(select_confirmed_sequences(seqs, force=args.force, nr_run=bool(args.nr_db)))
-    yield from _tick(t)
+    heur_seqs = select_confirmed_sequences(seqs, force=args.force, nr_run=bool(args.nr_db))
+    HeuristicScorer().score(heur_seqs)
+    yield from _tick(t, "heuristic", {"Scored": len(heur_seqs)})
 
     # ── 12. LLM scoring (optional) ────────────────────────────────────────────
     # Score the same set the report emits (single source of truth): NR-confirmed
@@ -856,7 +1207,20 @@ def _run_pipeline(args):
                        model_name=args.model_name,
                        mode=mode,
                        api_key=args.api_key).score(viral_seqs)
-        yield from _tick(t)
+        scored     = [s for s in viral_seqs if s.llm_output]
+        api_errors = sum(1 for s in scored if s.llm_output.classification == "api-error")
+        llm_status, llm_msg = "done", None
+        if scored and api_errors == len(scored):
+            llm_status, llm_msg = "error", "every request returned an API error"
+        elif api_errors:
+            llm_status, llm_msg = "partial", f"{api_errors} of {len(scored)} requests returned an API error"
+        yield from _tick(t, "llm", {
+            "Model":      f"{args.model_type} / {args.model_name}",
+            "Scored":     len(scored),
+            "API errors": api_errors,
+        }, status=llm_status, message=llm_msg)
+    else:
+        _skip("llm", "LLM scoring", "--model-type / --model-name not set")
 
     # ── 13. Export: viral FASTA + JSON ────────────────────────────────────────
     t             = time.time()
@@ -872,19 +1236,38 @@ def _run_pipeline(args):
         nuc_seqs=seqs,
         clusters=clusters,
         input_fasta=input_fasta,
-        output_path=json_path,
+        output_path=None,           # written below, once the workflow is complete
         version=__version__,
         salmon_report=salmon_report,
         cap3=cap3_info,
         blastn=blastn_info,
     )
-    yield from _tick(t)
+    # The export step is recorded before the JSON is written so the workflow
+    # it carries is complete (JSON write time itself is not included).
+    _record("export", time.time() - t, "done", {
+        "Confirmed sequences": len(report["sequences"]),
+        "Clusters":            len(report["clusters"]),
+        "Viral FASTA":         Path(viral_fasta).name if viral_fasta else "—",
+    }, None)
+    report["pipeline_stats"]["workflow"] = {
+        "started_at":    started_at,
+        "finished_at":   datetime.now(timezone.utc).isoformat(),
+        "total_seconds": round(time.time() - run_start, 2),
+        "options":       _workflow_options(args),
+        "steps":         workflow,
+    }
+    ReportExporter.write(report, json_path)
+    yield ("step", step, time.time() - t)
+    step += 1
 
     # ── 14. HTML report ───────────────────────────────────────────────────────
     t         = time.time()
     html_path = outdir / f"{stem}_viralquest.html"
     write_report(report, html_path)
-    yield from _tick(t)
+    # Not recorded in the workflow: the JSON (and the workflow it carries) is
+    # already written, so only the progress event is emitted here.
+    yield ("step", step, time.time() - t)
+    step += 1
 
     # Stash for summary
     args._result_seqs         = seqs
@@ -932,73 +1315,55 @@ def _run_live(args) -> None:
     from loguru import logger
     from rich.console import Console
     from rich.live import Live
-    from rich.panel import Panel
-    from rich.progress import (Progress, BarColumn, TextColumn,
-                               MofNCompleteColumn, TimeElapsedColumn)
     from .output import OutputOrganizer
 
-    console  = Console()
-    steps    = _build_steps(args)
-    log_buf  = deque(maxlen=28)
-    timings: dict[int, float] = {}
+    console = Console()
+    steps   = _build_steps(args)
+    records: deque = deque(maxlen=500)   # (time, level, message) — sized for tall terminals
+    state   = _LiveState(steps)
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Redirect loguru to deque + log file (remove default stderr sink first)
+    def _sink(message) -> None:
+        rec   = message.record
+        level = rec["level"].name
+        records.append((rec["time"].strftime("%H:%M:%S"), level, rec["message"]))
+        if level == "WARNING":
+            state.warnings += 1
+        elif level in ("ERROR", "CRITICAL"):
+            state.errors += 1
+
+    # Redirect loguru to the live screen + log file (remove default stderr sink first)
     logger.remove()
-    logger.add(
-        lambda msg: log_buf.append(msg.rstrip()),
-        format="{time:HH:mm:ss} | <level>{level:<8}</level> | {message}",
-        colorize=False,
-    )
+    logger.add(_sink, level="INFO")
     log_id = OutputOrganizer(outdir, Path(args.input).stem).add_log_sink()
 
-    progress = Progress(
-        TextColumn("[bold cyan]{task.description}[/]"),
-        BarColumn(bar_width=38, style="cyan", complete_style="green"),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        expand=False,
-    )
-    task_id = progress.add_task(steps[0], total=len(steps))
+    info   = _workflow_options(args) | {"outdir": outdir}
+    screen = _LiveScreen(state, records, info)
 
     try:
-        with Live(
-            _build_live_display(log_buf, steps, 0, progress),
-            console=console,
-            refresh_per_second=10,
-            screen=False,
-        ) as live:
-            for event in _run_pipeline(args):
-                if event[0] == "step":
-                    _, step_idx, elapsed = event
-                    timings[step_idx] = elapsed
-                    progress.advance(task_id)
-                    next_step = step_idx + 1
-                    if next_step < len(steps):
-                        progress.update(task_id, description=steps[next_step])
-                    else:
-                        progress.update(task_id, description="[green]complete[/]")
-                    live.update(_build_live_display(log_buf, steps, next_step, progress))
-
-                elif event[0] == "batch":
-                    _, step_idx, batch_num, total = event
-                    label = steps[step_idx] if step_idx < len(steps) else "?"
-                    progress.update(
-                        task_id,
-                        description=f"{label}  [dim][{batch_num}/{total}][/dim]",
-                    )
-                    live.update(_build_live_display(log_buf, steps, step_idx, progress))
+        with Live(screen, console=console, refresh_per_second=10, screen=False):
+            try:
+                for event in _run_pipeline(args):
+                    if event[0] == "step":
+                        _, step_idx, elapsed = event
+                        state.finish_step(step_idx, elapsed)
+                    elif event[0] == "batch":
+                        _, _step_idx, batch_num, total = event
+                        state.batch = f"{batch_num}/{total}"
+            except BaseException:
+                # Freeze the screen on the failing step before the traceback prints.
+                state.fail()
+                raise
     finally:
         OutputOrganizer.remove_log_sink(log_id)
+        # Restore loguru to stderr after Live exits
+        logger.remove()
+        logger.add(sys.stderr, colorize=True,
+                   format="{time:HH:mm:ss} | <level>{level:<8}</level> | {message}")
 
-    # Restore loguru to stderr after Live exits
-    logger.remove()
-    logger.add(sys.stderr, colorize=True,
-               format="{time:HH:mm:ss} | <level>{level:<8}</level> | {message}")
-
-    _print_summary(console, args, timings)
+    _print_summary(console, args, state.timings)
 
 
 # ── Summary panel ─────────────────────────────────────────────────────────────

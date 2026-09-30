@@ -191,16 +191,22 @@ class ReportExporter:
             report["salmon_quant"] = _to_serializable(salmon_report)
 
         if output_path is not None:
-            path = Path(output_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as fh:
-                json.dump(report, fh, indent=2, ensure_ascii=False)
-            logger.success(
-                f"Report written → '{path}'  "
-                f"({len(confirmed)} sequences, {len(confirmed_clusters)} clusters)."
-            )
+            self.write(report, output_path)
 
         return report
+
+    @staticmethod
+    def write(report: dict, output_path: str | Path) -> Path:
+        """Write a report dict (from export()) as indented JSON."""
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(report, fh, indent=2, ensure_ascii=False)
+        logger.success(
+            f"Report written → '{path}'  "
+            f"({len(report['sequences'])} sequences, {len(report['clusters'])} clusters)."
+        )
+        return path
 
     # --- private --------------------------------------------------------------
 
