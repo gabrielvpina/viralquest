@@ -49,6 +49,8 @@ class BlastnRunner:
     threads         : -num_threads value passed to blastn (LOCAL only)
     batch_size      : sequences per blastn subprocess call (LOCAL only)
     request_delay   : seconds between NCBI requests; default 0.4 s (ONLINE only)
+    online_db       : NCBI nucleotide database to query; default "nt" (ONLINE only)
+    email           : contact e-mail sent to NCBI with each request (ONLINE only)
     e_value         : e-value cutoff (both modes)
     max_target_seqs : maximum hits returned per query (both modes)
     outdir          : directory for temporary files (LOCAL only)
@@ -65,6 +67,8 @@ class BlastnRunner:
         outdir: str | None = None,
         batch_size: int = 200,
         request_delay: float = 0.4,
+        online_db: str = "nt",
+        email: str | None = None,
     ):
         if mode == BlastnMode.LOCAL and not db_path:
             raise ValueError("db_path is required for BlastnMode.LOCAL.")
@@ -78,6 +82,9 @@ class BlastnRunner:
         self.outdir          = Path(outdir) if outdir else Path(tempfile.gettempdir()) / "vq_blastn"
         self.outdir.mkdir(parents=True, exist_ok=True)
         self.batch_size      = batch_size
+        self.online_db       = online_db
+        self.email           = email
+        self.failed_ids: list[str] = []   # queries whose search errored (reset per run)
         self.request_delay   = request_delay
 
     # --- public ---
@@ -88,6 +95,7 @@ class BlastnRunner:
         Attaching results to NucSequence objects is done separately by
         BlastnResultAttacher.
         """
+        self.failed_ids = []
         if not nuc_seqs:
             logger.warning("BLASTn: no sequences to search — skipping.")
             return []
@@ -157,6 +165,7 @@ class BlastnRunner:
                 logger.success(f"BLASTn [local] batch {i}: {len(hits)} hit(s)")
             except Exception as exc:
                 logger.error(f"BLASTn [local] batch {i} failed: {exc}")
+                self.failed_ids.extend(s.id for s in batch)
 
         return all_hits
 
@@ -170,18 +179,23 @@ class BlastnRunner:
                 "Biopython is required for online BLASTn. "
                 "Install it with: pip install biopython"
             )
+            self.failed_ids = [s.id for s in seqs]
             return []
+
+        if self.email:
+            NCBIWWW.email = self.email
 
         all_hits: list[BlastnResult] = []
 
         for i, seq in enumerate(seqs):
             logger.info(
-                f"BLASTn [online] [{i + 1}/{len(seqs)}] querying '{seq.id}' ..."
+                f"BLASTn [online] [{i + 1}/{len(seqs)}] querying '{seq.id}' "
+                f"against '{self.online_db}' ..."
             )
             try:
                 result_handle = NCBIWWW.qblast(
                     program="blastn",
-                    database="nt",
+                    database=self.online_db,
                     sequence=seq.sequence,
                     hitlist_size=self.max_target_seqs,
                     expect=self.e_value,
@@ -194,6 +208,7 @@ class BlastnRunner:
 
             except Exception as exc:
                 logger.error(f"BLASTn [online] '{seq.id}' failed: {exc}")
+                self.failed_ids.append(seq.id)
 
             # rate-limit: skip delay after the last sequence
             if i < len(seqs) - 1:

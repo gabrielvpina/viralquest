@@ -602,6 +602,7 @@ def _run_pipeline(args):
     input_fasta = fp.input_fasta
 
     cap3_info = None   # populated only when --cap3 is used; drives the report's CAP3 card
+    blastn_info = None # populated only when BLASTn runs; records failed queries
     if args.cap3:
         cap3_res   = Cap3Runner(args.input, outdir=str(outdir / "cap3")).cap3_runner()
         contigs_p  = FastaParser(str(cap3_res.contigs));  contigs_p.read_input_file()
@@ -684,7 +685,9 @@ def _run_pipeline(args):
                                   threads=args.cpu, outdir=str(organizer.blastn_dir))
         else:
             blastn = BlastnRunner(mode=BlastnMode.ONLINE,
-                                  outdir=str(organizer.blastn_dir))
+                                  outdir=str(organizer.blastn_dir),
+                                  online_db=args.blastn_online_db,
+                                  email=args.blastn_online)
         # NR run → only NR-confirmed sequences; no NR → all viral sequences
         blastn_seqs = (
             [s for s in seqs if s.blastx_nr_hits]
@@ -693,6 +696,24 @@ def _run_pipeline(args):
         )
         blastn_hits = blastn.run(blastn_seqs)
         BlastnResultAttacher.attach(blastn_hits, seqs)
+        blastn_info = {
+            "run":        True,
+            "mode":       blastn.mode.value,
+            "db":         args.blastn_local or args.blastn_online_db,
+            "queried":    len(blastn_seqs),
+            "failed":     len(blastn.failed_ids),
+            "failed_ids": blastn.failed_ids,
+        }
+        if blastn_seqs and len(blastn.failed_ids) == len(blastn_seqs):
+            logger.error(
+                "BLASTn: every query failed — the report will carry no BLASTn "
+                "hits. See the log above for the cause."
+            )
+        elif blastn.failed_ids:
+            logger.warning(
+                f"BLASTn: {len(blastn.failed_ids)}/{len(blastn_seqs)} query(ies) "
+                f"failed — listed in pipeline_stats.blastn.failed_ids."
+            )
         organizer.save_blastn_table(blastn_hits)
         yield from _tick(t)
 
@@ -782,7 +803,7 @@ def _run_pipeline(args):
         t = time.time()
         from .seq_quality import SequenceQualityPipeline
         from .exporter    import select_confirmed_sequences
-        viral_for_sq = select_confirmed_sequences(seqs, force=args.force)
+        viral_for_sq = select_confirmed_sequences(seqs, force=args.force, nr_run=bool(args.nr_db))
         sq_map = SequenceQualityPipeline(
             threads=args.cpu, kmer_size=args.kmer,
         ).run(viral_seqs=viral_for_sq, outdir=outdir / "seq_quality")
@@ -800,7 +821,7 @@ def _run_pipeline(args):
         t = time.time()
         from .coverage import CoveragePipeline
         from .exporter import select_confirmed_sequences
-        viral_for_cov = select_confirmed_sequences(seqs, force=args.force)
+        viral_for_cov = select_confirmed_sequences(seqs, force=args.force, nr_run=bool(args.nr_db))
         cov_map = CoveragePipeline(
             threads=args.cpu, low_memory=args.low_memory,
             read_type=args.read_type,
@@ -819,7 +840,7 @@ def _run_pipeline(args):
     t = time.time()
     from .exporter import select_confirmed_sequences
     from .score_heuristic import HeuristicScorer
-    HeuristicScorer().score(select_confirmed_sequences(seqs, force=args.force))
+    HeuristicScorer().score(select_confirmed_sequences(seqs, force=args.force, nr_run=bool(args.nr_db)))
     yield from _tick(t)
 
     # ── 12. LLM scoring (optional) ────────────────────────────────────────────
@@ -828,7 +849,7 @@ def _run_pipeline(args):
     if args.model_type and args.model_name:
         t          = time.time()
         from .exporter import select_confirmed_sequences
-        viral_seqs = select_confirmed_sequences(seqs, force=args.force)
+        viral_seqs = select_confirmed_sequences(seqs, force=args.force, nr_run=bool(args.nr_db))
         from .score_ai import SequenceScorer, LlmMode
         mode = LlmMode.HIGH if args.llm_tokens == "high" else LlmMode.LOW
         SequenceScorer(model_type=args.model_type,
@@ -846,7 +867,7 @@ def _run_pipeline(args):
     )
     viral_fasta   = organizer.save_viral_contigs(fasta_seqs)
     json_path     = outdir / f"{stem}_viralquest.json"
-    exporter      = ReportExporter(force=args.force)
+    exporter      = ReportExporter(force=args.force, nr_run=bool(args.nr_db))
     report        = exporter.export(
         nuc_seqs=seqs,
         clusters=clusters,
@@ -855,6 +876,7 @@ def _run_pipeline(args):
         version=__version__,
         salmon_report=salmon_report,
         cap3=cap3_info,
+        blastn=blastn_info,
     )
     yield from _tick(t)
 
