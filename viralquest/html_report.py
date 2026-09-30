@@ -63,6 +63,7 @@ def _enrich_report(report: dict) -> dict:
     report["heuristic_stats"] = _build_heuristic_stats(seqs, ps)
     report["salmon_stats"]    = _build_salmon_stats(report.get("salmon_quant"))
     report["seq_quality_stats"] = _build_seq_quality_stats(seqs)
+    report["workflow"]        = ps.get("workflow")   # None for reports from older versions
     return report
 
 

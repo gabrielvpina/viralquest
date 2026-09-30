@@ -24,6 +24,8 @@ function vqInitStats(report) {
   const salmon = report.salmon_stats     || {};
   const seqQual = report.seq_quality_stats || {};
   const seqs   = report.sequences        || [];
+  const wf     = report.workflow || (report.pipeline_stats || {}).workflow || null;
+  const hasWf  = !!(wf && (wf.steps || []).length);
 
   // Derived presence flags — computed directly from sequence data so old
   // report files without the pre-aggregated stats keys still work correctly.
@@ -38,7 +40,10 @@ function vqInitStats(report) {
   const fmtNum = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString();
 
   // ── Page scaffold ──────────────────────────────────────────────────────
+  // The workflow card carries input, start time and version, so the static
+  // header is only kept for older reports that have no workflow records.
   el.innerHTML = `
+    ${hasWf ? '' : `
     <div class="vq-section-header">
       <div>
         <div class="vq-section-title">General Statistics</div>
@@ -48,9 +53,12 @@ function vqInitStats(report) {
           &nbsp;·&nbsp; ViralQuest v${esc(meta.viralquest_version || '?')}
         </div>
       </div>
-    </div>
+    </div>`}
 
     <div class="vq-stats-page">
+
+      <!-- Pipeline workflow — only for reports that carry per-step records -->
+      ${hasWf ? _workflowCardHtml(wf, meta.viralquest_version) : ''}
 
       <!-- Hero KPI row -->
       <div class="vq-stats-row vq-stats-row--top">
@@ -297,6 +305,9 @@ function vqInitStats(report) {
   });
   renderTax();
 
+  // Pipeline workflow flowchart + step details
+  if (hasWf) _renderWorkflow(wf);
+
   // HMM bars
   _renderHMMBars(hmm);
 
@@ -425,6 +436,269 @@ function _miniRow(label, value) {
       <span style="color:var(--vq-text);font-weight:600;font-variant-numeric:tabular-nums;
                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${value}</span>
     </div>`;
+}
+
+// ────────────────────────────────────────────────────────────────────────
+//  Pipeline workflow card — flowchart of every step (run / skipped),
+//  success path between completed steps, per-step time and details.
+// ────────────────────────────────────────────────────────────────────────
+
+const _WF_SHORT = {
+  parse: 'Parse FASTA', orfs: 'ORFs', refseq: 'RefSeq', hmm: 'HMM filter',
+  nr: 'Diamond NR', blastn: 'BLASTn', pfam: 'Pfam', taxonomy: 'Taxonomy',
+  clusters: 'Clusters', salmon: 'Salmon', seq_quality: 'Seq quality',
+  coverage: 'Coverage', heuristic: 'Heuristic', llm: 'LLM', export: 'Export',
+};
+const _WF_STATUS = {
+  done:    { label: 'Completed', color: 'var(--vq-success)', glyph: '✓' },
+  partial: { label: 'Partial',   color: 'var(--vq-warning)', glyph: '!' },
+  error:   { label: 'Error',     color: 'var(--vq-danger)',  glyph: '✕' },
+  skipped: { label: 'Skipped',   color: 'var(--vq-text-3)',  glyph: ''  },
+};
+
+function _fmtDur(sec) {
+  if (sec == null || isNaN(sec)) return '—';
+  if (sec < 1)    return (sec * 1000).toFixed(0) + ' ms';
+  if (sec < 60)   return sec.toFixed(1) + ' s';
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  if (sec < 3600) return `${m}m ${String(s).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+function _wfOverall(steps) {
+  if (steps.some(s => s.status === 'error'))   return 'error';
+  if (steps.some(s => s.status === 'partial')) return 'partial';
+  return 'done';
+}
+
+function _wfPill(status, text) {
+  return `<span class="vq-wf-pill vq-wf-pill--${status}">${VQ.esc(text ?? _WF_STATUS[status].label)}</span>`;
+}
+
+function _workflowCardHtml(wf, version) {
+  const esc     = VQ.esc;
+  const steps   = wf.steps || [];
+  const ran     = steps.filter(s => s.status !== 'skipped');
+  const skipped = steps.length - ran.length;
+  const overall = _wfOverall(steps);
+  const issues  = steps.filter(s => s.status === 'error' || s.status === 'partial');
+  const o       = wf.options || {};
+
+  const opt = (label, value, on = true) =>
+    `<span class="vq-wf-opt${on ? '' : ' vq-wf-opt--off'}">
+       <span class="vq-wf-opt__k">${esc(label)}</span>${esc(value)}</span>`;
+  const reads = (o.reads || []).length
+    ? `${o.reads.length} file${o.reads.length > 1 ? 's' : ''}${o.read_type ? ' · ' + o.read_type : ''}`
+    : 'off';
+
+  const overallText = overall === 'done' ? 'Completed'
+                    : overall === 'partial' ? 'Completed with warnings'
+                    : 'Completed with errors';
+
+  return `
+    <div class="vq-chart-card vq-wf-card" id="stats-workflow-card" style="min-height:auto">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Pipeline Workflow</div>
+          <div class="vq-chart-card__sub">
+            started ${esc(wf.started_at ? new Date(wf.started_at).toLocaleString() : '—')}
+            &nbsp;·&nbsp; ${ran.length} step${ran.length === 1 ? '' : 's'} run
+            ${skipped ? `&nbsp;·&nbsp; ${skipped} skipped` : ''}
+            ${version ? `&nbsp;·&nbsp; ViralQuest v${esc(version)}` : ''}
+            &nbsp;·&nbsp; click a step for details
+          </div>
+        </div>
+        <div class="vq-wf-head-right">
+          ${_wfPill(overall, overallText)}
+          <div class="vq-chart-card__big" style="margin-top:0">${_fmtDur(wf.total_seconds)}</div>
+        </div>
+      </div>
+
+      <div class="vq-wf-opts">
+        ${o.input ? opt('Input', o.input) : ''}
+        ${o.threads != null ? opt('Threads', o.threads) : ''}
+        ${opt('CAP3', o.cap3 ? 'on' : 'off', !!o.cap3)}
+        ${opt('NR', o.nr_db || 'off', !!o.nr_db)}
+        ${opt('BLASTn', o.blastn || 'off', !!o.blastn)}
+        ${opt('Reads', reads, !!(o.reads || []).length)}
+        ${o.transcriptome ? opt('Transcriptome', o.transcriptome) : ''}
+        ${opt('LLM', o.llm || 'off', !!o.llm)}
+        ${o.force ? opt('Force', 'on') : ''}
+      </div>
+
+      ${issues.length ? `
+      <div class="vq-wf-issues">
+        ${issues.map(s => `
+          <button type="button" class="vq-wf-issue vq-wf-issue--${s.status}" data-wf-key="${esc(s.key)}">
+            <strong>${esc(_WF_SHORT[s.key] || s.label)}</strong>
+            <span>${esc(s.message || _WF_STATUS[s.status].label)}</span>
+          </button>`).join('')}
+      </div>` : ''}
+
+      <div class="vq-wf-flow" id="stats-workflow-flow"></div>
+      <div class="vq-wf-timebar" id="stats-workflow-timebar"></div>
+      <div class="vq-wf-detail" id="stats-workflow-detail"></div>
+    </div>`;
+}
+
+function _renderWorkflow(wf) {
+  const wrap = document.getElementById('stats-workflow-flow');
+  if (!wrap) return;
+  const esc   = VQ.esc;
+  const steps = wf.steps || [];
+  const total = wf.total_seconds || steps.reduce((a, s) => a + (s.seconds || 0), 0);
+
+  // ── Flowchart (SVG) ──────────────────────────────────────────────────
+  const SLOT   = Math.max((wrap.clientWidth || 0) / steps.length, 86);
+  const W      = SLOT * steps.length;
+  const Y_MAIN = 26, Y_SKIP = 100, H = 146;
+  const xOf    = i => SLOT * i + SLOT / 2;
+
+  const svg = d3.create('svg')
+    .attr('width', W).attr('height', H)
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .style('display', 'block');
+
+  // Success path: connects consecutive executed steps along the main lane;
+  // each segment takes the colour of the step it leads into.
+  const ran = steps.map((s, i) => ({ s, i })).filter(d => d.s.status !== 'skipped');
+  ran.forEach((d, k) => {
+    if (!k) return;
+    const prev = ran[k - 1];
+    svg.append('line')
+      .attr('x1', xOf(prev.i)).attr('y1', Y_MAIN)
+      .attr('x2', xOf(d.i)).attr('y2', Y_MAIN)
+      .attr('stroke', _WF_STATUS[d.s.status].color)
+      .attr('stroke-width', 3).attr('stroke-linecap', 'round')
+      .attr('opacity', d.s.status === 'done' ? 0.55 : 0.85);
+  });
+
+  // Skipped steps hang below the path on a dashed branch (option not chosen).
+  steps.forEach((s, i) => {
+    if (s.status !== 'skipped') return;
+    svg.append('path')
+      .attr('d', `M${xOf(i)},${Y_MAIN + 4} C${xOf(i)},${Y_MAIN + 40} ${xOf(i)},${Y_SKIP - 40} ${xOf(i)},${Y_SKIP - 9}`)
+      .attr('fill', 'none')
+      .attr('stroke', 'var(--vq-border-dark)')
+      .attr('stroke-width', 1.2).attr('stroke-dasharray', '3,3');
+  });
+
+  const nodes = svg.selectAll('g.vq-wf-node').data(steps).join('g')
+    .attr('class', s => `vq-wf-node vq-wf-node--${s.status}`)
+    .attr('data-wf-key', s => s.key)
+    .attr('transform', (s, i) => `translate(${xOf(i)},${s.status === 'skipped' ? Y_SKIP : Y_MAIN})`)
+    .style('cursor', 'pointer');
+
+  nodes.append('circle').attr('class', 'vq-wf-node__halo')
+    .attr('r', s => s.status === 'skipped' ? 13 : 17)
+    .attr('fill', 'none').attr('stroke', 'var(--vq-accent)').attr('stroke-width', 2)
+    .attr('opacity', 0);
+
+  nodes.append('circle')
+    .attr('r', s => s.status === 'skipped' ? 8 : 11)
+    .attr('fill', s => s.status === 'skipped' ? 'var(--vq-surface)' : _WF_STATUS[s.status].color)
+    .attr('stroke', s => s.status === 'skipped' ? 'var(--vq-border-dark)' : 'var(--vq-surface)')
+    .attr('stroke-width', s => s.status === 'skipped' ? 1.4 : 2)
+    .attr('stroke-dasharray', s => s.status === 'skipped' ? '2,2' : null);
+
+  nodes.filter(s => s.status !== 'skipped').append('text')
+    .attr('text-anchor', 'middle').attr('dy', '0.35em')
+    .attr('font-size', 11).attr('font-weight', 700).attr('fill', '#fff')
+    .attr('pointer-events', 'none')
+    .text(s => _WF_STATUS[s.status].glyph);
+
+  nodes.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('y', s => s.status === 'skipped' ? 22 : 30)
+    .attr('font-size', 11)
+    .attr('font-weight', s => s.status === 'skipped' ? 400 : 600)
+    .attr('fill', s => s.status === 'skipped' ? 'var(--vq-text-3)' : 'var(--vq-text)')
+    .text(s => _WF_SHORT[s.key] || s.key);
+
+  nodes.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('y', s => s.status === 'skipped' ? 34 : 44)
+    .attr('font-size', 10)
+    .attr('font-family', 'var(--vq-font-mono)')
+    .attr('fill', s => s.status === 'skipped' ? 'var(--vq-text-3)' : _WF_STATUS[s.status].color)
+    .text(s => s.status === 'skipped' ? 'skipped' : _fmtDur(s.seconds));
+
+  nodes
+    .on('mousemove', (evt, s) => VQ.tooltipShow(`
+      <div class="vq-tooltip__title">${esc(s.label)}</div>
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Status</span><span>${_WF_STATUS[s.status].label}</span>
+        ${s.seconds != null ? `<span class="vq-tooltip__key">Time</span><span>${_fmtDur(s.seconds)}</span>` : ''}
+        ${s.message ? `<span class="vq-tooltip__key">Note</span><span>${esc(s.message)}</span>` : ''}
+      </div>`, evt))
+    .on('mouseleave', VQ.tooltipHide)
+    .on('click', (evt, s) => select(s.key));
+
+  wrap.innerHTML = '';
+  wrap.appendChild(svg.node());
+
+  // ── Time breakdown bar ───────────────────────────────────────────────
+  const bar = document.getElementById('stats-workflow-timebar');
+  const timed = steps.filter(s => s.seconds != null && s.seconds > 0);
+  if (bar && timed.length && total > 0) {
+    const longest = timed.reduce((a, s) => (s.seconds > a.seconds ? s : a));
+    bar.innerHTML = `
+      <div class="vq-wf-timebar__track">
+        ${timed.map((s, i) => `
+          <div class="vq-wf-timebar__seg" data-wf-key="${esc(s.key)}"
+               style="flex:${s.seconds} 1 0;opacity:${i % 2 ? 0.55 : 0.9}"></div>`).join('')}
+      </div>
+      <div class="vq-wf-timebar__legend">
+        <span>time per step</span>
+        <span>longest: <strong>${esc(_WF_SHORT[longest.key] || longest.label)}</strong>
+          · ${_fmtDur(longest.seconds)} (${_pct(longest.seconds, total)})</span>
+      </div>`;
+    bar.querySelectorAll('.vq-wf-timebar__seg').forEach(seg => {
+      const s = steps.find(x => x.key === seg.dataset.wfKey);
+      seg.addEventListener('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${esc(s.label)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Time</span><span>${_fmtDur(s.seconds)}</span>
+          <span class="vq-tooltip__key">of total</span><span>${_pct(s.seconds, total)}</span>
+        </div>`, evt));
+      seg.addEventListener('mouseleave', VQ.tooltipHide);
+      seg.addEventListener('click', () => select(s.key));
+    });
+  }
+
+  // ── Step details ─────────────────────────────────────────────────────
+  const detail = document.getElementById('stats-workflow-detail');
+  function select(key) {
+    const s = steps.find(x => x.key === key);
+    if (!s || !detail) return;
+    svg.selectAll('g.vq-wf-node').each(function (d) {
+      d3.select(this).select('.vq-wf-node__halo').attr('opacity', d.key === key ? 0.9 : 0);
+    });
+    const rows = Object.entries(s.details || {});
+    detail.innerHTML = `
+      <div class="vq-wf-detail__head">
+        <div class="vq-wf-detail__title">${esc(s.label)}</div>
+        ${_wfPill(s.status)}
+        ${s.seconds != null
+          ? `<span class="vq-wf-detail__time">${_fmtDur(s.seconds)} · ${_pct(s.seconds, total)} of total</span>`
+          : ''}
+      </div>
+      ${s.message ? `<div class="vq-wf-detail__msg vq-wf-detail__msg--${s.status}">${esc(s.message)}</div>` : ''}
+      ${rows.length ? `
+        <div class="vq-wf-detail__grid">
+          ${rows.map(([k, v]) => _miniRow(k,
+              esc(typeof v === 'number' ? v.toLocaleString() : String(v ?? '—')))).join('')}
+        </div>` : ''}`;
+  }
+
+  document.querySelectorAll('#stats-workflow-card .vq-wf-issue').forEach(btn =>
+    btn.addEventListener('click', () => select(btn.dataset.wfKey)));
+
+  // Open on the first problem, otherwise on the slowest step.
+  const first = steps.find(s => s.status === 'error')
+             || steps.find(s => s.status === 'partial')
+             || (timed.length ? timed.reduce((a, s) => (s.seconds > a.seconds ? s : a)) : steps[0]);
+  select(first.key);
 }
 
 function _pct(a, b) {
