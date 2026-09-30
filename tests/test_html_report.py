@@ -34,7 +34,7 @@ MINIMAL_REPORT: dict = {
 
 def _seq(seq_id: str, phylum: str, order: str, family: str, genus: str) -> dict:
     return {
-        "seq_id": seq_id,
+        "id": seq_id,   # exported sequences carry their id under "id"
         "taxonomy": {
             "phylum": phylum,
             "order": order,
@@ -255,7 +255,11 @@ class TestRenderTemplate:
         import shutil
         real_comp = Path(__file__).parent.parent / "viralquest" / "components"
         for f in real_comp.iterdir():
-            if f.name != "shell.html":
+            if f.name == "shell.html":
+                continue
+            if f.is_dir():                      # e.g. components/assets/
+                shutil.copytree(f, tmp_path / f.name)
+            else:
                 shutil.copy(f, tmp_path / f.name)
 
         with warnings.catch_warnings(record=True) as w:
@@ -463,3 +467,21 @@ class TestCli:
                 d3_js=STUB_D3,
             )
         assert out_html.exists()
+
+
+# ---------------------------------------------------------------------------
+# _enrich_report — workflow card data
+# ---------------------------------------------------------------------------
+
+class TestEnrichWorkflow:
+    def test_workflow_exposed_from_pipeline_stats(self):
+        from viralquest.html_report import _enrich_report
+        wf = {"total_seconds": 12.5, "steps": [{"key": "parse", "status": "done"}]}
+        report = _enrich_report({"sequences": [], "clusters": [],
+                                 "pipeline_stats": {"workflow": wf}})
+        assert report["workflow"] == wf
+
+    def test_older_reports_without_workflow_get_none(self):
+        from viralquest.html_report import _enrich_report
+        report = _enrich_report({"sequences": [], "clusters": [], "pipeline_stats": {}})
+        assert report["workflow"] is None

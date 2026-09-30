@@ -28,7 +28,9 @@ _OUTFMT = (
 
 class BlastnRunner:
     """
-    Runs BLASTn on viral-flagged NucSequence objects only (is_viral=True).
+    Runs BLASTn on the NucSequence objects it is given. It does not filter:
+    the caller (cli.py) selects them — NR-confirmed sequences with --nr-db,
+    is_viral sequences otherwise.
 
     Modes
     -----
@@ -91,7 +93,8 @@ class BlastnRunner:
 
     def run(self, nuc_seqs: list[NucSequence]) -> list[BlastnResult]:
         """
-        Filter to viral sequences, run BLASTn, and return all hits.
+        Run BLASTn on every given sequence and return all hits.
+        Queries that error are listed in ``self.failed_ids`` (reset per call).
         Attaching results to NucSequence objects is done separately by
         BlastnResultAttacher.
         """

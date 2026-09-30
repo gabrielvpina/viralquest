@@ -105,7 +105,7 @@ class TestBlastnRunnerInit:
 
 
 # ---------------------------------------------------------------------------
-# BlastnRunner.run  — filtering logic
+# BlastnRunner.run  — dispatch (sequence selection happens in cli.py)
 # ---------------------------------------------------------------------------
 
 class TestBlastnRunnerRun:
@@ -116,44 +116,29 @@ class TestBlastnRunnerRun:
             outdir=str(tmp_path),
         )
 
-    def test_skips_non_viral(self, tmp_path):
-        seq = make_seq(is_viral=False, with_nr_hit=True)
+    def test_passes_every_given_sequence(self, tmp_path):
+        # The runner no longer filters: cli.py picks the sequences
+        # (NR-confirmed with --nr-db, is_viral otherwise).
+        seqs = [
+            make_seq("v1", is_viral=True,  with_nr_hit=True),
+            make_seq("v2", is_viral=True,  with_nr_hit=False),
+            make_seq("v3", is_viral=False, with_nr_hit=False),
+        ]
         runner = self._runner(tmp_path)
         with patch.object(runner, "_run_local", return_value=[]) as mock:
-            runner.run([seq])
-        mock.assert_not_called()
-
-    def test_skips_viral_without_nr_hits(self, tmp_path):
-        seq = make_seq(is_viral=True, with_nr_hit=False)
-        runner = self._runner(tmp_path)
-        with patch.object(runner, "_run_local", return_value=[]) as mock:
-            runner.run([seq])
-        mock.assert_not_called()
-
-    def test_passes_viral_with_nr_hits(self, tmp_path):
-        seq = make_seq(is_viral=True, with_nr_hit=True)
-        runner = self._runner(tmp_path)
-        with patch.object(runner, "_run_local", return_value=[]) as mock:
-            runner.run([seq])
+            runner.run(seqs)
         mock.assert_called_once()
-        called_with = mock.call_args[0][0]
-        assert len(called_with) == 1
-        assert called_with[0].id == "seq1"
+        assert [s.id for s in mock.call_args[0][0]] == ["v1", "v2", "v3"]
 
     def test_empty_input_returns_empty(self, tmp_path):
         runner = self._runner(tmp_path)
         assert runner.run([]) == []
 
-    def test_mixed_seqs_only_qualified_passed(self, tmp_path):
-        viral_confirmed = make_seq("v1", is_viral=True, with_nr_hit=True)
-        viral_no_nr     = make_seq("v2", is_viral=True,  with_nr_hit=False)
-        non_viral       = make_seq("v3", is_viral=False, with_nr_hit=True)
+    def test_empty_input_does_not_search(self, tmp_path):
         runner = self._runner(tmp_path)
-        with patch.object(runner, "_run_local", return_value=[]) as mock:
-            runner.run([viral_confirmed, viral_no_nr, non_viral])
-        passed = mock.call_args[0][0]
-        assert len(passed) == 1
-        assert passed[0].id == "v1"
+        with patch.object(runner, "_run_local") as mock:
+            runner.run([])
+        mock.assert_not_called()
 
     def test_routes_online_mode(self, tmp_path):
         seq = make_seq(is_viral=True, with_nr_hit=True)
@@ -161,6 +146,74 @@ class TestBlastnRunnerRun:
         with patch.object(runner, "_run_online", return_value=[]) as mock:
             runner.run([seq])
         mock.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# BlastnRunner — failed query tracking
+# ---------------------------------------------------------------------------
+
+class TestBlastnFailedIds:
+    def test_local_failed_batch_records_its_ids(self, tmp_path):
+        runner = BlastnRunner(mode=BlastnMode.LOCAL, db_path="/fake/db",
+                              outdir=str(tmp_path), batch_size=1)
+        empty = tmp_path / "empty.tsv"
+        empty.write_text("")
+        with patch.object(runner, "_run_batch",
+                          side_effect=[RuntimeError("boom"), empty]):
+            runner.run([make_seq("a"), make_seq("b")])
+        assert runner.failed_ids == ["a"]
+
+    def test_local_all_ok_leaves_failed_ids_empty(self, tmp_path):
+        runner = BlastnRunner(mode=BlastnMode.LOCAL, db_path="/fake/db",
+                              outdir=str(tmp_path))
+        empty = tmp_path / "empty.tsv"
+        empty.write_text("")
+        with patch.object(runner, "_run_batch", return_value=empty):
+            runner.run([make_seq("a")])
+        assert runner.failed_ids == []
+
+    def test_failed_ids_reset_between_runs(self, tmp_path):
+        runner = BlastnRunner(mode=BlastnMode.LOCAL, db_path="/fake/db",
+                              outdir=str(tmp_path))
+        with patch.object(runner, "_run_batch", side_effect=RuntimeError("x")):
+            runner.run([make_seq("a")])
+            runner.run([make_seq("b")])
+        assert runner.failed_ids == ["b"]
+
+    def test_online_failed_query_records_its_id(self, tmp_path):
+        from Bio.Blast import NCBIWWW
+        runner = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path),
+                              request_delay=0)
+        with patch.object(NCBIWWW, "qblast", side_effect=RuntimeError("timeout")):
+            runner.run([make_seq("a"), make_seq("b")])
+        assert runner.failed_ids == ["a", "b"]
+
+
+# ---------------------------------------------------------------------------
+# BlastnRunner — online database and e-mail
+# ---------------------------------------------------------------------------
+
+class TestBlastnOnlineOptions:
+    def _qblast_kwargs(self, tmp_path, **runner_kw) -> dict:
+        from Bio.Blast import NCBIWWW
+        runner = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path),
+                              request_delay=0, **runner_kw)
+        with patch.object(NCBIWWW, "qblast", side_effect=RuntimeError("stop")) as mock:
+            runner.run([make_seq("a")])
+        return mock.call_args.kwargs
+
+    def test_default_database_is_nt(self, tmp_path):
+        assert self._qblast_kwargs(tmp_path)["database"] == "nt"
+
+    def test_chosen_database_is_used(self, tmp_path):
+        kw = self._qblast_kwargs(tmp_path, online_db="refseq_viruses_rep_genomes")
+        assert kw["database"] == "refseq_viruses_rep_genomes"
+
+    def test_email_is_set_on_ncbiwww(self, tmp_path):
+        from Bio.Blast import NCBIWWW
+        with patch.object(NCBIWWW, "email", None):
+            self._qblast_kwargs(tmp_path, email="me@example.org")
+            assert NCBIWWW.email == "me@example.org"
 
 
 # ---------------------------------------------------------------------------

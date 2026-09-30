@@ -244,12 +244,39 @@ class TestHmmResultAttacher:
         assert d.type == ""
         assert d.details == ""
 
-    def test_multiple_hits_attached(self):
+    def test_multiple_hits_at_distinct_positions_attached(self):
         orf = make_orf("orf1")
-        hits = [self._hit(query="HMM001"), self._hit(query="HMM002")]
+        hits = [self._hit(query="HMM001", env_from=1,   env_to=50),
+                self._hit(query="HMM002", env_from=100, env_to=150)]
         count = HmmResultAttacher.attach(hits, {"orf1": orf}, {}, "RVDB")
         assert count == 2
-        assert len(orf.domains) == 2
+
+    def test_filter_db_collapses_same_position_to_best_hit(self):
+        orf = make_orf("orf1")
+        hits = [self._hit(query="HMM001", score=80.0),
+                self._hit(query="HMM002", score=120.0)]   # same envelope
+        count = HmmResultAttacher.attach(hits, {"orf1": orf}, {}, "RVDB")
+        assert count == 1
+        assert orf.domains[0].target == "HMM002"
+
+    def test_filter_db_collapses_contained_hit(self):
+        orf = make_orf("orf1")
+        hits = [self._hit(query="WIDE", score=150.0, env_from=1,  env_to=200),
+                self._hit(query="NARROW", score=90.0, env_from=20, env_to=80)]
+        assert HmmResultAttacher.attach(hits, {"orf1": orf}, {}, "Vfam") == 1
+        assert orf.domains[0].target == "WIDE"
+
+    def test_pfam_keeps_every_domain(self):
+        orf = make_orf("orf1")
+        hits = [self._hit(query="PF001"), self._hit(query="PF002")]   # same envelope
+        assert HmmResultAttacher.attach(hits, {"orf1": orf}, {}, "Pfam") == 2
+
+    def test_raw_counts_recorded_before_dedup(self):
+        orf = make_orf("orf1")
+        hits = [self._hit(query="HMM001"), self._hit(query="HMM002")]
+        HmmResultAttacher.attach(hits, {"orf1": orf}, {}, "RVDB")
+        assert orf.raw_hmm_counts["RVDB"] == 2   # both counted…
+        assert len(orf.domains) == 1             # …but only the best is attached
 
 
 # ---------------------------------------------------------------------------

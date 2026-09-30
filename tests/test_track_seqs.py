@@ -31,6 +31,19 @@ def make_seq(seq_id: str, sequence: str, species: str = "") -> NucSequence:
     return seq
 
 
+def _hit(pident: float = 92.5, qcov: float = 85.0,
+         sstart: int = 10, send: int = 350,
+         qstart: int = 1,  qend: int = 300) -> dict:
+    """A best-hit record as returned by BlastnAligner._parse_blastn."""
+    return {"pident": pident, "qcov": qcov, "qstart": qstart, "qend": qend,
+            "sstart": sstart, "send": send, "bitscore": 200.0}
+
+
+def _align_all(rep, members):
+    """_run_blastn stand-in: every member aligns well to the representative."""
+    return {m.id: _hit() for m in members}
+
+
 def _tabline(
     qid: str   = "q1",   sid: str  = "s1",
     pident: str = "95.0", aln: str = "200",
@@ -223,9 +236,8 @@ class TestBlastnAlignerAlign:
     def test_member_with_hit_gets_alignment_data(self):
         rep = make_seq("rep",  "ATGC" * 100)
         mem = make_seq("mem1", "ATGC" * 80)
-        hit_map = {
-            "mem1": {"pident": 92.5, "qcov": 85.0, "sstart": 10, "send": 350, "bitscore": 200.0}
-        }
+        hit_map = {"mem1": _hit(pident=92.5, qcov=85.0, sstart=10, send=350,
+                                qstart=5, qend=300)}
         aligner = self._aligner()
         with patch.object(aligner, "_run_blastn", return_value=hit_map):
             members = aligner.align(rep, [rep, mem])
@@ -235,19 +247,25 @@ class TestBlastnAlignerAlign:
         assert m.query_coverage == 85.0
         assert m.aln_start      == 10
         assert m.aln_end        == 350
+        assert m.query_start    == 5
+        assert m.query_end      == 300
         assert not m.is_representative
 
-    def test_member_without_hit_gets_zeros(self):
+    def test_member_without_hit_is_dropped(self):
         rep = make_seq("rep",     "ATGC" * 100)
         mem = make_seq("nomatch", "TTTT" * 80)
         aligner = self._aligner()
         with patch.object(aligner, "_run_blastn", return_value={}):
             members = aligner.align(rep, [rep, mem])
-        m = members[1]
-        assert m.identity       == 0.0
-        assert m.query_coverage == 0.0
-        assert m.aln_start      == 0
-        assert m.aln_end        == 0
+        assert [m.seq_id for m in members] == ["rep"]
+
+    def test_member_below_min_coverage_is_dropped(self):
+        rep = make_seq("rep", "ATGC" * 100)
+        mem = make_seq("low", "ATGC" * 80)
+        aligner = BlastnAligner(min_coverage=50.0)
+        with patch.object(aligner, "_run_blastn", return_value={"low": _hit(qcov=30.0)}):
+            members = aligner.align(rep, [rep, mem])
+        assert [m.seq_id for m in members] == ["rep"]
 
     def test_single_seq_skips_blastn(self):
         rep = make_seq("rep", "ATGC" * 100)
@@ -256,12 +274,12 @@ class TestBlastnAlignerAlign:
             aligner.align(rep, [rep])
         mock_run.assert_not_called()
 
-    def test_result_length_equals_members_count(self):
+    def test_result_length_equals_aligned_members_count(self):
         rep  = make_seq("rep", "ATGC" * 100)
         mem1 = make_seq("m1",  "ATGC" * 80)
         mem2 = make_seq("m2",  "ATGC" * 60)
         aligner = self._aligner()
-        with patch.object(aligner, "_run_blastn", return_value={}):
+        with patch.object(aligner, "_run_blastn", side_effect=_align_all):
             members = aligner.align(rep, [rep, mem1, mem2])
         assert len(members) == 3
 
@@ -295,84 +313,86 @@ class TestBlastnAlignerRunBlastn:
 # ---------------------------------------------------------------------------
 
 class TestSequenceTracker:
+    """A cluster needs >= 2 sequences of the same species that align to the
+    representative; _run_blastn is mocked so every member aligns."""
+
     def _seqs(self):
-        s1 = make_seq("s1", "ATGC" * 100, "Influenza A virus")  # 400 nt
-        s2 = make_seq("s2", "ATGC" * 80,  "Influenza A virus")  # 320 nt
+        s1 = make_seq("s1", "ATGC" * 100, "Influenza A virus")     # 400 nt
+        s2 = make_seq("s2", "ATGC" * 80,  "Influenza A virus")     # 320 nt
         s3 = make_seq("s3", "ATGC" * 90,  "Tobacco mosaic virus")
-        return s1, s2, s3
+        s4 = make_seq("s4", "ATGC" * 70,  "Tobacco mosaic virus")
+        return s1, s2, s3, s4
+
+    def _track(self, seqs, run_blastn=_align_all, **kw):
+        tracker = SequenceTracker(**kw)
+        with patch.object(tracker._aligner, "_run_blastn", side_effect=run_blastn):
+            return tracker.track(list(seqs))
 
     def test_returns_list_of_viral_clusters(self):
-        s1, s2, s3 = self._seqs()
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            clusters = tracker.track([s1, s2, s3])
+        clusters = self._track(self._seqs())
         assert len(clusters) == 2
         assert all(isinstance(c, ViralCluster) for c in clusters)
 
     def test_cluster_id_format(self):
-        s1, s2, s3 = self._seqs()
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            clusters = tracker.track([s1, s2, s3])
-        for c in clusters:
+        for c in self._track(self._seqs()):
             assert c.cluster_id.startswith("VQ_CLU_")
 
     def test_cluster_ids_are_unique(self):
-        s1, s2, s3 = self._seqs()
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            clusters = tracker.track([s1, s2, s3])
-        ids = [c.cluster_id for c in clusters]
+        ids = [c.cluster_id for c in self._track(self._seqs())]
         assert len(ids) == len(set(ids))
 
     def test_cluster_id_assigned_to_nuc_seqs(self):
-        s1, s2, s3 = self._seqs()
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            tracker.track([s1, s2, s3])
-        assert s1.cluster_id is not None
-        assert s2.cluster_id is not None
-        assert s3.cluster_id is not None
+        seqs = self._seqs()
+        self._track(seqs)
+        assert all(s.cluster_id is not None for s in seqs)
 
     def test_same_species_gets_same_cluster_id(self):
-        s1, s2, s3 = self._seqs()
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            tracker.track([s1, s2, s3])
+        s1, s2, s3, s4 = self._seqs()
+        self._track([s1, s2, s3, s4])
         assert s1.cluster_id == s2.cluster_id
+        assert s3.cluster_id == s4.cluster_id
         assert s1.cluster_id != s3.cluster_id
 
     def test_representative_is_longest_in_cluster(self):
-        s1, s2, _ = self._seqs()
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            clusters = tracker.track([s1, s2])
+        s1, s2, _, _ = self._seqs()
+        clusters = self._track([s2, s1])
         # s1 = 400 nt, s2 = 320 nt
         assert clusters[0].representative_id == "s1"
 
     def test_cluster_species_matches_blastx(self):
-        s1, _, s3 = self._seqs()
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            clusters = tracker.track([s1, s3])
-        species_set = {c.species for c in clusters}
-        assert "Influenza A virus"    in species_set
-        assert "Tobacco mosaic virus" in species_set
+        species_set = {c.species for c in self._track(self._seqs())}
+        assert species_set == {"Influenza A virus", "Tobacco mosaic virus"}
 
     def test_cluster_size_property(self):
-        s1, s2, s3 = self._seqs()
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            clusters = tracker.track([s1, s2, s3])
+        clusters = self._track(self._seqs())
         flu = next(c for c in clusters if c.species == "Influenza A virus")
         assert flu.size == 2
 
+    def test_single_sequence_species_not_clustered(self):
+        s1, s2, s3, _ = self._seqs()      # s3 is the only TMV sequence
+        clusters = self._track([s1, s2, s3])
+        assert [c.species for c in clusters] == ["Influenza A virus"]
+        assert s3.cluster_id is None
+
+    def test_no_aligned_member_means_no_cluster(self):
+        s1, s2, _, _ = self._seqs()
+        clusters = self._track([s1, s2], run_blastn=lambda rep, members: {})
+        assert clusters == []
+        assert s1.cluster_id is None and s2.cluster_id is None
+
+    def test_unaligned_member_left_out_of_cluster(self):
+        s1, s2, _, _ = self._seqs()
+        s5 = make_seq("s5", "ATGC" * 60, "Influenza A virus")
+        only_s2 = lambda rep, members: {"s2": _hit()}
+        clusters = self._track([s1, s2, s5], run_blastn=only_s2)
+        assert {m.seq_id for m in clusters[0].members} == {"s1", "s2"}
+        assert s5.cluster_id is None
+
     def test_seqs_without_species_excluded_from_clusters(self):
-        no_hit   = make_seq("no_hit",   "ATGC" * 50)
-        with_hit = make_seq("with_hit", "ATGC" * 50, "Virus X")
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            clusters = tracker.track([no_hit, with_hit])
+        no_hit = make_seq("no_hit", "ATGC" * 50)
+        a      = make_seq("a",      "ATGC" * 50, "Virus X")
+        b      = make_seq("b",      "ATGC" * 40, "Virus X")
+        clusters = self._track([no_hit, a, b])
         assert len(clusters) == 1
         assert no_hit.cluster_id is None
 
@@ -380,13 +400,14 @@ class TestSequenceTracker:
         assert SequenceTracker().track([]) == []
 
     def test_clusters_ordered_alphabetically_by_species(self):
-        s1 = make_seq("s1", "ATGC" * 100, "Zymovirus X")
-        s2 = make_seq("s2", "ATGC" * 80,  "Alphavirus Y")
-        tracker = SequenceTracker()
-        with patch.object(tracker._aligner, "_run_blastn", return_value={}):
-            clusters = tracker.track([s1, s2])
-        assert clusters[0].species == "Alphavirus Y"
-        assert clusters[1].species == "Zymovirus X"
+        seqs = [
+            make_seq("z1", "ATGC" * 100, "Zymovirus X"),
+            make_seq("z2", "ATGC" * 90,  "Zymovirus X"),
+            make_seq("a1", "ATGC" * 80,  "Alphavirus Y"),
+            make_seq("a2", "ATGC" * 70,  "Alphavirus Y"),
+        ]
+        clusters = self._track(seqs)
+        assert [c.species for c in clusters] == ["Alphavirus Y", "Zymovirus X"]
 
     def test_custom_min_identity_passed_to_aligner(self):
         tracker = SequenceTracker(min_identity=90.0)

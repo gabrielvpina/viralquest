@@ -16,7 +16,7 @@ from viralquest.biodata import (
     ViralCluster,
     ViralFamilyInfo,
 )
-from viralquest.exporter import ReportExporter, _to_serializable
+from viralquest.exporter import ReportExporter, _to_serializable, select_confirmed_sequences
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +89,7 @@ def _make_cluster(rep_id: str = "seq1") -> ViralCluster:
     member = ClusterMember(
         seq_id=rep_id, length=1200, is_representative=True,
         identity=100.0, query_coverage=100.0, aln_start=1, aln_end=1200,
+        query_start=1, query_end=1200,
     )
     cluster = ViralCluster(
         cluster_id="VQ_CLU_001", species="Influenza A virus",
@@ -208,11 +209,27 @@ class TestExporterFiltering:
         report = exp.export([seq], [])
         assert len(report["sequences"]) == 0
 
-    def test_viral_without_nr_hits_excluded(self):
+    def test_viral_without_nr_hits_excluded_when_nr_ran(self):
         seq = NucSequence(id="s1", sequence="ATGC" * 100)
-        seq.is_viral = True   # no blastx_nr_hits → excluded
-        exp = ReportExporter()
+        seq.is_viral = True   # no blastx_nr_hits → excluded when --nr-db ran
+        exp = ReportExporter(nr_run=True)
         assert len(exp.export([seq], [])["sequences"]) == 0
+
+    def test_viral_without_nr_hits_included_when_nr_not_run(self):
+        seq = NucSequence(id="s1", sequence="ATGC" * 100)
+        seq.is_viral = True   # RefSeq/HMM-only pathway
+        exp = ReportExporter(nr_run=False)
+        assert len(exp.export([seq], [])["sequences"]) == 1
+
+    def test_nr_ran_without_any_viral_hit_exports_nothing(self):
+        # Regression: an NR run with zero viral hits must not fall back to
+        # the permissive RefSeq/HMM rule.
+        seqs = [NucSequence(id=f"s{i}", sequence="ATGC" * 100) for i in range(3)]
+        for s in seqs:
+            s.is_viral = True
+        report = ReportExporter(nr_run=True).export(seqs, [])
+        assert report["sequences"] == []
+        assert report["pipeline_stats"]["blast"]["nr_run"] is True
 
     def test_force_exports_all(self):
         non_viral = NucSequence(id="s1", sequence="ATGC" * 100)
@@ -350,7 +367,8 @@ class TestClusterSerialisation:
         cluster   = _make_cluster("s1")
         cluster.members.append(
             ClusterMember(seq_id="s2", length=800, is_representative=False,
-                          identity=88.0, query_coverage=75.0, aln_start=50, aln_end=850)
+                          identity=88.0, query_coverage=75.0, aln_start=50, aln_end=850,
+                          query_start=1, query_end=800)
         )
         exp = ReportExporter()
         return exp.export([confirmed], [cluster])["clusters"][0]
@@ -442,4 +460,68 @@ class TestJsonRoundTrip:
 
     def test_top_level_keys(self):
         report = ReportExporter().export([], [])
-        assert set(report.keys()) == {"meta", "sequences", "clusters"}
+        assert set(report.keys()) == {"meta", "pipeline_stats", "sequences", "clusters"}
+
+
+# ---------------------------------------------------------------------------
+# select_confirmed_sequences — single source of truth for the exported set
+# ---------------------------------------------------------------------------
+
+class TestSelectConfirmedSequences:
+    def _seqs(self):
+        nr   = _make_confirmed_seq("nr")            # is_viral + NR hit
+        only = NucSequence(id="only", sequence="ATGC" * 100)
+        only.is_viral = True                        # is_viral, no NR hit
+        non  = NucSequence(id="non", sequence="ATGC" * 100)
+        return [nr, only, non]
+
+    def _ids(self, seqs):
+        return [s.id for s in seqs]
+
+    def test_nr_run_requires_nr_hits(self):
+        assert self._ids(select_confirmed_sequences(self._seqs(), nr_run=True)) == ["nr"]
+
+    def test_nr_not_run_uses_is_viral(self):
+        assert self._ids(select_confirmed_sequences(self._seqs(), nr_run=False)) == ["nr", "only"]
+
+    def test_nr_run_none_inferred_from_data(self):
+        seqs = self._seqs()
+        assert self._ids(select_confirmed_sequences(seqs)) == ["nr"]
+        assert self._ids(select_confirmed_sequences(seqs[1:])) == ["only"]
+
+    def test_force_returns_everything(self):
+        assert len(select_confirmed_sequences(self._seqs(), force=True, nr_run=True)) == 3
+
+
+# ---------------------------------------------------------------------------
+# pipeline_stats — NR flag and BLASTn run status
+# ---------------------------------------------------------------------------
+
+class TestPipelineStatsRunInfo:
+    def test_blastn_status_included_when_given(self):
+        info = {"run": True, "mode": "online", "db": "nt",
+                "queried": 2, "failed": 1, "failed_ids": ["seq1"]}
+        report = ReportExporter().export([_make_confirmed_seq()], [], blastn=info)
+        assert report["pipeline_stats"]["blastn"] == info
+
+    def test_blastn_status_absent_when_not_run(self):
+        report = ReportExporter().export([_make_confirmed_seq()], [])
+        assert "blastn" not in report["pipeline_stats"]
+
+    def test_nr_run_flag_recorded(self):
+        report = ReportExporter(nr_run=False).export([], [])
+        assert report["pipeline_stats"]["blast"]["nr_run"] is False
+
+
+# ---------------------------------------------------------------------------
+# ReportExporter.write — used by cli.py after the workflow is attached
+# ---------------------------------------------------------------------------
+
+class TestWrite:
+    def test_write_roundtrips_extra_keys(self, tmp_path):
+        report = ReportExporter().export([_make_confirmed_seq()], [])
+        report["pipeline_stats"]["workflow"] = {"steps": [{"key": "parse", "status": "done"}]}
+        out = ReportExporter.write(report, tmp_path / "sub" / "r.json")
+        written = json.loads(out.read_text())
+        assert written["pipeline_stats"]["workflow"]["steps"][0]["key"] == "parse"
+        assert len(written["sequences"]) == 1

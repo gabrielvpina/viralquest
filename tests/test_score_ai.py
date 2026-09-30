@@ -171,33 +171,25 @@ class TestBlastnDict:
 
 
 class TestDomainDict:
-    def test_details_included_when_flag_true(self):
-        d = _domain_dict(make_domain(details="Pfam details here"), include_details=True)
-        assert d["details"] == "Pfam details here"
-
-    def test_details_omitted_when_flag_false(self):
-        d = _domain_dict(make_domain(details="Pfam details here"), include_details=False)
+    # Pfam `details` text is never sent to the LLM (any mode).
+    def test_details_never_included(self):
+        d = _domain_dict(make_domain(details="Pfam details here"))
         assert "details" not in d
 
     def test_core_fields_always_present(self):
-        d = _domain_dict(make_domain(), include_details=False)
-        assert {"database", "target", "score", "e_value", "description", "type"}.issubset(d)
+        d = _domain_dict(make_domain())
+        assert set(d) == {"database", "target", "score", "e_value", "description", "type"}
 
 
 class TestOrfDict:
     def test_no_aa_or_nuc_sequence(self):
-        d = _orf_dict(make_orf(), include_details=False)
+        d = _orf_dict(make_orf())
         assert "aa_sequence" not in d and "nuc_sequence" not in d
 
-    def test_domains_serialised(self):
-        orf = make_orf(domains=[make_domain()])
-        d = _orf_dict(orf, include_details=True)
+    def test_domains_serialised_without_details(self):
+        orf = make_orf(domains=[make_domain(details="text")])
+        d = _orf_dict(orf)
         assert len(d["hmm_domains"]) == 1
-        assert "details" in d["hmm_domains"][0]
-
-    def test_domain_details_omitted_in_low(self):
-        orf = make_orf(domains=[make_domain()])
-        d = _orf_dict(orf, include_details=False)
         assert "details" not in d["hmm_domains"][0]
 
 
@@ -348,11 +340,11 @@ class TestPromptBuilderBuildInput:
 
     # --- HMM domains / Pfam details ---
 
-    def test_high_mode_pfam_details_included(self):
+    def test_high_mode_pfam_details_omitted(self):
         seq = make_seq()
         seq.orfs.append(make_orf(domains=[make_domain(database="Pfam", details="Pfam detail text")]))
         d = PromptBuilder.build_input(seq, LlmMode.HIGH)
-        assert d["orfs"][0]["hmm_domains"][0]["details"] == "Pfam detail text"
+        assert "details" not in d["orfs"][0]["hmm_domains"][0]
 
     def test_low_mode_pfam_details_omitted(self):
         seq = make_seq()

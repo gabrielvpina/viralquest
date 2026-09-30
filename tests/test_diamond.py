@@ -529,15 +529,18 @@ class TestDiamondFilterer:
 
 
 # ===========================================================================
-# DiamondRunner.run_all  — empty input guard (no subprocess needed)
+# DiamondRunner.run_batched / run_single  — empty input guard (no subprocess)
 # ===========================================================================
 
 class TestDiamondRunnerRunAll:
 
-    def test_run_all_empty_sequences_returns_empty_list(self, tmp_path):
+    def test_run_batched_empty_sequences_yields_nothing(self, tmp_path):
         runner = DiamondRunner(db_path="fake.dmnd", outdir=str(tmp_path))
-        result = runner.run_all([], DiamondPhase.REFSEQ_FILTER)
-        assert result == []
+        assert list(runner.run_batched([], DiamondPhase.REFSEQ_FILTER)) == []
+
+    def test_run_single_empty_sequences_returns_none(self, tmp_path):
+        runner = DiamondRunner(db_path="fake.dmnd", outdir=str(tmp_path))
+        assert runner.run_single([], DiamondPhase.NR_CHARACTERIZE) is None
 
     def test_outdir_created_on_init(self, tmp_path):
         new_dir = tmp_path / "subdir" / "deep"

@@ -347,12 +347,27 @@ class TestAssemble:
             pident=85.0, qcovhsp=70, evalue=1e-20, bit_score=bit_score,
         )
 
+    def test_ref_hk_quant_separated(self):
+        entries = [self._entry("VQ_VIRAL_s1", "viral"),
+                   self._entry("VQ_REFHK_GAPDH", "ref_hk")]
+        report = SalmonQuantPipeline._assemble(["r.fq"], 50.0, entries, [], pathway="reference")
+        assert [e.name for e in report.ref_hk_quant] == ["VQ_REFHK_GAPDH"]
+        assert [e.name for e in report.viral_quant]  == ["VQ_VIRAL_s1"]
+
+    def test_pathway_recorded(self):
+        report = SalmonQuantPipeline._assemble(["r.fq"], 50.0, [], [], pathway="de_novo")
+        assert report.pathway == "de_novo"
+
+    def test_pfam_hk_defaults_to_empty_list(self):
+        report = SalmonQuantPipeline._assemble(["r.fq"], 50.0, [], [], pathway="de_novo")
+        assert report.pfam_hk_quant == []
+
     def test_viral_quant_separated(self):
         entries = [
             self._entry("VQ_VIRAL_seq1", "viral"),
             self._entry("ENST001",        "host"),
         ]
-        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, [])
+        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, [], pathway="reference")
         assert len(report.viral_quant) == 1
         assert report.viral_quant[0].name == "VQ_VIRAL_seq1"
 
@@ -361,7 +376,7 @@ class TestAssemble:
             self._entry("VQ_CONS_MAMMALS_NM_001.1", "conserved", "MAMMALS"),
             self._entry("VQ_CONS_PLANTS_XM_001.1",  "conserved", "PLANTS"),
         ]
-        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, [])
+        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, [], pathway="reference")
         assert len(report.conserved_quant) == 2
 
     def test_conserved_sorted_by_kingdom_then_tpm(self):
@@ -370,7 +385,7 @@ class TestAssemble:
             self._entry("VQ_CONS_MAMMALS_NM_002.1",  "conserved", "MAMMALS", tpm=200.0),
             self._entry("VQ_CONS_MAMMALS_NM_001.1",  "conserved", "MAMMALS", tpm=500.0),
         ]
-        report  = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, [])
+        report  = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, [], pathway="reference")
         kingdoms = [e.kingdom for e in report.conserved_quant]
         assert kingdoms[:2] == ["MAMMALS", "MAMMALS"]
         assert kingdoms[2]  == "PLANTS"
@@ -381,7 +396,7 @@ class TestAssemble:
     def test_host_viral_record_built(self):
         entries = [self._entry("ENST001", "host")]
         hits    = [self._hit("ENST001", "VQ_VIRAL_seq1")]
-        report  = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, hits)
+        report  = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, hits, pathway="reference")
         assert len(report.host_viral_hits) == 1
         rec = report.host_viral_hits[0]
         assert rec.transcript.name == "ENST001"
@@ -394,7 +409,7 @@ class TestAssemble:
         ]
         hits = [self._hit("ENST001", "v1", bit_score=100.0),
                 self._hit("ENST002", "v1", bit_score=500.0)]
-        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, hits)
+        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, hits, pathway="reference")
         assert report.host_viral_hits[0].transcript.name == "ENST002"
 
     def test_blast_hits_within_record_sorted_by_bitscore(self):
@@ -403,13 +418,13 @@ class TestAssemble:
             self._hit("ENST001", "v1", bit_score=100.0),
             self._hit("ENST001", "v2", bit_score=400.0),
         ]
-        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, hits)
+        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, hits, pathway="reference")
         rec    = report.host_viral_hits[0]
         assert rec.blast_hits[0].bit_score == 400.0
 
     def test_host_not_in_quant_gets_zero_tpm(self):
         hits   = [self._hit("ENST_NOT_IN_QUANT", "v1")]
-        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, [], hits)
+        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, [], hits, pathway="reference")
         assert report.host_viral_hits[0].transcript.tpm       == 0.0
         assert report.host_viral_hits[0].transcript.num_reads == 0.0
 
@@ -419,19 +434,19 @@ class TestAssemble:
             self._entry("ENST001",        "host",  tpm=50.0),
         ]
         # num_reads is 50.0 for both entries (default in _entry)
-        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, [])
+        report = SalmonQuantPipeline._assemble(["reads.fq"], 45.0, entries, [], pathway="reference")
         assert report.total_reads == 100
 
     def test_mapping_rate_preserved(self):
-        report = SalmonQuantPipeline._assemble(["r.fq"], 62.5, [], [])
+        report = SalmonQuantPipeline._assemble(["r.fq"], 62.5, [], [], pathway="reference")
         assert report.mapping_rate == 62.5
 
     def test_reads_list_preserved(self):
-        report = SalmonQuantPipeline._assemble(["r1.fq", "r2.fq"], 0.0, [], [])
+        report = SalmonQuantPipeline._assemble(["r1.fq", "r2.fq"], 0.0, [], [], pathway="reference")
         assert report.reads == ["r1.fq", "r2.fq"]
 
     def test_returns_salmon_quant_report(self):
-        report = SalmonQuantPipeline._assemble(["reads.fq"], 0.0, [], [])
+        report = SalmonQuantPipeline._assemble(["reads.fq"], 0.0, [], [], pathway="reference")
         assert isinstance(report, SalmonQuantReport)
 
 
@@ -460,9 +475,12 @@ class TestExporterSalmonSection:
         record = HostViralRecord(transcript=host_entry, blast_hits=[hit])
         return SalmonQuantReport(
             reads=["sample.fastq"], mapping_rate=52.3, total_reads=5000,
+            pathway="reference",
             viral_quant=[viral_entry],
             conserved_quant=[conserved_entry],
+            ref_hk_quant=[],
             host_viral_hits=[record],
+            pfam_hk_quant=[],
         )
 
     def _make_seq(self) -> NucSequence:
