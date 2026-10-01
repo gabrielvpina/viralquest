@@ -173,3 +173,56 @@ class TestLiveScreen:
         screen, _ = self._screen(warnings=2, errors=1)
         text = _render(screen)
         assert "2 warnings" in text and "1 error" in text
+
+
+# ---------------------------------------------------------------------------
+# _log_summary — final results as COMPLETE log lines (no Rich panel)
+# ---------------------------------------------------------------------------
+
+class TestLogSummary:
+    def _capture(self, args):
+        from loguru import logger
+        lines = []
+        sink = logger.add(lambda m: lines.append((m.record["level"].name, m.record["message"])),
+                          level="TRACE")
+        try:
+            cli._log_summary(args, {0: 1.5, 1: 2.0})
+        finally:
+            logger.remove(sink)
+        return lines
+
+    def _seqs(self, n_viral, n_nr):
+        from viralquest.biodata import BlastxResult, NucSequence
+        seqs = []
+        for i in range(n_viral):
+            s = NucSequence(id=f"s{i}", sequence="ATGC" * 20)
+            s.is_viral = True
+            if i < n_nr:
+                s.blastx_nr_hits.append(BlastxResult(
+                    query_id=s.id, subject_id="x", subject_title="p [Virus]",
+                    pct_identity=90.0, aln_length=10, mismatches=0, gap_opens=0,
+                    query_start=1, query_end=10, subject_start=1, subject_end=10,
+                    e_value=1e-9, bit_score=50.0))
+            seqs.append(s)
+        return seqs
+
+    def test_every_line_uses_the_complete_level(self):
+        args = _args()
+        args._result_seqs, args._result_clusters = self._seqs(3, 0), []
+        lines = self._capture(args)
+        assert lines and {lvl for lvl, _ in lines} == {"COMPLETE"}
+        assert lines[0][1] == "ViralQuest — sample.fasta complete"
+
+    def test_confirmed_count_follows_nr_rule(self):
+        # 5 flagged viral, 2 confirmed by NR → the summary reports 2, like the report.
+        args = _args("--nr-db", "nr.dmnd")
+        args._result_seqs, args._result_clusters = self._seqs(5, 2), []
+        msgs = [m for _, m in self._capture(args)]
+        assert any(m.startswith("Confirmed viral sequences:") and m.endswith(" 2") for m in msgs)
+
+    def test_unset_outputs_are_omitted(self):
+        args = _args()
+        args._result_seqs, args._result_clusters = [], []
+        msgs = [m for _, m in self._capture(args)]
+        assert not any(m.startswith("BLASTn results:") for m in msgs)
+        assert any(m.startswith("Total time:") and m.endswith("3.5s") for m in msgs)

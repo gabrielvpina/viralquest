@@ -1284,10 +1284,8 @@ def _run_pipeline(args):
 
 def _run_default(args) -> None:
     from loguru import logger
-    from rich.console import Console
     from .output import OutputOrganizer
 
-    console  = Console(stderr=True)
     steps    = _build_steps(args)
     timings: dict[int, float] = {}
 
@@ -1303,10 +1301,9 @@ def _run_default(args) -> None:
                 label = steps[step_idx] if step_idx < len(steps) else "?"
                 logger.success(f"  ✓  {label}  ({elapsed:.1f}s)")
             # "batch" events are already logged inside DiamondRunner
+        _log_summary(args, timings)
     finally:
         OutputOrganizer.remove_log_sink(log_id)
-
-    _print_summary(console, args, timings)
 
 
 # ── Live mode (Rich Layout) ───────────────────────────────────────────────────
@@ -1336,73 +1333,79 @@ def _run_live(args) -> None:
 
     # Redirect loguru to the live screen + log file (remove default stderr sink first)
     logger.remove()
-    logger.add(_sink, level="INFO")
-    log_id = OutputOrganizer(outdir, Path(args.input).stem).add_log_sink()
+    live_sink = logger.add(_sink, level="INFO")
+    log_id    = OutputOrganizer(outdir, Path(args.input).stem).add_log_sink()
 
     info   = _workflow_options(args) | {"outdir": outdir}
     screen = _LiveScreen(state, records, info)
 
     try:
-        with Live(screen, console=console, refresh_per_second=10, screen=False):
-            try:
-                for event in _run_pipeline(args):
-                    if event[0] == "step":
-                        _, step_idx, elapsed = event
-                        state.finish_step(step_idx, elapsed)
-                    elif event[0] == "batch":
-                        _, _step_idx, batch_num, total = event
-                        state.batch = f"{batch_num}/{total}"
-            except BaseException:
-                # Freeze the screen on the failing step before the traceback prints.
-                state.fail()
-                raise
+        try:
+            with Live(screen, console=console, refresh_per_second=10, screen=False):
+                try:
+                    for event in _run_pipeline(args):
+                        if event[0] == "step":
+                            _, step_idx, elapsed = event
+                            state.finish_step(step_idx, elapsed)
+                        elif event[0] == "batch":
+                            _, _step_idx, batch_num, total = event
+                            state.batch = f"{batch_num}/{total}"
+                except BaseException:
+                    # Freeze the screen on the failing step before the traceback prints.
+                    state.fail()
+                    raise
+        finally:
+            # Restore loguru to stderr after Live exits (the file sink stays on).
+            logger.remove(live_sink)
+            logger.add(sys.stderr, colorize=True,
+                       format="{time:HH:mm:ss} | <level>{level:<8}</level> | {message}")
+        _log_summary(args, state.timings)
     finally:
         OutputOrganizer.remove_log_sink(log_id)
-        # Restore loguru to stderr after Live exits
-        logger.remove()
-        logger.add(sys.stderr, colorize=True,
-                   format="{time:HH:mm:ss} | <level>{level:<8}</level> | {message}")
-
-    _print_summary(console, args, state.timings)
 
 
 # ── Summary panel ─────────────────────────────────────────────────────────────
 
-def _print_summary(console, args, timings: dict) -> None:
-    from rich.panel import Panel
+_COMPLETE_LEVEL = "COMPLETE"
 
-    seqs         = getattr(args, "_result_seqs",         [])
-    clusters     = getattr(args, "_result_clusters",     [])
-    json_p       = getattr(args, "_result_json",         Path(args.outdir))
-    html_p       = getattr(args, "_result_html",         Path(args.outdir))
-    viral_fasta  = getattr(args, "_result_viral_fasta",  None)
-    diamond_dir  = getattr(args, "_result_diamond_dir",  None)
-    hmm_dir      = getattr(args, "_result_hmm_dir",      None)
 
-    viral_count = sum(1 for s in seqs if s.is_viral)
-    total_time  = sum(timings.values())
+def _ensure_complete_level() -> None:
+    """Register the COMPLETE log level once (between SUCCESS and WARNING)."""
+    from loguru import logger
+    try:
+        logger.level(_COMPLETE_LEVEL)
+    except ValueError:
+        logger.level(_COMPLETE_LEVEL, no=27, color="<green><bold>")
 
-    blastn_dir = getattr(args, "_result_blastn_dir", None)
 
-    lines = (
-        f"[bold green]Confirmed viral sequences:[/]  {viral_count}\n"
-        f"[bold green]Clusters:[/]                   {len(clusters)}\n"
-        f"[bold green]Viral contigs FASTA:[/]        {viral_fasta}\n"
-        f"[bold green]Diamond results:[/]             {diamond_dir}\n"
-        + (f"[bold green]BLASTn results:[/]              {blastn_dir}\n" if blastn_dir else "")
-        + f"[bold green]HMM tables:[/]                 {hmm_dir}\n"
-        f"[bold green]JSON report:[/]                {json_p}\n"
-        f"[bold green]HTML report:[/]                {html_p}\n"
-        f"[bold green]Log file:[/]                   {Path(args.outdir) / 'viralquest.log'}\n"
-        f"[bold green]Total time:[/]                 {total_time:.1f}s"
-    )
+def _log_summary(args, timings: dict) -> None:
+    """Final results as COMPLETE log lines, in the same stream as the run log."""
+    from loguru import logger
+    from .exporter import select_confirmed_sequences
 
-    console.print()
-    console.print(Panel(
-        lines,
-        title=f"[bold green]ViralQuest — {Path(args.input).name} complete[/bold green]",
-        border_style="green", width=85,
-    ))
+    _ensure_complete_level()
+    seqs      = getattr(args, "_result_seqs",     [])
+    clusters  = getattr(args, "_result_clusters", [])
+    confirmed = select_confirmed_sequences(seqs, force=args.force, nr_run=bool(args.nr_db))
+
+    rows = [
+        ("Confirmed viral sequences", len(confirmed)),
+        ("Clusters",                  len(clusters)),
+        ("Viral contigs FASTA",       getattr(args, "_result_viral_fasta", None)),
+        ("Diamond results",           getattr(args, "_result_diamond_dir", None)),
+        ("BLASTn results",            getattr(args, "_result_blastn_dir",  None)),
+        ("HMM tables",                getattr(args, "_result_hmm_dir",     None)),
+        ("JSON report",               getattr(args, "_result_json",        None)),
+        ("HTML report",               getattr(args, "_result_html",        None)),
+        ("Log file",                  Path(args.outdir) / "viralquest.log"),
+        ("Total time",                _fmt_step_time(sum(timings.values()))),
+    ]
+    width = max(len(label) for label, _ in rows)
+
+    logger.log(_COMPLETE_LEVEL, f"ViralQuest — {Path(args.input).name} complete")
+    for label, value in rows:
+        if value is not None:
+            logger.log(_COMPLETE_LEVEL, f"{label + ':':<{width + 1}}  {value}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
