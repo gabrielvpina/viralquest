@@ -19,9 +19,10 @@ from viralquest.biodata import (
 class LlmMode(Enum):
     # Pfam domain `details` text is never sent to the LLM (removed to avoid
     # token bloat on Pfam-rich sequences); the high/low distinction is in the
-    # other dimensions below.
-    HIGH = "high"   # all hits, full family description
-    LOW  = "low"    # best hits only, standardised family description
+    # other dimensions below. In both modes ORFs without any HMM domain are
+    # summarised (count + longest lengths) instead of listed one by one.
+    HIGH = "high"   # all hits, full family description, annotated ORFs as objects
+    LOW  = "low"    # best hits only, standardised family description, ORFs as one-line summaries
 
 
 # ---------------------------------------------------------------------------
@@ -49,15 +50,27 @@ def _blastn_dict(h: BlastnResult) -> dict:
     }
 
 
+# Longest ORFs without any HMM domain reported to the LLM: a long unannotated
+# ORF is a real signal for a novel virus; dozens of short ones are not.
+_UNANNOTATED_LONGEST_N = 3
+
+
+def _round_evalue(e: float | None) -> float | None:
+    """Two significant digits — 1.2345e-45 → 1.2e-45 (fewer tokens, same meaning)."""
+    return None if e is None else float(f"{e:.2g}")
+
+
 def _domain_dict(d: HmmDomain) -> dict:
-    return {
+    r = {
         "database":    d.database,
         "target":      d.target,
-        "score":       d.score,
-        "e_value":     d.e_value,
+        "score":       round(d.score, 1),
+        "e_value":     _round_evalue(d.e_value),
         "description": d.description,
-        "type":        d.type,
     }
+    if d.type:                      # empty for RVDB / Vfam / EggNOG
+        r["type"] = d.type
+    return r
 
 
 def _orf_dict(orf: Orf) -> dict:
@@ -68,6 +81,54 @@ def _orf_dict(orf: Orf) -> dict:
         "length_aa":   orf.length_aa,
         "hmm_domains": [_domain_dict(d) for d in orf.domains],
     }
+
+
+def _domain_label(d: HmmDomain) -> str:
+    """One-line domain for LOW mode, e.g. "Pfam RdRP_1 – RNA-dependent RNA polymerase [152]"."""
+    desc = f" – {d.description}" if d.description and d.description != d.target else ""
+    return f"{d.database} {d.target}{desc} [{round(d.score)}]"
+
+
+def _orf_summary_line(orf: Orf, seq_id: str = "") -> str:
+    """
+    LOW mode: "ORF_10_1240+ (410 aa): Pfam RdRP_1 – … [152]; RVDB FAM0001 – Picornaviridae [98]".
+    The sequence-id prefix of the ORF name is dropped (sequence_id is already in the input).
+    """
+    name = orf.name.removeprefix(f"{seq_id}_") if seq_id else orf.name
+    return f"{name} ({orf.length_aa} aa): " + "; ".join(_domain_label(d) for d in orf.domains)
+
+
+def _unannotated_summary(orfs: list[Orf]) -> dict:
+    """ORFs with no HMM domain, summarised instead of listed."""
+    lengths = sorted((o.length_aa for o in orfs), reverse=True)
+    return {"count": len(lengths), "longest_aa": lengths[:_UNANNOTATED_LONGEST_N]}
+
+
+def _orfs_payload(orfs: list[Orf], high: bool, seq_id: str = "") -> dict:
+    """
+    ORF section of the LLM input.
+
+    HIGH — annotated ORFs as full objects (with their HMM domains).
+    LOW  — annotated ORFs as one-line summaries with their domain names.
+    Both — ORFs without any domain reduced to a count + the longest lengths.
+    """
+    annotated   = [o for o in orfs if o.domains]
+    unannotated = [o for o in orfs if not o.domains]
+    if high:
+        payload = {"orfs": [_orf_dict(o) for o in annotated]}
+    else:
+        payload = {"orf_summary": {
+            "total":          len(orfs),
+            "with_domains":   len(annotated),
+            "annotated_orfs": [_orf_summary_line(o, seq_id) for o in annotated],
+        }}
+    payload["unannotated_orfs"] = _unannotated_summary(unannotated)
+    return payload
+
+
+def _to_user_message(user_json: dict) -> str:
+    """Compact JSON (no spaces after separators) — same content, fewer tokens."""
+    return json.dumps(user_json, ensure_ascii=False, separators=(",", ":"))
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +215,7 @@ class PromptBuilder:
             "taxonomy":           taxonomy_dict,
             "blastx_hits":        blastx_hits,
             "blastn_hits":        blastn_hits,
-            "orfs":               [_orf_dict(o) for o in seq.orfs],
+            **_orfs_payload(seq.orfs, high, seq.id),
             "viral_family_info":  family_info,
         }
 
@@ -181,7 +242,7 @@ class OllamaBackend(_LlmBackend):
         import ollama
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": json.dumps(user_json, ensure_ascii=False)},
+            {"role": "user",   "content": _to_user_message(user_json)},
         ]
         try:
             response = ollama.chat(
@@ -214,7 +275,7 @@ class OpenAIBackend(_LlmBackend):
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": json.dumps(user_json, ensure_ascii=False)},
+                {"role": "user",   "content": _to_user_message(user_json)},
             ],
             temperature=0.3,
             response_format={"type": "json_object"},  # enforces JSON output
@@ -237,7 +298,7 @@ class AnthropicBackend(_LlmBackend):
             max_tokens=1024,
             temperature=0.3,
             system=system_prompt,
-            messages=[{"role": "user", "content": json.dumps(user_json, ensure_ascii=False)}],
+            messages=[{"role": "user", "content": _to_user_message(user_json)}],
         )
         # take only text blocks — skips any extended-thinking blocks automatically
         return "".join(block.text for block in response.content if block.type == "text")
@@ -256,7 +317,7 @@ class GoogleBackend(_LlmBackend):
         client   = genai.Client(api_key=self.api_key)
         response = client.models.generate_content(
             model=self.model_name,
-            contents=json.dumps(user_json, ensure_ascii=False),
+            contents=_to_user_message(user_json),
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 temperature=0.3,

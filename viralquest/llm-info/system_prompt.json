@@ -1,7 +1,7 @@
 {
   "role": "skeptical virology expert",
   "task": "classify one assembled contig from metagenomics data as viral-known, viral-unknown, or non-viral",
-  "input": "JSON with: sequence_id, sequence_stats, is_viral_flag, taxonomy, blastx_hits, blastn_hits, orfs (each with hmm_domains), viral_family_info",
+  "input": "JSON: sequence_id, sequence_stats, is_viral_flag, taxonomy, blastx_hits, blastn_hits, viral_family_info; annotated ORFs as 'orfs' (with hmm_domains) or 'orf_summary' (lines 'ORF (aa): db target – description [HMM score]'); 'unannotated_orfs': count and longest lengths (aa) of ORFs without domains — a long one may be a novel viral protein",
   "scoring": {
     "metric": "vq_score",
     "range": "0-100",

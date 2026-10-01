@@ -25,6 +25,7 @@ from viralquest.score_ai import (
     _domain_dict,
     _make_backend,
     _orf_dict,
+    _to_user_message,
     AnthropicBackend,
     GoogleBackend,
     OllamaBackend,
@@ -180,6 +181,15 @@ class TestDomainDict:
         d = _domain_dict(make_domain())
         assert set(d) == {"database", "target", "score", "e_value", "description", "type"}
 
+    def test_empty_type_omitted(self):
+        dom = make_domain(); dom.type = ""          # RVDB / Vfam / EggNOG
+        assert "type" not in _domain_dict(dom)
+
+    def test_score_and_evalue_trimmed(self):
+        dom = make_domain(score=152.4567); dom.e_value = 1.23456e-45
+        d = _domain_dict(dom)
+        assert d["score"] == 152.5 and d["e_value"] == 1.2e-45
+
 
 class TestOrfDict:
     def test_no_aa_or_nuc_sequence(self):
@@ -233,11 +243,10 @@ class TestPromptBuilderSystemPrompt:
 
 class TestPromptBuilderBuildInput:
     def test_required_top_level_keys(self):
-        seq = make_seq()
-        d = PromptBuilder.build_input(seq, LlmMode.LOW)
-        assert {"sequence_id", "sequence_stats", "is_viral_flag",
-                "taxonomy", "blastx_hits", "blastn_hits",
-                "orfs", "viral_family_info"}.issubset(d)
+        common = {"sequence_id", "sequence_stats", "is_viral_flag", "taxonomy",
+                  "blastx_hits", "blastn_hits", "unannotated_orfs", "viral_family_info"}
+        assert (common | {"orfs"}).issubset(PromptBuilder.build_input(make_seq(), LlmMode.HIGH))
+        assert (common | {"orf_summary"}).issubset(PromptBuilder.build_input(make_seq(), LlmMode.LOW))
 
     def test_sequences_never_in_output(self):
         seq = make_seq()
@@ -350,13 +359,59 @@ class TestPromptBuilderBuildInput:
         seq = make_seq()
         seq.orfs.append(make_orf(domains=[make_domain(database="Pfam", details="Pfam detail text")]))
         d = PromptBuilder.build_input(seq, LlmMode.LOW)
-        assert "details" not in d["orfs"][0]["hmm_domains"][0]
+        assert "Pfam detail text" not in json.dumps(d)
 
     def test_low_mode_non_pfam_details_also_omitted(self):
         seq = make_seq()
         seq.orfs.append(make_orf(domains=[make_domain(database="RVDB", details="some detail")]))
         d = PromptBuilder.build_input(seq, LlmMode.LOW)
-        assert "details" not in d["orfs"][0]["hmm_domains"][0]
+        assert "some detail" not in json.dumps(d)
+
+    # --- ORF payload: annotated vs unannotated ---
+
+    def _seq_with_orfs(self):
+        seq = make_seq()
+        seq.orfs += [
+            make_orf("seq1_ORF_1_900+", domains=[make_domain(database="Pfam", score=152.4)]),
+            make_orf("seq1_ORF_950_1100+"),
+            make_orf("seq1_ORF_1200_1400-"),
+            make_orf("seq1_ORF_1500_1600+"),
+            make_orf("seq1_ORF_1700_1800+"),
+        ]
+        for o, aa in zip(seq.orfs[1:], (412, 60, 260, 198)):
+            o.length_aa = aa
+        return seq
+
+    def test_high_lists_only_annotated_orfs(self):
+        d = PromptBuilder.build_input(self._seq_with_orfs(), LlmMode.HIGH)
+        assert [o["name"] for o in d["orfs"]] == ["seq1_ORF_1_900+"]
+        assert d["orfs"][0]["hmm_domains"][0]["target"] == "PF00001"
+
+    def test_unannotated_orfs_summarised_in_both_modes(self):
+        for mode in (LlmMode.HIGH, LlmMode.LOW):
+            d = PromptBuilder.build_input(self._seq_with_orfs(), mode)
+            assert d["unannotated_orfs"] == {"count": 4, "longest_aa": [412, 260, 198]}
+
+    def test_low_summarises_annotated_orfs_with_domain_names(self):
+        d = PromptBuilder.build_input(self._seq_with_orfs(), LlmMode.LOW)
+        summ = d["orf_summary"]
+        assert summ["total"] == 5 and summ["with_domains"] == 1
+        # seq-id prefix dropped; domain name, description and rounded score kept
+        assert summ["annotated_orfs"] == [
+            "ORF_1_900+ (100 aa): Pfam PF00001 – RNA-dep RNA polymerase [152]"]
+        assert "orfs" not in d
+
+    def test_low_lists_every_domain_of_an_orf(self):
+        seq = make_seq()
+        seq.orfs.append(make_orf("seq1_ORF_1_900+", domains=[
+            make_domain(database="RVDB", score=98.0), make_domain(database="Pfam", score=150.0)]))
+        line = PromptBuilder.build_input(seq, LlmMode.LOW)["orf_summary"]["annotated_orfs"][0]
+        assert "RVDB PF00001" in line and "Pfam PF00001" in line and line.count(";") == 1
+
+    def test_no_orfs_gives_empty_summaries(self):
+        d = PromptBuilder.build_input(make_seq(), LlmMode.LOW)
+        assert d["orf_summary"] == {"total": 0, "with_domains": 0, "annotated_orfs": []}
+        assert d["unannotated_orfs"] == {"count": 0, "longest_aa": []}
 
 
 # ---------------------------------------------------------------------------
@@ -603,3 +658,25 @@ class TestSequenceScorer:
         s = SequenceScorer("ollama", "llama3")
         data = json.loads(s._system_prompt)
         assert "output" in data
+
+
+# ---------------------------------------------------------------------------
+# Compact user message
+# ---------------------------------------------------------------------------
+
+class TestUserMessage:
+    def test_compact_separators(self):
+        msg = _to_user_message({"a": 1, "b": [1, 2]})
+        assert msg == '{"a":1,"b":[1,2]}'
+
+    def test_roundtrips_and_keeps_unicode(self):
+        payload = {"desc": "RNA-dependent – polymerase", "n": 3}
+        msg = _to_user_message(payload)
+        assert json.loads(msg) == payload and "–" in msg
+
+    def test_every_backend_sends_the_compact_message(self):
+        import inspect
+        from viralquest import score_ai
+        src = inspect.getsource(score_ai)
+        assert src.count("_to_user_message(user_json)") == 4
+        assert src.count("json.dumps(user_json") == 1   # only inside the helper itself
