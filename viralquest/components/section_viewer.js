@@ -410,10 +410,13 @@ function vqInitViewer(sequences) {
                      min="0" max="100" step="0.1" placeholder="max" aria-label="Max coverage %">
             </div>
             <label class="vq-filter-check">
-              <input type="checkbox" id="viewer-filter-blastn"> BLASTn
+              <input type="checkbox" id="viewer-filter-refseq"> BLASTx RefSeq
             </label>
             <label class="vq-filter-check">
               <input type="checkbox" id="viewer-filter-blastx"> BLASTx NR
+            </label>
+            <label class="vq-filter-check">
+              <input type="checkbox" id="viewer-filter-blastn"> BLASTn
             </label>
           </div>
         </div>
@@ -462,7 +465,7 @@ function vqInitViewer(sequences) {
    'viewer-len-min','viewer-len-max',
    'viewer-heur-min','viewer-heur-max','viewer-llm-min','viewer-llm-max']
     .forEach(id => document.getElementById(id)?.addEventListener('input', _applyFilters));
-  ['viewer-filter-blastn','viewer-filter-blastx']
+  ['viewer-filter-refseq','viewer-filter-blastx','viewer-filter-blastn']
     .forEach(id => document.getElementById(id)?.addEventListener('change', _applyFilters));
 
   _wireMultiSelect('viewer-ms-family', _VW.tax.family);
@@ -734,7 +737,8 @@ function _updateFilterBadge() {
   // Mirror _applyFilters: BLAST only filters when a source is checked AND a range is set.
   const blastRange = has('viewer-ident-min') || has('viewer-ident-max') ||
                      has('viewer-cov-min')   || has('viewer-cov-max');
-  if ((chk('viewer-filter-blastn') || chk('viewer-filter-blastx')) && blastRange) n++;
+  if ((chk('viewer-filter-refseq') || chk('viewer-filter-blastx') ||
+       chk('viewer-filter-blastn')) && blastRange) n++;
   if (_VW.tax.family.size) n++;
   if (_VW.tax.phylum.size) n++;
   if (_VW.tax.genus.size)  n++;
@@ -762,9 +766,10 @@ function _applyFilters() {
   const identMax = identMaxRaw !== '' ? parseFloat(identMaxRaw) : null;
   const covMin   = covMinRaw   !== '' ? parseFloat(covMinRaw)   : null;
   const covMax   = covMaxRaw   !== '' ? parseFloat(covMaxRaw)   : null;
-  const filterBlastn = document.getElementById('viewer-filter-blastn')?.checked ?? false;
+  const filterRefseq = document.getElementById('viewer-filter-refseq')?.checked ?? false;
   const filterBlastx = document.getElementById('viewer-filter-blastx')?.checked ?? false;
-  const hasBlastFilter = (filterBlastn || filterBlastx) &&
+  const filterBlastn = document.getElementById('viewer-filter-blastn')?.checked ?? false;
+  const hasBlastFilter = (filterRefseq || filterBlastx || filterBlastn) &&
     (identMin !== null || identMax !== null || covMin !== null || covMax !== null);
 
   const lenMinRaw = document.getElementById('viewer-len-min')?.value;
@@ -793,7 +798,12 @@ function _applyFilters() {
     }
     if (lenMin !== null && (s.length ?? 0) < lenMin) return false;
     if (lenMax !== null && (s.length ?? 0) > lenMax) return false;
+    // Each checked source must have at least one hit inside the ranges.
     if (hasBlastFilter) {
+      if (filterRefseq) {
+        const hits = s.blastx_hits || [];
+        if (!hits.some(h => _hitPassesBlastFilter(h, identMin, identMax, covMin, covMax))) return false;
+      }
       if (filterBlastn) {
         const hits = s.blastn_hits || [];
         if (!hits.some(h => _hitPassesBlastFilter(h, identMin, identMax, covMin, covMax))) return false;
