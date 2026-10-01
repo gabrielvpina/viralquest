@@ -102,6 +102,10 @@ def _build_parser():
         action="store_true", default=False,
         help="Show this help message and exit.")
 
+    # Dev-only (hidden): rebuild the HTML report from an existing JSON.
+    parser.add_argument("--reload", dest="reload", nargs="?", const="",
+        default=None, metavar="JSON_OR_DIR", help=argparse.SUPPRESS)
+
     # Required ─────────────────────────────────────────────────────────────────
     req = parser.add_argument_group("required")
     req.add_argument("-in", "--input", dest="input", type=str,
@@ -1408,6 +1412,59 @@ def _log_summary(args, timings: dict) -> None:
             logger.log(_COMPLETE_LEVEL, f"{label + ':':<{width + 1}}  {value}")
 
 
+# ── Dev: rebuild the HTML from an existing JSON (hidden --reload) ─────────────
+
+_REPORT_JSON_GLOB = "*_viralquest.json"
+
+
+def _find_report_json(target: str) -> Path:
+    """
+    Resolve --reload's target to one report JSON.
+
+    "" → search the current directory; a directory → search it; a file → use it.
+    Several matches → the most recently modified wins.
+    """
+    from loguru import logger
+
+    path = Path(target) if target else Path.cwd()
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        raise FileNotFoundError(f"--reload: no such file or directory: {path}")
+
+    found = sorted(path.glob(_REPORT_JSON_GLOB), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not found:
+        raise FileNotFoundError(
+            f"--reload: no {_REPORT_JSON_GLOB} in {path.resolve()}. "
+            f"Pass the JSON (or its directory) explicitly: viralquest --reload PATH"
+        )
+    if len(found) > 1:
+        logger.warning(
+            f"--reload: {len(found)} report JSONs found — using the newest, "
+            f"'{found[0].name}' (ignored: {', '.join(p.name for p in found[1:])})"
+        )
+    return found[0]
+
+
+def _reload_report(target: str) -> Path:
+    """Rebuild <stem>_viralquest.html next to the JSON with the current components."""
+    import json
+    from loguru import logger
+    from . import html_report
+
+    _ensure_complete_level()
+    t         = time.time()
+    json_path = _find_report_json(target)
+    html_path = json_path.with_suffix(".html")
+
+    logger.info(f"--reload: report JSON  → {json_path}")
+    logger.info(f"--reload: components   → {html_report._COMPONENTS}")
+    report = json.loads(json_path.read_text(encoding="utf-8"))
+    html_report.write_report(report, html_path)
+    logger.log(_COMPLETE_LEVEL, f"HTML report rebuilt → {html_path}  ({time.time() - t:.1f}s)")
+    return html_path
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -1416,20 +1473,6 @@ def main() -> None:
         setproctitle.setproctitle("viralquest")
     except ImportError:
         pass
-
-    # Check bioinformatics binaries before doing anything else.
-    # missing_tools() activates the pixi environment first — the user may have
-    # run viralquest-setup but not reloaded their shell PATH.
-    from viralquest.setup_env import missing_tools
-    absent = missing_tools()
-
-    if absent:
-        print(
-            f"[ERROR] Missing required tools: {', '.join(absent)}\n"
-            "Run:  viralquest-setup\n"
-            "This will install pixi and all bioinformatics dependencies automatically."
-        )
-        sys.exit(1)
 
     from rich.console import Console
     console = Console(stderr=True)
@@ -1447,6 +1490,29 @@ def main() -> None:
     if args.help:
         _show_rich_help()
         sys.exit(0)
+
+    # Dev-only: rebuild the HTML from an existing JSON — needs no tools or DBs.
+    if args.reload is not None:
+        try:
+            _reload_report(args.reload)
+        except (FileNotFoundError, ValueError) as exc:   # ValueError covers bad JSON
+            console.print(f"[bold red]ERROR:[/bold red] {exc}")
+            sys.exit(1)
+        sys.exit(0)
+
+    # Check bioinformatics binaries before running the pipeline.
+    # missing_tools() activates the pixi environment first — the user may have
+    # run viralquest-setup but not reloaded their shell PATH.
+    from viralquest.setup_env import missing_tools
+    absent = missing_tools()
+
+    if absent:
+        print(
+            f"[ERROR] Missing required tools: {', '.join(absent)}\n"
+            "Run:  viralquest-setup\n"
+            "This will install pixi and all bioinformatics dependencies automatically."
+        )
+        sys.exit(1)
 
     ext_db_dir = Path(args.db_dir) if args.db_dir else None
     args._db, args._index_dir, args._hmm_filter = _resolve_db_paths(ext_db_dir)

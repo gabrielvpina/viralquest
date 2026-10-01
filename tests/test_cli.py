@@ -226,3 +226,79 @@ class TestLogSummary:
         msgs = [m for _, m in self._capture(args)]
         assert not any(m.startswith("BLASTn results:") for m in msgs)
         assert any(m.startswith("Total time:") and m.endswith("3.5s") for m in msgs)
+
+
+# ---------------------------------------------------------------------------
+# Hidden dev flag: --reload rebuilds the HTML from an existing report JSON
+# ---------------------------------------------------------------------------
+
+_MINI_REPORT = {"meta": {}, "sequences": [], "clusters": [], "pipeline_stats": {}}
+
+
+class TestReload:
+    def _json(self, path, mtime=None):
+        import os
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(_MINI_REPORT), encoding="utf-8")
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def test_flag_is_hidden_from_help(self):
+        assert "reload" not in cli._build_parser().format_help()
+
+    def test_flag_parses_with_and_without_target(self):
+        p = cli._build_parser()
+        assert p.parse_args(["--reload"]).reload == ""
+        assert p.parse_args(["--reload", "x.json"]).reload == "x.json"
+        assert p.parse_args(["-in", "a", "-out", "b"]).reload is None
+
+    def test_finds_json_in_current_directory(self, tmp_path, monkeypatch):
+        target = self._json(tmp_path / "AT39_viralquest.json")
+        monkeypatch.chdir(tmp_path)
+        assert cli._find_report_json("") == target
+
+    def test_newest_json_wins(self, tmp_path):
+        self._json(tmp_path / "old_viralquest.json", mtime=1_000)
+        new = self._json(tmp_path / "new_viralquest.json", mtime=2_000)
+        assert cli._find_report_json(str(tmp_path)) == new
+
+    def test_explicit_file_is_used_as_is(self, tmp_path):
+        f = self._json(tmp_path / "any_name.json")
+        assert cli._find_report_json(str(f)) == f
+
+    def test_other_json_files_are_ignored(self, tmp_path):
+        self._json(tmp_path / "settings.json")
+        with pytest.raises(FileNotFoundError, match="_viralquest.json"):
+            cli._find_report_json(str(tmp_path))
+
+    def test_missing_path_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            cli._find_report_json(str(tmp_path / "nope"))
+
+    def test_rebuilds_html_next_to_json(self, tmp_path):
+        from unittest.mock import patch
+        src = self._json(tmp_path / "AT39_viralquest.json")
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            out = cli._reload_report(str(src))
+        assert out == tmp_path / "AT39_viralquest.html"
+        assert "d3js.org" in out.read_text(encoding="utf-8")
+
+    def test_main_reload_skips_tool_checks(self, tmp_path, monkeypatch):
+        from unittest.mock import patch
+        self._json(tmp_path / "AT39_viralquest.json")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("sys.argv", ["viralquest", "--reload"])
+        with patch("viralquest.setup_env.missing_tools") as tools, \
+             pytest.raises(SystemExit) as exit_:
+            cli.main()
+        assert exit_.value.code == 0
+        tools.assert_not_called()
+        assert (tmp_path / "AT39_viralquest.html").is_file()
+
+    def test_main_reload_without_json_exits_1(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("sys.argv", ["viralquest", "--reload"])
+        with pytest.raises(SystemExit) as exit_:
+            cli.main()
+        assert exit_.value.code == 1
