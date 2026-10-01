@@ -26,6 +26,7 @@ function vqInitStats(report) {
   const seqs   = report.sequences        || [];
   const wf     = report.workflow || (report.pipeline_stats || {}).workflow || null;
   const hasWf  = !!(wf && (wf.steps || []).length);
+  const domainDbs = _domainDatabases(seqs);   // HMM banks with at least one domain
 
   // Derived presence flags — computed directly from sequence data so old
   // report files without the pre-aggregated stats keys still work correctly.
@@ -125,6 +126,26 @@ function vqInitStats(report) {
             <div id="stats-hmm-svg" style="width:100%"></div>
           </div>
         </div>
+
+        <!-- 3b. Top Domains per HMM model — when any domain was found -->
+        ${domainDbs.length ? `
+        <div class="vq-chart-card" id="stats-domains-card" style="min-height:auto">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Top Domains</div>
+              <div class="vq-chart-card__sub" id="stats-domains-sub">sequences carrying each model</div>
+            </div>
+          </div>
+          <div class="vq-toggle" id="stats-domains-toggle" role="tablist" aria-label="HMM database"
+               style="align-self:flex-start;margin-bottom:6px">
+            ${domainDbs.map((db, i) => `
+              <button class="vq-toggle__btn${i === 0 ? ' active' : ''}" type="button"
+                      data-domain-db="${esc(db)}">${esc(db)}</button>`).join('')}
+          </div>
+          <div class="vq-chart-card__body">
+            <div id="stats-domains-svg" style="width:100%"></div>
+          </div>
+        </div>` : ''}
 
         <!-- 4. BLASTx — always -->
         <div class="vq-chart-card" id="stats-identity-card" style="min-height:auto">
@@ -310,6 +331,16 @@ function vqInitStats(report) {
 
   // HMM bars
   _renderHMMBars(hmm);
+
+  // Top domains — one HMM bank at a time, switched by the toggle
+  if (domainDbs.length) {
+    const btns = document.querySelectorAll('#stats-domains-toggle [data-domain-db]');
+    btns.forEach(btn => btn.addEventListener('click', () => {
+      btns.forEach(b => b.classList.toggle('active', b === btn));
+      _renderTopDomains(seqs, btn.dataset.domainDb);
+    }));
+    _renderTopDomains(seqs, domainDbs[0]);
+  }
 
   // Salmon (card only exists in DOM when salmon.present)
   if (salmon.present) _renderSalmonChart(salmon);
@@ -842,6 +873,150 @@ function _renderTaxDonut(sequences, rank) {
 // ────────────────────────────────────────────────────────────────────────
 //  Chart 2 — Horizontal bar: HMM database hits
 // ────────────────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────────────────
+//  Top domains per HMM model — vertical bars, one bank at a time
+// ────────────────────────────────────────────────────────────────────────
+
+// Same bank colours as the HMM Database Hits card.
+const _HMM_DB_COLORS = {
+  RVDB:   'var(--vq-accent)',
+  Vfam:   'var(--vq-primary-light)',
+  EggNOG: 'var(--vq-accent-dark)',
+  Pfam:   'var(--vq-success)',
+};
+const _HMM_DB_ORDER = ['Pfam', 'RVDB', 'Vfam', 'EggNOG'];   // Pfam first: most readable names
+const _TOP_DOMAINS_N = 10;
+
+/* HMM banks that have at least one domain, in display order. */
+function _domainDatabases(sequences) {
+  const present = new Set();
+  sequences.forEach(s => (s.orfs || []).forEach(o =>
+    (o.domains || []).forEach(d => d.database && present.add(d.database))));
+  return [
+    ..._HMM_DB_ORDER.filter(db => present.has(db)),
+    ...[...present].filter(db => !_HMM_DB_ORDER.includes(db)).sort(),
+  ];
+}
+
+/* Per model of one bank: sequences carrying it (ranking) and total hits. */
+function _domainCounts(sequences, database) {
+  const byModel = new Map();
+  sequences.forEach(s => {
+    (s.orfs || []).forEach(o => (o.domains || []).forEach(d => {
+      if (d.database !== database) return;
+      let m = byModel.get(d.target);
+      if (!m) {
+        m = { target: d.target, description: d.description || '', type: d.type || '',
+              seqs: new Set(), hits: 0 };
+        byModel.set(d.target, m);
+      }
+      m.seqs.add(s.id);
+      m.hits += 1;
+    }));
+  });
+  return [...byModel.values()]
+    .map(m => ({ ...m, nSeqs: m.seqs.size }))
+    .sort((a, b) => b.nSeqs - a.nSeqs || b.hits - a.hits || a.target.localeCompare(b.target));
+}
+
+function _renderTopDomains(sequences, database) {
+  const wrap = document.getElementById('stats-domains-svg');
+  if (!wrap) return;
+  // Bars are replaced on every switch, so their mouseleave never fires —
+  // drop any tooltip still showing from the previous bank.
+  VQ.tooltipHide();
+  wrap.innerHTML = '';
+
+  const all  = _domainCounts(sequences, database);
+  const data = all.slice(0, _TOP_DOMAINS_N);
+  const sub  = document.getElementById('stats-domains-sub');
+  if (sub) sub.textContent =
+    `${database} · top ${data.length} of ${all.length} model${all.length === 1 ? '' : 's'} · sequences per model`;
+
+  if (!data.length) {
+    wrap.innerHTML = '<div class="vq-empty" style="padding:24px 16px;font-size:12px">No domains.</div>';
+    return;
+  }
+
+  const color = _HMM_DB_COLORS[database] || 'var(--vq-accent)';
+  const W     = Math.max(wrap.clientWidth || 0, 220);
+  const PAD_L = 28; const PAD_R = 6;
+  const PAD_T = 14; const PAD_B = 58;           // room for rotated model names
+  const H     = 200;
+  const drawW = W - PAD_L - PAD_R;
+  const drawH = H - PAD_T - PAD_B;
+
+  const xScale = d3.scaleBand(data.map(d => d.target), [0, drawW]).padding(0.28);
+  const yMax   = d3.max(data, d => d.nSeqs) || 1;
+  const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
+  const short  = t => (t.length > 13 ? t.slice(0, 12) + '…' : t);
+
+  const svg = d3.create('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  const g = svg.append('g').attr('transform', `translate(${PAD_L},${PAD_T})`);
+
+  // Y-axis grid + integer tick labels (counts of sequences)
+  yScale.ticks(Math.min(4, yMax)).filter(Number.isInteger).forEach(tick => {
+    g.append('line')
+      .attr('x1', 0).attr('y1', yScale(tick))
+      .attr('x2', drawW).attr('y2', yScale(tick))
+      .attr('stroke', 'var(--vq-c-grid)').attr('stroke-dasharray', '3,2').attr('stroke-width', 0.7);
+    g.append('text')
+      .attr('x', -5).attr('y', yScale(tick) + 3)
+      .attr('text-anchor', 'end').attr('font-size', 9)
+      .attr('fill', 'var(--vq-c-tick)').text(tick);
+  });
+
+  data.forEach(d => {
+    const x  = xScale(d.target);
+    const bw = xScale.bandwidth();
+    const bh = Math.max(drawH - yScale(d.nSeqs), 1);
+    const r  = Math.min(Math.ceil(bw / 2), 5);
+    const tip = evt => VQ.tooltipShow(`
+      <div class="vq-tooltip__title">${VQ.esc(d.target)}</div>
+      ${d.description ? `<div style="margin-bottom:4px">${VQ.esc(d.description)}</div>` : ''}
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Sequences</span><span>${d.nSeqs.toLocaleString()}</span>
+        <span class="vq-tooltip__key">Hits</span><span>${d.hits.toLocaleString()}</span>
+        ${d.type ? `<span class="vq-tooltip__key">Type</span><span>${VQ.esc(d.type)}</span>` : ''}
+        <span class="vq-tooltip__key">Database</span><span>${VQ.esc(database)}</span>
+      </div>`, evt);
+
+    g.append('path')
+      .attr('d', _barPath(x, yScale(d.nSeqs), bw, bh, r))
+      .attr('fill', color).attr('opacity', 0.85)
+      .on('mousemove', tip)
+      .on('mouseleave', VQ.tooltipHide);
+
+    // Count above the bar
+    g.append('text')
+      .attr('x', x + bw / 2).attr('y', yScale(d.nSeqs) - 4)
+      .attr('text-anchor', 'middle').attr('font-size', 10).attr('font-weight', 600)
+      .attr('fill', 'var(--vq-text)').attr('font-variant-numeric', 'tabular-nums')
+      .text(d.nSeqs);
+
+    // Model name under the bar, rotated; full name + description on hover
+    g.append('text')
+      .attr('transform', `translate(${x + bw / 2},${drawH + 8}) rotate(-38)`)
+      .attr('text-anchor', 'end').attr('font-size', 9.5)
+      .attr('font-family', 'var(--vq-font-mono)')
+      .attr('fill', 'var(--vq-text-2)')
+      .style('cursor', 'default')
+      .text(short(d.target))
+      .on('mousemove', tip)
+      .on('mouseleave', VQ.tooltipHide);
+  });
+
+  // Baseline
+  g.append('line').attr('x1', 0).attr('y1', drawH).attr('x2', drawW).attr('y2', drawH)
+    .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
+
+  wrap.appendChild(svg.node());
+}
 
 function _renderHMMBars(hmm) {
   const wrap = document.getElementById('stats-hmm-svg');
