@@ -11,14 +11,12 @@ from __future__ import annotations
 import base64
 import json
 import re
-import urllib.request
 from pathlib import Path
+
+from .d3_asset import load_d3
 
 _HERE       = Path(__file__).parent
 _COMPONENTS = _HERE / "components-report"
-_D3_VERSION = "7.9.0"
-_D3_CDN_URL = f"https://cdn.jsdelivr.net/npm/d3@{_D3_VERSION}/dist/d3.min.js"
-_D3_CACHE   = _COMPONENTS / ".d3.min.js.cache"
 
 
 # ── Public entry point ─────────────────────────────────────────────────────
@@ -84,19 +82,8 @@ def _render_template(report_data: dict, d3_js: str) -> str:
     return html
 
 
-# ── D3 fetching / caching (shared cache file with the per-sample report) ───
+# ── D3 (bundled with the package; shared loader with the per-sample report) ─
 
 def _fetch_d3() -> str:
-    if _D3_CACHE.exists():
-        return _D3_CACHE.read_text(encoding="utf-8")
-    try:
-        with urllib.request.urlopen(_D3_CDN_URL, timeout=15) as resp:
-            js = resp.read().decode("utf-8")
-        _D3_CACHE.write_text(js, encoding="utf-8")
-        return js
-    except Exception as exc:
-        raise RuntimeError(
-            f"Could not fetch D3 v{_D3_VERSION} from CDN and no cache found.\n"
-            f"Supply the D3 source manually via the d3_js= parameter.\n"
-            f"Original error: {exc}"
-        ) from exc
+    """D3 source for the report (bundled copy; see d3_asset.load_d3)."""
+    return load_d3()

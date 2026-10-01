@@ -269,58 +269,77 @@ class TestRenderTemplate:
 
 
 # ---------------------------------------------------------------------------
-# _fetch_d3
+# D3 loading (d3_asset.load_d3, used by both report builders)
 # ---------------------------------------------------------------------------
 
 
+class _FakeResp:
+    def __init__(self, data: bytes):
+        self._data = data
+    def read(self):
+        return self._data
+    def __enter__(self):
+        return self
+    def __exit__(self, *_):
+        pass
+
+
 class TestFetchD3:
-    def test_returns_cache_when_present(self, tmp_path, monkeypatch):
-        import viralquest.html_report as hr
-        fake_cache = tmp_path / ".d3.min.js.cache"
-        fake_cache.write_text("/* cached-d3 */")
-        monkeypatch.setattr(hr, "_D3_CACHE", fake_cache)
+    def test_bundled_d3_ships_with_the_package(self):
+        from viralquest.d3_asset import D3_VENDORED, D3_VERSION
+        assert D3_VENDORED.is_file()
+        head = D3_VENDORED.read_text(encoding="utf-8")[:80]
+        assert f"d3js.org v{D3_VERSION}" in head
+        assert (D3_VENDORED.parent / "LICENSE-d3.txt").is_file()
 
-        result = hr._fetch_d3()
-        assert result == "/* cached-d3 */"
+    def test_bundled_copy_used_without_network(self, tmp_path):
+        from viralquest.d3_asset import load_d3
+        vendored = tmp_path / "d3.min.js"
+        vendored.write_text("/* bundled-d3 */")
+        with patch("urllib.request.urlopen") as net:
+            assert load_d3(vendored, tmp_path / "cache.js") == "/* bundled-d3 */"
+        net.assert_not_called()
 
-    def test_writes_cache_after_fetch(self, tmp_path, monkeypatch):
-        import viralquest.html_report as hr
-        fake_cache = tmp_path / ".d3.min.js.cache"
-        monkeypatch.setattr(hr, "_D3_CACHE", fake_cache)
+    def test_user_cache_used_when_bundle_missing(self, tmp_path):
+        from viralquest.d3_asset import load_d3
+        cache = tmp_path / "cache.js"
+        cache.write_text("/* cached-d3 */")
+        assert load_d3(tmp_path / "missing.js", cache) == "/* cached-d3 */"
 
-        fake_response_data = b"/* fetched-d3 */"
+    def test_download_written_to_user_cache(self, tmp_path):
+        from viralquest.d3_asset import load_d3
+        cache = tmp_path / "sub" / "cache.js"
+        with patch("urllib.request.urlopen", return_value=_FakeResp(b"/* fetched-d3 */")):
+            assert load_d3(tmp_path / "missing.js", cache) == "/* fetched-d3 */"
+        assert cache.read_text() == "/* fetched-d3 */"
 
-        class _FakeResp:
-            def read(self):
-                return fake_response_data
-            def __enter__(self):
-                return self
-            def __exit__(self, *_):
-                pass
+    def test_unwritable_cache_does_not_break(self, tmp_path):
+        from viralquest.d3_asset import load_d3
+        blocker = tmp_path / "file"
+        blocker.write_text("")                  # a file where a directory is needed
+        with patch("urllib.request.urlopen", return_value=_FakeResp(b"/* d3 */")):
+            assert load_d3(tmp_path / "missing.js", blocker / "cache.js") == "/* d3 */"
 
-        with patch("urllib.request.urlopen", return_value=_FakeResp()):
-            result = hr._fetch_d3()
-
-        assert result == "/* fetched-d3 */"
-        assert fake_cache.read_text() == "/* fetched-d3 */"
-
-    def test_raises_runtime_error_when_offline_and_no_cache(self, tmp_path, monkeypatch):
-        import viralquest.html_report as hr
-        fake_cache = tmp_path / ".d3.min.js.cache"
-        monkeypatch.setattr(hr, "_D3_CACHE", fake_cache)
-
+    def test_offline_and_not_bundled_raises(self, tmp_path):
+        from viralquest.d3_asset import load_d3
         with patch("urllib.request.urlopen", side_effect=OSError("no network")):
-            with pytest.raises(RuntimeError, match="Could not fetch D3"):
-                hr._fetch_d3()
-
-    def test_error_message_mentions_d3_parameter(self, tmp_path, monkeypatch):
-        import viralquest.html_report as hr
-        fake_cache = tmp_path / ".d3.min.js.cache"
-        monkeypatch.setattr(hr, "_D3_CACHE", fake_cache)
-
-        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
             with pytest.raises(RuntimeError, match="d3_js="):
-                hr._fetch_d3()
+                load_d3(tmp_path / "missing.js", tmp_path / "cache.js")
+
+    def test_user_cache_honours_xdg_cache_home(self, tmp_path, monkeypatch):
+        from viralquest.d3_asset import user_cache_path
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        assert user_cache_path().parent == tmp_path / "viralquest"
+
+    def test_both_report_builders_use_the_bundled_d3(self):
+        import viralquest.html_report as hr
+        import viralquest.report_builder as rb
+        from viralquest.d3_asset import D3_VENDORED
+        bundled = D3_VENDORED.read_text(encoding="utf-8")
+        with patch("urllib.request.urlopen") as net:
+            assert hr._fetch_d3() == bundled
+            assert rb._fetch_d3() == bundled
+        net.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -448,25 +467,14 @@ class TestCli:
         )
         assert "out.html" in result.stderr
 
-    def test_cli_without_d3_flag_uses_fetch(self, tmp_path, monkeypatch):
+    def test_without_d3_uses_bundled_copy_offline(self, tmp_path):
         import viralquest.html_report as hr
-        fake_cache = tmp_path / ".d3.min.js.cache"
-        fake_cache.write_text(STUB_D3)
-        monkeypatch.setattr(hr, "_D3_CACHE", fake_cache)
-
-        in_json = tmp_path / "report.json"
-        in_json.write_text(json.dumps(MINIMAL_REPORT), encoding="utf-8")
+        from viralquest.d3_asset import D3_VENDORED, D3_VERSION
         out_html = tmp_path / "out.html"
-
-        hr._cli.__globals__  # access to ensure module loaded
-        with patch.object(hr, "_fetch_d3", return_value=STUB_D3):
-            # Call write_report directly to simulate CLI without subprocess
-            hr.write_report(
-                json.loads(in_json.read_text()),
-                out_html,
-                d3_js=STUB_D3,
-            )
-        assert out_html.exists()
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")) as net:
+            hr.write_report(json.loads(json.dumps(MINIMAL_REPORT)), out_html)
+        net.assert_not_called()
+        assert f"d3js.org v{D3_VERSION}" in out_html.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

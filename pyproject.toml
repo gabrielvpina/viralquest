@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [tool.pytest.ini_options]
 pythonpath = [
   "."
@@ -9,14 +13,14 @@ version = "3.0.3"
 description = "A bioinformatics tool for viral genome analysis and characterization."
 readme = "README.md"
 authors = [{name = "Gabriel Rodrigues", email = "gvpina.rodrigues@gmail.com"}]
-license = {text = "MIT"}
+license = "GPL-3.0-only"
+license-files = ["LICENSE", "viralquest/vendor/LICENSE-d3.txt"]
 requires-python = ">=3.11"
 keywords = ["bioinformatics", "viral genomics", "genome annotation", "blast", "hmmer"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Operating System :: POSIX :: Linux",
@@ -67,4 +71,5 @@ include = ["viralquest*"]
     "bin/*", "misc/*",
     "components/*", "components/assets/*",
     "components-report/*", "components-report/assets/*",
+    "vendor/*",
 ]
