@@ -29,8 +29,10 @@
         </svg>
         About
       </button>
-      <button class="vq-nav__tab active" data-section="stats"    role="tab"
-              id="tab-stats"    aria-controls="section-stats"    aria-selected="true"  tabindex="0">General Stats</button>
+      <button class="vq-nav__tab active" data-section="run"      role="tab"
+              id="tab-run"      aria-controls="section-run"      aria-selected="true"  tabindex="0">Run</button>
+      <button class="vq-nav__tab"        data-section="virome"   role="tab"
+              id="tab-virome"   aria-controls="section-virome"   aria-selected="false" tabindex="-1">Virome</button>
       <button class="vq-nav__tab"        data-section="clusters" role="tab"
               id="tab-clusters" aria-controls="section-clusters" aria-selected="false" tabindex="-1">Cluster Analysis</button>
       <button class="vq-nav__tab"        data-section="viewer"   role="tab"
@@ -52,7 +54,8 @@
   <main class="vq-main">
 
     <section class="vq-section"        id="section-about"   role="tabpanel" aria-labelledby="tab-about"    hidden></section>
-    <section class="vq-section active" id="section-stats"    role="tabpanel" aria-labelledby="tab-stats"></section>
+    <section class="vq-section active" id="section-run"      role="tabpanel" aria-labelledby="tab-run"></section>
+    <section class="vq-section"        id="section-virome"   role="tabpanel" aria-labelledby="tab-virome"      hidden></section>
     <section class="vq-section"        id="section-clusters" role="tabpanel" aria-labelledby="tab-clusters"    hidden></section>
     <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-labelledby="tab-viewer"      hidden></section>
     <section class="vq-section"        id="section-taxonomy" role="tabpanel" aria-labelledby="tab-taxonomy"    hidden></section>
@@ -144,10 +147,10 @@
 
     // --- Back to top ------------------------------------------------
     const backTop = document.getElementById('vq-back-top');
-    let activeSection = 'stats';
+    let activeSection = 'run';
 
     function updateBackTop() {
-      const show = window.scrollY > 300 && activeSection !== 'stats';
+      const show = window.scrollY > 300 && activeSection !== 'run';
       backTop?.classList.toggle('visible', show);
     }
 

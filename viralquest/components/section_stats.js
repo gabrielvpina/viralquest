@@ -4,50 +4,204 @@
 'use strict';
 
 /* ============================================================
-   section_stats.js — Section 1: General Statistics dashboard
-   Top row: hero KPIs.
-   Charts row: family donut · HMM bars · Salmon panel.
-   Detail row: optional cards for input file, CAP3, LLM.
+   section_stats.js — the two overview tabs
+   Run    : how the pipeline ran — workflow, KPIs, then grouped cards
+            (Detection · Scoring · Data & assembly).
+   Virome : what was found — KPIs, the detected-viruses table, then grouped
+            cards (Taxonomy · Similarity to known viruses · Sequences & proteins).
+   Cards sit in titled groups on a 3-column grid (.vq-group / .vq-grid).
    ============================================================ */
 
 function vqInitStats(report) {
-  const el = document.getElementById('section-stats');
+  _initRunTab(report);
+  _initViromeTab(report);
+}
+
+/* Re-render a panel's charts when it is first shown or resized: a hidden tab
+   has zero width, so its charts are drawn at a fallback size until revealed. */
+function _redrawOnResize(el, redraw) {
+  let lastW = 0;
+  new ResizeObserver(() => {
+    const w = el.clientWidth;
+    if (!w || w === lastW) return;
+    lastW = w;
+    redraw();
+  }).observe(el);
+}
+
+/* Titled group of cards on a grid. `slots` = grid columns the cards fill
+   (a span-2 card counts as 2): 1–2 slots use a 2-column grid so a short group
+   does not leave an empty third column. Empty groups vanish. */
+function _group(title, hint, cardsHtml, slots = 3) {
+  if (!cardsHtml.trim() || !slots) return '';
+  return `
+    <section class="vq-group">
+      <div class="vq-group__head">
+        <h3 class="vq-group__title">${VQ.esc(title)}</h3>
+        ${hint ? `<span class="vq-group__hint">${VQ.esc(hint)}</span>` : ''}
+      </div>
+      <div class="vq-grid${slots <= 2 ? ' vq-grid--2' : ''}">${cardsHtml}</div>
+    </section>`;
+}
+
+const _fmtNum = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString();
+
+/* Chart height that fills its card body. Grid rows stretch a card to its
+   tallest neighbour; drawing at a fixed height would leave a blank band above
+   the chart. Call after clearing the wrap, so the body's height reflects the
+   row rather than the previous drawing. */
+function _fillHeight(wrap, minH) {
+  const body = wrap.parentElement;
+  const h = body ? body.clientHeight - 8 : 0;
+  return Math.max(minH, Math.floor(h));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  RUN — how the pipeline ran: workflow, filtering, databases, scoring, QC
+// ════════════════════════════════════════════════════════════════════════
+
+function _initRunTab(report) {
+  const el = document.getElementById('section-run');
   if (!el) return;
 
-  const esc    = VQ.esc;
-  const meta   = report.meta             || {};
-  const sum    = report.summary          || {};
-  const blast  = report.blast_stats      || {};
-  const hmm    = report.hmm_stats        || {};
-  const llm    = report.llm_stats        || {};
-  const heur   = report.heuristic_stats  || {};
-  const salmon = report.salmon_stats     || {};
+  const esc     = VQ.esc;
+  const meta    = report.meta             || {};
+  const sum     = report.summary          || {};
+  const blast   = report.blast_stats      || {};
+  const hmm     = report.hmm_stats        || {};
+  const llm     = report.llm_stats        || {};
+  const heur    = report.heuristic_stats  || {};
+  const salmon  = report.salmon_stats     || {};
   const seqQual = report.seq_quality_stats || {};
-  const seqs   = report.sequences        || [];
-  const wf     = report.workflow || (report.pipeline_stats || {}).workflow || null;
-  const hasWf  = !!(wf && (wf.steps || []).length);
-  const domainDbs = _domainDatabases(seqs);   // HMM banks with at least one domain
+  const seqs    = report.sequences        || [];
+  const wf      = report.workflow || (report.pipeline_stats || {}).workflow || null;
+  const hasWf   = !!(wf && (wf.steps || []).length);
 
-  // Derived presence flags — computed directly from sequence data so old
-  // report files without the pre-aggregated stats keys still work correctly.
-  const hasBlastn = seqs.some(s => (s.blastn_hits || []).length > 0);
-
-  // ── Aggregates ─────────────────────────────────────────────────────────
   const totalSeqs      = sum.total_sequences ?? seqs.length;
   const confirmedViral = sum.confirmed_viral ?? seqs.filter(s => s.is_viral).length;
   const totalOrfs      = sum.total_orfs      ?? seqs.reduce((a, s) => a + (s.orfs || []).length, 0);
   const totalClusters  = sum.total_clusters  ?? (report.clusters || []).length;
+  const hmmTotal = (hmm.rvdb_hits || 0) + (hmm.vfam_hits || 0)
+                 + (hmm.eggnog_hits ?? hmm.eggnong_hits ?? 0) + (hmm.pfam_hits || 0);
 
-  const fmtNum = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString();
+  const detection = `
+    <div class="vq-chart-card" id="stats-funnel-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Detection Pipeline</div>
+          <div class="vq-chart-card__sub">sequences at each filtering step</div>
+        </div>
+      </div>
+      <div class="vq-chart-card__body" style="padding:6px 14px 10px">
+        <div id="stats-funnel-svg" style="width:100%"></div>
+      </div>
+    </div>
+    <div class="vq-chart-card" id="stats-hmm-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">HMM Database Hits</div>
+          <div class="vq-chart-card__sub">threshold-passing hits per database</div>
+        </div>
+        <div class="vq-chart-card__big" id="stats-hmm-total">${_fmtNum(hmmTotal)}</div>
+      </div>
+      <div class="vq-chart-card__body">
+        <div id="stats-hmm-svg" style="width:100%"></div>
+      </div>
+    </div>`;
 
-  // ── Page scaffold ──────────────────────────────────────────────────────
-  // The workflow card carries input, start time and version, so the static
-  // header is only kept for older reports that have no workflow records.
+  const scoring = `
+    ${heur.present ? `
+    <div class="vq-chart-card" id="stats-heur-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Heuristic Scoring</div>
+          <div class="vq-chart-card__sub">rule-based · deterministic</div>
+        </div>
+        <div class="vq-chart-card__big">${heur.avg_score != null ? Number(heur.avg_score).toFixed(1) : '—'}</div>
+      </div>
+      <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start;gap:0">
+        <div id="stats-heur-gauge" style="width:100%;margin-bottom:10px"></div>
+        ${_miniRow('Scored',        _fmtNum(heur.scored))}
+        ${_miniRow('Viral known',   _fmtNum(heur.viral_known))}
+        ${_miniRow('Viral unknown', _fmtNum(heur.viral_unknown))}
+        ${heur.non_viral ? _miniRow('Non-viral', _fmtNum(heur.non_viral)) : ''}
+      </div>
+    </div>` : ''}
+    ${llm.present ? `
+    <div class="vq-chart-card" id="stats-llm-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">LLM Scoring</div>
+          <div class="vq-chart-card__sub">${esc(llm.model || '—')}${llm.mode ? ' · ' + esc(llm.mode) + '-token mode' : ''}</div>
+        </div>
+        <div class="vq-chart-card__big">${llm.avg_score != null ? Number(llm.avg_score).toFixed(1) : '—'}</div>
+      </div>
+      <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
+        ${_miniRow('Sent to LLM',   _fmtNum(llm.scored))}
+        ${_miniRow('Viral known',   _fmtNum(llm.viral_known))}
+        ${_miniRow('Viral unknown', _fmtNum(llm.viral_unknown))}
+        ${llm.api_error   ? _miniRow('API errors',        _fmtNum(llm.api_error))   : ''}
+        ${llm.parse_error ? _miniRow('Invalid responses', _fmtNum(llm.parse_error)) : ''}
+      </div>
+    </div>` : ''}`;
+
+  const dataQc = `
+    ${seqQual.present ? `
+    <div class="vq-chart-card" id="stats-seqqual-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Sequence Quality</div>
+          <div class="vq-chart-card__sub">structural signals across sequences</div>
+        </div>
+        <div class="vq-chart-card__big">${_fmtNum(seqQual.seqs_analyzed)}</div>
+      </div>
+      <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
+        ${_miniRow('With repeats',        _fmtNum(seqQual.with_repeats))}
+        ${_miniRow('With low complexity', _fmtNum(seqQual.with_low_complexity))}
+        ${_miniRow('Total repeats',       _fmtNum(seqQual.total_repeats))}
+        ${_miniRow(`Repeat score (k${seqQual.kmer_size ?? '?'})`,
+                   seqQual.mean_repeat_score != null
+                     ? (seqQual.mean_repeat_score * 100).toFixed(1) + '%'
+                     + (seqQual.max_repeat_score != null
+                         ? ' · max ' + (seqQual.max_repeat_score * 100).toFixed(1) + '%' : '')
+                     : '—')}
+      </div>
+    </div>` : ''}
+    ${sum.cap3_used ? `
+    <div class="vq-chart-card" id="stats-cap3-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">CAP3 Assembly</div>
+          <div class="vq-chart-card__sub">input re-assembled before analysis</div>
+        </div>
+      </div>
+      <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
+        ${_miniRow('Contigs',  _fmtNum(sum.cap3_contigs))}
+        ${_miniRow('Singlets', _fmtNum(sum.cap3_singlets))}
+      </div>
+    </div>` : ''}
+    ${salmon.present ? `
+    <div class="vq-chart-card" id="stats-salmon-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Read Mapping · Salmon</div>
+          <div class="vq-chart-card__sub">
+            ${_fmtNum(salmon.total_reads)} reads
+            ${salmon.pathway ? ' · ' + esc(salmon.pathway) + ' pathway' : ''}
+          </div>
+        </div>
+      </div>
+      <div class="vq-chart-card__body" style="flex-direction:column;justify-content:flex-start;gap:0">
+        <div id="stats-salmon-svg" style="width:100%"></div>
+        <div id="stats-salmon-rows" style="width:100%;padding:0 4px 4px"></div>
+      </div>
+    </div>` : ''}`;
+
   el.innerHTML = `
     ${hasWf ? '' : `
     <div class="vq-section-header">
       <div>
-        <div class="vq-section-title">General Statistics</div>
+        <div class="vq-section-title">Run</div>
         <div class="vq-section-sub">
           ${esc(meta.input_file?.name || 'Sample report')}
           &nbsp;·&nbsp; run ${esc(meta.timestamp ? new Date(meta.timestamp).toLocaleString() : '—')}
@@ -57,348 +211,665 @@ function vqInitStats(report) {
     </div>`}
 
     <div class="vq-stats-page">
-
-      <!-- Pipeline workflow — only for reports that carry per-step records -->
       ${hasWf ? _workflowCardHtml(wf, meta.viralquest_version) : ''}
 
-      <!-- Hero KPI row -->
       <div class="vq-stats-row vq-stats-row--top">
-        ${_chip('Total Sequences', fmtNum(totalSeqs), 'accent',
+        ${_chip('Input Sequences', _fmtNum(totalSeqs), 'accent',
                 meta.input_file?.name ? esc(meta.input_file.name) : '')}
-        ${_chip('Confirmed Viral', fmtNum(confirmedViral), 'success',
+        ${_chip('ORFs Predicted', _fmtNum(totalOrfs), '', 'across confirmed sequences')}
+        ${_chip('Confirmed Viral', _fmtNum(confirmedViral), 'success',
                 _pct(confirmedViral, totalSeqs) + ' of input')}
-        ${_chip('Total ORFs', fmtNum(totalOrfs), '',
-                'across confirmed sequences')}
-        ${_chip('Clusters', fmtNum(totalClusters), 'accent',
-                'unique viral species')}
+        ${hasWf
+          ? _chip('Runtime', _fmtDur(wf.total_seconds), '',
+                  `${(wf.steps || []).filter(x => x.status !== 'skipped').length} steps run`)
+          : _chip('Clusters', _fmtNum(totalClusters), 'accent', 'species clusters')}
       </div>
 
-      <!-- Uniform 3-column card grid — every card is 1/3 of the row.
-           Conditional cards (Salmon, LLM, CAP3) only enter the DOM when
-           their data is present; the grid reflows automatically. -->
-      <div class="vq-masonry">
+      ${_group('Detection & scoring', 'how sequences were filtered, confirmed and scored',
+               detection + scoring, 2 + !!heur.present + !!llm.present)}
+      ${_group('Data & assembly', 'input processing and read-level quality',
+               dataQc, !!seqQual.present + !!sum.cap3_used + !!salmon.present)}
+    </div>`;
 
-        <!-- 1. Detection Pipeline — always -->
-        <div class="vq-chart-card" id="stats-funnel-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">Detection Pipeline</div>
-              <div class="vq-chart-card__sub">sequences at each filtering step</div>
-            </div>
-          </div>
-          <div class="vq-chart-card__body" style="padding:6px 14px 10px">
-            <div id="stats-funnel-svg" style="width:100%"></div>
+  if (hasWf) _renderWorkflow(wf);
+  const draw = () => {
+    _renderFunnel(blast);
+    _renderHMMBars(hmm);
+    if (heur.present)   _renderHeuristicGauge(heur);
+    if (salmon.present) _renderSalmonChart(salmon);
+  };
+  draw();
+  _redrawOnResize(el, () => { draw(); if (hasWf) _renderWorkflow(wf); });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  VIROME — what was found: viruses, taxonomy, similarity, sequences
+// ════════════════════════════════════════════════════════════════════════
+
+function _initViromeTab(report) {
+  const el = document.getElementById('section-virome');
+  if (!el) return;
+
+  const esc       = VQ.esc;
+  const seqs      = report.sequences || [];
+  const viral     = seqs.filter(s => s.is_viral);
+  const hasBlastn = viral.some(s => (s.blastn_hits || []).length > 0);
+  const domainDbs = _domainDatabases(seqs);
+  const viruses   = _virusRows(viral);
+  const families  = new Set(viral.map(s => s.taxonomy?.family).filter(Boolean));
+  const known     = viruses.filter(v => v.status === 'known').length;
+
+  const table = `
+    <div class="vq-chart-card vq-span-3" id="stats-viruses-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Detected Viruses</div>
+          <div class="vq-chart-card__sub" id="stats-viruses-sub"></div>
+        </div>
+        <div class="vq-vt-tools">
+          <input class="vq-input vq-input--sm" type="search" id="stats-viruses-search"
+                 placeholder="Filter species, family…" aria-label="Filter detected viruses">
+          <div class="vq-toggle" id="stats-viruses-status" role="tablist" aria-label="Status">
+            <button class="vq-toggle__btn active" type="button" data-status="all">All</button>
+            <button class="vq-toggle__btn" type="button" data-status="known">Known</button>
+            <button class="vq-toggle__btn" type="button" data-status="related">Related</button>
+            <button class="vq-toggle__btn" type="button" data-status="divergent">Divergent</button>
           </div>
         </div>
+      </div>
+      <div class="vq-chart-card__body" style="justify-content:flex-start">
+        <div class="vq-vt-wrap" id="stats-viruses-table"></div>
+      </div>
+    </div>`;
 
-        <!-- 2. Viral Family Distribution — always -->
-        <div class="vq-chart-card" id="stats-tax-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">Viral Family Distribution</div>
-              <div class="vq-chart-card__sub" id="stats-tax-sub">across confirmed sequences</div>
-            </div>
-            <div class="vq-toggle" role="tablist" aria-label="Taxonomy rank">
-              <button class="vq-toggle__btn active" type="button" data-rank="family">Family</button>
-              <button class="vq-toggle__btn"        type="button" data-rank="phylum">Phylum</button>
-            </div>
-          </div>
-          <div class="vq-chart-card__body">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:center">
-              <div id="stats-tax-svg" style="display:flex;justify-content:center;align-items:center"></div>
-              <div id="stats-tax-legend" class="vq-chart-legend"></div>
-            </div>
-          </div>
+  const taxonomy = `
+    <div class="vq-chart-card" id="stats-tax-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Viral Family Distribution</div>
+          <div class="vq-chart-card__sub" id="stats-tax-sub">across confirmed sequences</div>
         </div>
-
-        <!-- 3. HMM Database Hits — always -->
-        <div class="vq-chart-card" id="stats-hmm-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">HMM Database Hits</div>
-              <div class="vq-chart-card__sub">viral filter databases</div>
-            </div>
-            <div class="vq-chart-card__big" id="stats-hmm-total">${fmtNum(
-              (hmm.rvdb_hits||0) + (hmm.vfam_hits||0) + (hmm.eggnog_hits ?? hmm.eggnong_hits ?? 0) + (hmm.pfam_hits||0)
-            )}</div>
-          </div>
-          <div class="vq-chart-card__body">
-            <div id="stats-hmm-svg" style="width:100%"></div>
-          </div>
+        <div class="vq-toggle" role="tablist" aria-label="Taxonomy rank">
+          <button class="vq-toggle__btn active" type="button" data-rank="family">Family</button>
+          <button class="vq-toggle__btn"        type="button" data-rank="phylum">Phylum</button>
         </div>
-
-        <!-- 3b. Top Domains per HMM model — when any domain was found -->
-        ${domainDbs.length ? `
-        <div class="vq-chart-card" id="stats-domains-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">Top Domains</div>
-              <div class="vq-chart-card__sub" id="stats-domains-sub">sequences carrying each model</div>
-            </div>
-          </div>
-          <div class="vq-toggle" id="stats-domains-toggle" role="tablist" aria-label="HMM database"
-               style="align-self:flex-start;margin-bottom:6px">
-            ${domainDbs.map((db, i) => `
-              <button class="vq-toggle__btn${i === 0 ? ' active' : ''}" type="button"
-                      data-domain-db="${esc(db)}">${esc(db)}</button>`).join('')}
-          </div>
-          <div class="vq-chart-card__body">
-            <div id="stats-domains-svg" style="width:100%"></div>
-          </div>
-        </div>` : ''}
-
-        <!-- 4. BLASTx — always -->
-        <div class="vq-chart-card" id="stats-identity-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div class="vq-chart-card__title" id="stats-blastx-title">BLASTx Identity</div>
-            <div class="vq-toggle" id="blast-toggle-x" role="tablist">
-              <button class="vq-toggle__btn active" type="button" data-blast-metric="identity">Identity</button>
-              <button class="vq-toggle__btn"        type="button" data-blast-metric="coverage">Coverage</button>
-            </div>
-          </div>
-          <div class="vq-chart-card__body" style="padding-top:4px">
-            <div id="stats-identity-svg" style="width:100%"></div>
-          </div>
+      </div>
+      <div class="vq-chart-card__body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:center">
+          <div id="stats-tax-svg" style="display:flex;justify-content:center;align-items:center"></div>
+          <div id="stats-tax-legend" class="vq-chart-legend"></div>
         </div>
-
-        <!-- 5. BLASTn — only when BLASTn was run -->
-        ${hasBlastn ? `
-        <div class="vq-chart-card" id="stats-blastn-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div class="vq-chart-card__title" id="stats-blastn-title">BLASTn Identity</div>
-            <div class="vq-toggle" id="blast-toggle-n" role="tablist">
-              <button class="vq-toggle__btn active" type="button" data-blast-metric="identity">Identity</button>
-              <button class="vq-toggle__btn"        type="button" data-blast-metric="coverage">Coverage</button>
-            </div>
-          </div>
-          <div class="vq-chart-card__body" style="padding-top:4px">
-            <div id="stats-blastn-svg" style="width:100%"></div>
-          </div>
-        </div>` : ''}
-
-        <!-- 6. Viral Length Distribution — always -->
-        <div class="vq-chart-card" id="stats-length-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">Viral Length Distribution</div>
-              <div class="vq-chart-card__sub" id="stats-length-sub">viral sequences</div>
-            </div>
-          </div>
-          <div class="vq-chart-card__body">
-            <div id="stats-length-svg" style="width:100%"></div>
-          </div>
-        </div>
-
-        <!-- 7. Top Detected Species — always -->
-        <div class="vq-chart-card" id="stats-species-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">Top Detected Species</div>
-              <div class="vq-chart-card__sub" id="stats-species-sub"></div>
-            </div>
-          </div>
-          <div class="vq-chart-card__body" style="padding:0;justify-content:flex-start">
-            <div id="stats-species-table"></div>
-          </div>
-        </div>
-
-        <!-- 8. NR Classification: Virus vs Phage — always -->
-        <div class="vq-chart-card" id="stats-nrclass-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title" id="stats-nrclass-title">NR Classification</div>
-              <div class="vq-chart-card__sub" id="stats-nrclass-sub">virus · phage breakdown</div>
-            </div>
-          </div>
-          <div class="vq-chart-card__body" style="justify-content:flex-start">
-            <div id="stats-nrclass-legend" style="width:100%"></div>
-          </div>
-        </div>
-
-        <!-- 9. Salmon Quantification — only when salmon was run -->
-        ${salmon.present ? `
-        <div class="vq-chart-card" id="stats-salmon-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">Salmon Quantification</div>
-              <div class="vq-chart-card__sub">
-                ${fmtNum(salmon.total_reads)} reads
-                ${salmon.pathway ? ' · ' + esc(salmon.pathway) + ' pathway' : ''}
-              </div>
-            </div>
-          </div>
-          <div class="vq-chart-card__body" style="flex-direction:column;justify-content:flex-start;gap:0">
-            <div id="stats-salmon-svg" style="width:100%"></div>
-            <div id="stats-salmon-rows" style="width:100%;padding:0 4px 4px"></div>
-          </div>
-        </div>` : ''}
-
-        <!-- 10. LLM Scoring — only when LLM was used -->
-        ${llm.present ? `
-        <div class="vq-chart-card" id="stats-llm-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">LLM Scoring</div>
-              <div class="vq-chart-card__sub">${esc(llm.model || '—')}</div>
-            </div>
-            <div class="vq-chart-card__big">${llm.avg_score != null ? Number(llm.avg_score).toFixed(1) : '—'}</div>
-          </div>
-          <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
-            ${_miniRow('Sent to LLM',   fmtNum(llm.scored))}
-            ${_miniRow('Viral known',   fmtNum(llm.viral_known))}
-            ${_miniRow('Viral unknown', fmtNum(llm.viral_unknown))}
-            ${llm.api_error   ? _miniRow('API errors',        fmtNum(llm.api_error))   : ''}
-            ${llm.parse_error ? _miniRow('Invalid responses', fmtNum(llm.parse_error)) : ''}
-          </div>
-        </div>` : ''}
-
-        <!-- 11. Heuristic Scoring — only when heuristic has run -->
-        ${heur.present ? `
-        <div class="vq-chart-card" id="stats-heur-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">Heuristic Scoring</div>
-              <div class="vq-chart-card__sub">rule-based · deterministic</div>
-            </div>
-            <div class="vq-chart-card__big">${heur.avg_score != null ? Number(heur.avg_score).toFixed(1) : '—'}</div>
-          </div>
-          <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start;gap:0">
-            <div id="stats-heur-gauge" style="width:100%;margin-bottom:10px"></div>
-            ${_miniRow('Scored',        fmtNum(heur.scored))}
-            ${_miniRow('Viral known',   fmtNum(heur.viral_known))}
-            ${_miniRow('Viral unknown', fmtNum(heur.viral_unknown))}
-            ${heur.non_viral ? _miniRow('Non-viral', fmtNum(heur.non_viral)) : ''}
-          </div>
-        </div>` : ''}
-
-        <!-- 12. CAP3 Assembly — only when CAP3 was used -->
-        ${sum.cap3_used ? `
-        <div class="vq-chart-card" id="stats-cap3-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div class="vq-chart-card__title">CAP3 Assembly</div>
-          </div>
-          <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
-            ${_miniRow('Contigs',  fmtNum(sum.cap3_contigs))}
-            ${_miniRow('Singlets', fmtNum(sum.cap3_singlets))}
-          </div>
-        </div>` : ''}
-
-        <!-- 13. Sequence Quality — only when --reads produced seq-quality signals -->
-        ${seqQual.present ? `
-        <div class="vq-chart-card" id="stats-seqqual-card" style="min-height:auto">
-          <div class="vq-chart-card__head">
-            <div>
-              <div class="vq-chart-card__title">Sequence Quality</div>
-              <div class="vq-chart-card__sub">structural signals across sequences</div>
-            </div>
-            <div class="vq-chart-card__big">${fmtNum(seqQual.seqs_analyzed)}</div>
-          </div>
-          <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
-            ${_miniRow('With repeats',       fmtNum(seqQual.with_repeats))}
-            ${_miniRow('With low complexity', fmtNum(seqQual.with_low_complexity))}
-            ${_miniRow('Total repeats',      fmtNum(seqQual.total_repeats))}
-            ${_miniRow(`Repeat score (k${seqQual.kmer_size ?? '?'})`,
-                       seqQual.mean_repeat_score != null
-                         ? (seqQual.mean_repeat_score * 100).toFixed(1) + '%'
-                         + (seqQual.max_repeat_score != null
-                             ? ' · max ' + (seqQual.max_repeat_score * 100).toFixed(1) + '%' : '')
-                         : '—')}
-          </div>
-        </div>` : ''}
-
       </div>
     </div>
-  `;
+    <div class="vq-chart-card" id="stats-genome-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Genome Types</div>
+          <div class="vq-chart-card__sub" id="stats-genome-sub">sequences per genome composition</div>
+        </div>
+      </div>
+      <div class="vq-chart-card__body">
+        <div id="stats-genome-svg" style="width:100%"></div>
+      </div>
+    </div>
+    <div class="vq-chart-card" id="stats-nrclass-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title" id="stats-nrclass-title">NR Classification</div>
+          <div class="vq-chart-card__sub" id="stats-nrclass-sub">virus · phage breakdown</div>
+        </div>
+      </div>
+      <div class="vq-chart-card__body" style="justify-content:flex-start">
+        <div id="stats-nrclass-legend" style="width:100%"></div>
+      </div>
+    </div>`;
 
-  // ── Wire up ────────────────────────────────────────────────────────────
+  const similarity = `
+    <div class="vq-chart-card vq-span-2" id="stats-scatter-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Identity × Coverage</div>
+          <div class="vq-chart-card__sub" id="stats-scatter-sub">best hit per sequence · click a point to open it</div>
+        </div>
+        ${hasBlastn ? `
+        <div class="vq-toggle" id="stats-scatter-toggle" role="tablist" aria-label="Search">
+          <button class="vq-toggle__btn active" type="button" data-scatter="blastx">BLASTx</button>
+          <button class="vq-toggle__btn"        type="button" data-scatter="blastn">BLASTn</button>
+        </div>` : ''}
+      </div>
+      <div class="vq-chart-card__body">
+        <div id="stats-scatter-svg" style="width:100%"></div>
+      </div>
+    </div>
+    <div class="vq-stack">
+      <div class="vq-chart-card" id="stats-identity-card">
+        <div class="vq-chart-card__head">
+          <div class="vq-chart-card__title" id="stats-blastx-title">BLASTx Identity</div>
+          <div class="vq-toggle" id="blast-toggle-x" role="tablist">
+            <button class="vq-toggle__btn active" type="button" data-blast-metric="identity">Identity</button>
+            <button class="vq-toggle__btn"        type="button" data-blast-metric="coverage">Coverage</button>
+          </div>
+        </div>
+        <div class="vq-chart-card__body" style="padding-top:4px">
+          <div id="stats-identity-svg" style="width:100%"></div>
+        </div>
+      </div>
+      ${hasBlastn ? `
+      <div class="vq-chart-card" id="stats-blastn-card">
+        <div class="vq-chart-card__head">
+          <div class="vq-chart-card__title" id="stats-blastn-title">BLASTn Identity</div>
+          <div class="vq-toggle" id="blast-toggle-n" role="tablist">
+            <button class="vq-toggle__btn active" type="button" data-blast-metric="identity">Identity</button>
+            <button class="vq-toggle__btn"        type="button" data-blast-metric="coverage">Coverage</button>
+          </div>
+        </div>
+        <div class="vq-chart-card__body" style="padding-top:4px">
+          <div id="stats-blastn-svg" style="width:100%"></div>
+        </div>
+      </div>` : ''}
+    </div>`;
 
-  // Taxonomy donut
+  const sequences = `
+    <div class="vq-chart-card${domainDbs.length ? ' vq-wide-narrow' : ''}" id="stats-length-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Viral Length Distribution</div>
+          <div class="vq-chart-card__sub" id="stats-length-sub">viral sequences</div>
+        </div>
+      </div>
+      <div class="vq-chart-card__body">
+        <div id="stats-length-svg" style="width:100%"></div>
+      </div>
+    </div>
+    ${domainDbs.length ? `
+    <div class="vq-chart-card vq-span-2" id="stats-domains-card">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Top Domains</div>
+          <div class="vq-chart-card__sub" id="stats-domains-sub">sequences carrying each model</div>
+        </div>
+        <div class="vq-toggle" id="stats-domains-toggle" role="tablist" aria-label="HMM database">
+          ${domainDbs.map((db, i) => `
+            <button class="vq-toggle__btn${i === 0 ? ' active' : ''}" type="button"
+                    data-domain-db="${esc(db)}">${esc(db)}</button>`).join('')}
+        </div>
+      </div>
+      <div class="vq-chart-card__body">
+        <div id="stats-domains-svg" style="width:100%"></div>
+      </div>
+    </div>` : ''}`;
+
+  el.innerHTML = `
+    <div class="vq-stats-page">
+      <div class="vq-stats-row vq-stats-row--top">
+        ${_chip('Viral Sequences', _fmtNum(viral.length), 'success', 'confirmed contigs')}
+        ${_chip('Species', _fmtNum(viruses.length), 'accent', 'distinct best-hit species')}
+        ${_chip('Families', _fmtNum(families.size), '', 'with resolved taxonomy')}
+        ${_chip('Known Viruses', _fmtNum(known), 'success',
+                `≥${_KNOWN_ID}% identity · ≥${_KNOWN_COV}% coverage`)}
+      </div>
+
+      ${_group('Viruses', 'one row per species · best BLASTx hit', table)}
+      ${_group('Taxonomy', 'what kinds of viruses were found', taxonomy)}
+      ${_group('Similarity to known viruses', 'how close each sequence is to its best reference', similarity)}
+      ${_group('Sequences & proteins', 'contig sizes and protein domains',
+               sequences, 1 + (domainDbs.length ? 2 : 0))}
+    </div>`;
+
+  // ── Detected viruses table (search + status filter + sorting) ──
+  const tableState = { q: '', status: 'all', sort: 'contigs', dir: -1 };
+  const drawTable = () => _renderVirusTable(viruses, tableState);
+  document.getElementById('stats-viruses-search')?.addEventListener('input', e => {
+    tableState.q = e.target.value.trim().toLowerCase(); drawTable();
+  });
+  const statusBtns = document.querySelectorAll('#stats-viruses-status [data-status]');
+  statusBtns.forEach(btn => btn.addEventListener('click', () => {
+    statusBtns.forEach(b => b.classList.toggle('active', b === btn));
+    tableState.status = btn.dataset.status; drawTable();
+  }));
+  document.getElementById('stats-viruses-table')?.addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (th) {
+      const key = th.dataset.sort;
+      tableState.dir = tableState.sort === key ? -tableState.dir : (key === 'species' || key === 'family' ? 1 : -1);
+      tableState.sort = key;
+      drawTable();
+      return;
+    }
+    if (e.target.closest('a')) return;                      // accession link
+    const row = e.target.closest('tr[data-seq]');
+    if (row) VQ.jumpToViewer(row.dataset.seq);
+  });
+  drawTable();
+
+  // ── Taxonomy donut ──
   let currentRank = 'family';
   const renderTax = () => _renderTaxDonut(seqs, currentRank);
   document.querySelectorAll('#stats-tax-card [data-rank]').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('#stats-tax-card [data-rank]').forEach(b => {
-        b.classList.toggle('active', b === btn);
-      });
+      document.querySelectorAll('#stats-tax-card [data-rank]').forEach(b =>
+        b.classList.toggle('active', b === btn));
       currentRank = btn.dataset.rank;
       renderTax();
     });
   });
-  renderTax();
 
-  // Pipeline workflow flowchart + step details
-  if (hasWf) _renderWorkflow(wf);
+  // ── Identity × coverage scatter ──
+  let scatterSrc = 'blastx';
+  const scatterBtns = document.querySelectorAll('#stats-scatter-toggle [data-scatter]');
+  scatterBtns.forEach(btn => btn.addEventListener('click', () => {
+    scatterBtns.forEach(b => b.classList.toggle('active', b === btn));
+    scatterSrc = btn.dataset.scatter;
+    _renderSimilarityScatter(viral, scatterSrc);
+  }));
 
-  // HMM bars
-  _renderHMMBars(hmm);
-
-  // Top domains — one HMM bank at a time, switched by the toggle
-  if (domainDbs.length) {
-    const btns = document.querySelectorAll('#stats-domains-toggle [data-domain-db]');
+  // ── BLAST histograms: each card has its own Identity / Coverage toggle ──
+  const blastMetric = { x: 'identity', n: 'identity' };
+  const blastCards = {
+    x: { toggle: 'blast-toggle-x', title: 'stats-blastx-title', label: 'BLASTx',
+         draw: m => _renderIdentityHistogram(seqs, m) },
+    n: { toggle: 'blast-toggle-n', title: 'stats-blastn-title', label: 'BLASTn',
+         draw: m => _renderBLAstnHistogram(seqs, m) },
+  };
+  const drawBlast = () => {
+    blastCards.x.draw(blastMetric.x);
+    blastCards.n.draw(blastMetric.n);
+  };
+  Object.entries(blastCards).forEach(([key, card]) => {
+    const btns = document.querySelectorAll(`#${card.toggle} [data-blast-metric]`);
     btns.forEach(btn => btn.addEventListener('click', () => {
+      blastMetric[key] = btn.dataset.blastMetric;
       btns.forEach(b => b.classList.toggle('active', b === btn));
-      _renderTopDomains(seqs, btn.dataset.domainDb);
+      const title = document.getElementById(card.title);
+      if (title) title.textContent =
+        `${card.label} ${blastMetric[key] === 'coverage' ? 'Coverage' : 'Identity'}`;
+      card.draw(blastMetric[key]);
     }));
-    _renderTopDomains(seqs, domainDbs[0]);
+  });
+
+  // ── Top domains ──
+  let domainDb = domainDbs[0];
+  const domainBtns = document.querySelectorAll('#stats-domains-toggle [data-domain-db]');
+  domainBtns.forEach(btn => btn.addEventListener('click', () => {
+    domainBtns.forEach(b => b.classList.toggle('active', b === btn));
+    domainDb = btn.dataset.domainDb;
+    _renderTopDomains(seqs, domainDb);
+  }));
+
+  // Fixed-height charts first; the scatter and length histogram then fill
+  // the row height their neighbours set.
+  const draw = () => {
+    renderTax();
+    _renderGenomeTypes(viral);
+    _renderNRClassification(seqs);
+    drawBlast();
+    if (domainDb) _renderTopDomains(seqs, domainDb);
+    _renderSimilarityScatter(viral, scatterSrc);
+    _renderLengthHistogram(seqs);
+  };
+  draw();
+  _redrawOnResize(el, draw);
+}
+
+// ────────────────────────────────────────────────────────────────────────
+//  Virome helpers — per-species rows, status, genome types, scatter
+// ────────────────────────────────────────────────────────────────────────
+
+// "Known" mirrors the heuristic/LLM rule: >=90% identity AND >=70% coverage.
+const _KNOWN_ID  = 90;
+const _KNOWN_COV = 70;
+const _RELATED_ID = 70;
+const _STATUS_LABEL = { known: 'Known', related: 'Related', divergent: 'Divergent' };
+const _STATUS_COLOR = {
+  known:     'var(--vq-success)',
+  related:   'var(--vq-accent)',
+  divergent: 'var(--vq-warning)',
+};
+
+function _hitStatus(identity, coverage) {
+  if (identity >= _KNOWN_ID && coverage >= _KNOWN_COV) return 'known';
+  if (identity >= _RELATED_ID) return 'related';
+  return 'divergent';
+}
+
+/* Best BLASTx hit of a sequence: NR first, RefSeq as fallback. */
+function _bestBlastx(s) {
+  const hits = (s.blastx_nr_hits && s.blastx_nr_hits.length) ? s.blastx_nr_hits : (s.blastx_hits || []);
+  return hits.length ? hits.reduce((a, h) => (h.bit_score > a.bit_score ? h : a)) : null;
+}
+
+function _bestBlastn(s) {
+  const hits = s.blastn_hits || [];
+  return hits.length ? hits.reduce((a, h) => ((h.bit_score ?? 0) > (a.bit_score ?? 0) ? h : a)) : null;
+}
+
+/* Species of a hit: parsed `species`, else the bracketed organism in the title. */
+function _hitSpecies(h) {
+  if (h.species) return h.species;
+  const m = /\[([^\]]+)\]\s*$/.exec(h.subject_title || '');
+  return m ? m[1] : (h.subject_title || 'Unknown');
+}
+
+function _mostCommon(values) {
+  const c = new Map();
+  values.filter(Boolean).forEach(v => c.set(v, (c.get(v) || 0) + 1));
+  let best = null, n = 0;
+  c.forEach((k, v) => { if (k > n) { best = v; n = k; } });
+  return best;
+}
+
+const _PROTEIN_ACC = /^[A-Za-z0-9_]+(\.[0-9]+)?$/;
+function _proteinUrl(acc) {
+  return acc && _PROTEIN_ACC.test(acc)
+    ? `https://www.ncbi.nlm.nih.gov/protein/${encodeURIComponent(acc)}` : null;
+}
+
+/* One row per best-hit species, summarising its contigs. */
+function _virusRows(viral) {
+  const bySpecies = new Map();
+  viral.forEach(s => {
+    const hit = _bestBlastx(s);
+    if (!hit) return;
+    const sp = _hitSpecies(hit);
+    if (!bySpecies.has(sp)) bySpecies.set(sp, []);
+    bySpecies.get(sp).push({ seq: s, hit, bn: _bestBlastn(s) });
+  });
+  return [...bySpecies.entries()].map(([species, items]) => {
+    const best = items.reduce((a, b) => (b.hit.pct_identity > a.hit.pct_identity ? b : a));
+    const bnBest = items.map(i => i.bn).filter(Boolean)
+      .reduce((a, b) => (!a || b.pident > a.pident ? b : a), null);
+    const identity = best.hit.pct_identity;
+    const coverage = best.hit.query_coverage ?? 0;
+    return {
+      species,
+      family:   _mostCommon(items.map(i => i.seq.taxonomy?.family)) || '',
+      genome:   _mostCommon(items.map(i => i.seq.taxonomy?.genome)) || '',
+      contigs:  items.length,
+      length:   items.reduce((a, i) => a + (i.seq.length || 0), 0),
+      identity, coverage,
+      blastn:   bnBest ? bnBest.pident : null,
+      accession: best.hit.subject_id,
+      seqId:    best.seq.id,
+      status:   _hitStatus(identity, coverage),
+    };
+  });
+}
+
+function _pctCell(v) {
+  if (v == null) return '<span class="vq-vt-na">—</span>';
+  const w = Math.max(0, Math.min(100, v));
+  return `
+    <span class="vq-vt-pct">
+      <span class="vq-vt-pct__bar"><span style="width:${w}%"></span></span>
+      <span class="vq-vt-pct__val">${v.toFixed(1)}</span>
+    </span>`;
+}
+
+function _renderVirusTable(rows, st) {
+  const wrap = document.getElementById('stats-viruses-table');
+  if (!wrap) return;
+  const esc = VQ.esc;
+
+  const counts = { all: rows.length, known: 0, related: 0, divergent: 0 };
+  rows.forEach(r => { counts[r.status]++; });
+  document.querySelectorAll('#stats-viruses-status [data-status]').forEach(b => {
+    const k = b.dataset.status;
+    b.textContent = `${k === 'all' ? 'All' : _STATUS_LABEL[k]} · ${counts[k]}`;
+  });
+
+  let view = rows.filter(r =>
+    (st.status === 'all' || r.status === st.status) &&
+    (!st.q || `${r.species} ${r.family} ${r.genome}`.toLowerCase().includes(st.q)));
+  const key = st.sort;
+  view = view.sort((a, b) => {
+    const x = a[key], y = b[key];
+    if (typeof x === 'string' || typeof y === 'string')
+      return st.dir * String(x || '').localeCompare(String(y || ''));
+    return st.dir * ((x ?? -1) - (y ?? -1)) || a.species.localeCompare(b.species);
+  });
+
+  const sub = document.getElementById('stats-viruses-sub');
+  if (sub) sub.textContent =
+    `${rows.length} species · status from the best BLASTx hit (known ≥${_KNOWN_ID}% id & ≥${_KNOWN_COV}% cov, related ≥${_RELATED_ID}% id) · click a row to open its best contig`;
+
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="vq-empty" style="padding:24px;font-size:12px">No BLASTx hits.</div>';
+    return;
   }
 
-  // Salmon (card only exists in DOM when salmon.present)
-  if (salmon.present) _renderSalmonChart(salmon);
-
-  // Heuristic gauge (card only exists when heur.present)
-  if (heur.present) _renderHeuristicGauge(heur);
-
-  // Pipeline funnel + length + species + NR classification
-  _renderFunnel(blast);
-  _renderLengthHistogram(seqs);
-  _renderTopSpecies(seqs);
-  _renderNRClassification(seqs);
-
-  // BLAST toggles — both cards share the same metric state and stay in sync.
-  // Either toggle drives both charts simultaneously.
-  let blastMetric = 'identity';
-  const _allBlastBtns = () => [
-    ...document.querySelectorAll('#blast-toggle-x [data-blast-metric]'),
-    ...document.querySelectorAll('#blast-toggle-n [data-blast-metric]'),
-  ];
-  const _syncBlastToggles = () => {
-    _allBlastBtns().forEach(b =>
-      b.classList.toggle('active', b.dataset.blastMetric === blastMetric));
-    const cap = blastMetric === 'coverage' ? 'Coverage' : 'Identity';
-    const xt = document.getElementById('stats-blastx-title');
-    const nt = document.getElementById('stats-blastn-title');
-    if (xt) xt.textContent = `BLASTx ${cap}`;
-    if (nt) nt.textContent = `BLASTn ${cap}`;
+  const th = (k, label, cls = '') => {
+    const on = st.sort === k;
+    return `<th data-sort="${k}" class="${cls}${on ? ' vq-vt-sorted' : ''}" scope="col">
+      ${label}<span class="vq-vt-arrow">${on ? (st.dir > 0 ? '▲' : '▼') : ''}</span></th>`;
   };
-  const _drawBlast = () => {
-    _renderIdentityHistogram(seqs, blastMetric);
-    _renderBLAstnHistogram(seqs, blastMetric);
-  };
-  _allBlastBtns().forEach(btn => {
-    btn.addEventListener('click', () => {
-      blastMetric = btn.dataset.blastMetric;
-      _syncBlastToggles();
-      _drawBlast();
-    });
-  });
-  _drawBlast();
+  const hasBn = rows.some(r => r.blastn != null);
 
-// ResizeObserver — re-render charts when section is first revealed
-  let lastW = 0;
-  const ro = new ResizeObserver(() => {
-    const w = el.clientWidth;
-    if (!w || w === lastW) return;
-    lastW = w;
-    renderTax();
-    _renderHMMBars(hmm);
-    if (salmon.present) _renderSalmonChart(salmon);
-    if (heur.present)   _renderHeuristicGauge(heur);
-    _renderFunnel(blast);
-    _drawBlast();
-    _renderLengthHistogram(seqs);
-    _renderNRClassification(seqs);
+  wrap.innerHTML = view.length ? `
+    <table class="vq-table vq-vt">
+      <thead><tr>
+        ${th('species',  'Species')}
+        ${th('status',   'Status')}
+        ${th('family',   'Family')}
+        ${th('genome',   'Genome')}
+        ${th('contigs',  'Contigs',  'vq-vt-num')}
+        ${th('length',   'Total bp', 'vq-vt-num')}
+        ${th('identity', 'BLASTx id %')}
+        ${th('coverage', 'Coverage %')}
+        ${hasBn ? th('blastn', 'BLASTn id %') : ''}
+        <th scope="col">Best hit</th>
+      </tr></thead>
+      <tbody>
+        ${view.map(r => {
+          const url = _proteinUrl(r.accession);
+          return `
+          <tr data-seq="${esc(r.seqId)}" title="Open ${esc(r.seqId)} in the Sequence Viewer">
+            <td class="vq-vt-species">${esc(r.species)}</td>
+            <td><span class="vq-vt-status vq-vt-status--${r.status}">${_STATUS_LABEL[r.status]}</span></td>
+            <td>${r.family ? esc(r.family) : '<span class="vq-vt-na">—</span>'}</td>
+            <td>${r.genome ? esc(r.genome) : '<span class="vq-vt-na">—</span>'}</td>
+            <td class="vq-vt-num">${r.contigs.toLocaleString()}</td>
+            <td class="vq-vt-num">${r.length.toLocaleString()}</td>
+            <td>${_pctCell(r.identity)}</td>
+            <td>${_pctCell(r.coverage)}</td>
+            ${hasBn ? `<td>${_pctCell(r.blastn)}</td>` : ''}
+            <td class="vq-td--mono">${url
+              ? `<a class="vq-acc-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(r.accession)}</a>`
+              : esc(r.accession || '—')}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : '<div class="vq-empty" style="padding:24px;font-size:12px">No species match the filter.</div>';
+}
+
+const _GENOME_COLORS = [
+  'var(--vq-accent)', 'var(--vq-primary-light)', 'var(--vq-success)',
+  'var(--vq-accent-dark)', 'var(--vq-warning)', 'var(--vq-dom-5)', 'var(--vq-dom-6)',
+];
+
+function _renderGenomeTypes(viral) {
+  const wrap = document.getElementById('stats-genome-svg');
+  if (!wrap) return;
+  VQ.tooltipHide();
+  wrap.innerHTML = '';
+
+  const counts = new Map();
+  viral.forEach(s => {
+    const g = s.taxonomy?.genome || 'Unresolved';
+    counts.set(g, (counts.get(g) || 0) + 1);
   });
-  ro.observe(el);
+  // Resolved types by size, "Unresolved" always last.
+  const data = [...counts.entries()]
+    .sort((a, b) => (a[0] === 'Unresolved') - (b[0] === 'Unresolved') || b[1] - a[1])
+    .map(([name, value], i) => ({
+      name, value,
+      color: name === 'Unresolved' ? 'var(--vq-border-dark)' : _GENOME_COLORS[i % _GENOME_COLORS.length],
+    }));
+
+  const sub = document.getElementById('stats-genome-sub');
+  const resolved = viral.length - (counts.get('Unresolved') || 0);
+  if (sub) sub.textContent = `${resolved} of ${viral.length} sequences with a resolved genome type`;
+
+  if (!data.length) {
+    wrap.innerHTML = '<div class="vq-empty" style="padding:24px;font-size:12px">No sequences.</div>';
+    return;
+  }
+
+  const W = Math.max(wrap.clientWidth || 0, 220);
+  const PAD_L = 84, PAD_R = 44, ROW_H = 30, BAR_H = 14;
+  const H = data.length * ROW_H + 8;
+  const drawW = W - PAD_L - PAD_R;
+  const xScale = d3.scaleLinear([0, d3.max(data, d => d.value) || 1], [0, drawW]);
+
+  const svg = d3.create('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  data.forEach((d, i) => {
+    const y = 6 + i * ROW_H;
+    svg.append('text')
+      .attr('x', PAD_L - 8).attr('y', y + BAR_H / 2 + 4)
+      .attr('text-anchor', 'end').attr('font-size', 11.5).attr('font-weight', 500)
+      .attr('fill', d.name === 'Unresolved' ? 'var(--vq-text-3)' : 'var(--vq-text-2)')
+      .text(d.name);
+    svg.append('rect')
+      .attr('x', PAD_L).attr('y', y).attr('width', drawW).attr('height', BAR_H)
+      .attr('rx', BAR_H / 2).attr('fill', 'var(--vq-bg)');
+    const bw = Math.max(xScale(d.value), 4);
+    svg.append('rect')
+      .attr('x', PAD_L).attr('y', y).attr('width', bw).attr('height', BAR_H)
+      .attr('rx', BAR_H / 2).attr('fill', d.color)
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${VQ.esc(d.name)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Sequences</span><span>${d.value.toLocaleString()}</span>
+          <span class="vq-tooltip__key">Share</span><span>${_pct(d.value, viral.length)}</span>
+        </div>`, evt))
+      .on('mouseleave', VQ.tooltipHide);
+    svg.append('text')
+      .attr('x', PAD_L + bw + 8).attr('y', y + BAR_H / 2 + 4)
+      .attr('font-size', 11.5).attr('font-weight', 600)
+      .attr('fill', 'var(--vq-text)').attr('font-variant-numeric', 'tabular-nums')
+      .text(d.value.toLocaleString());
+  });
+
+  wrap.appendChild(svg.node());
+}
+
+function _renderSimilarityScatter(viral, source) {
+  const wrap = document.getElementById('stats-scatter-svg');
+  if (!wrap) return;
+  VQ.tooltipHide();
+  wrap.innerHTML = '';
+  const esc = VQ.esc;
+  const isX = source !== 'blastn';
+
+  const pts = viral.map(s => {
+    const h = isX ? _bestBlastx(s) : _bestBlastn(s);
+    if (!h) return null;
+    const id  = isX ? h.pct_identity : h.pident;
+    const cov = isX ? h.query_coverage : h.qcovhsp;
+    if (id == null || cov == null) return null;
+    return {
+      s, id, cov, status: _hitStatus(id, cov),
+      species: isX ? _hitSpecies(h) : (h.stitle || ''),
+    };
+  }).filter(Boolean);
+
+  const sub = document.getElementById('stats-scatter-sub');
+  if (sub) sub.textContent =
+    `${pts.length} sequences · best ${isX ? 'BLASTx' : 'BLASTn'} hit · shaded area = known (≥${_KNOWN_ID}% id, ≥${_KNOWN_COV}% cov) · click a point to open it`;
+
+  if (!pts.length) {
+    wrap.innerHTML = `<div class="vq-empty" style="padding:24px;font-size:12px">No ${isX ? 'BLASTx' : 'BLASTn'} hits.</div>`;
+    return;
+  }
+
+  const W = Math.max(wrap.clientWidth || 0, 300);
+  const H = _fillHeight(wrap, 260);
+  const PAD_L = 40, PAD_R = 12, PAD_T = 26, PAD_B = 34;
+  const drawW = W - PAD_L - PAD_R, drawH = H - PAD_T - PAD_B;
+
+  // Axes start at the lowest observed value (rounded down to 5) and end at 100%.
+  const floor5 = v => Math.max(0, Math.floor(v / 5) * 5);
+  const xLo = Math.min(floor5(d3.min(pts, p => p.id)),  95);
+  const yLo = Math.min(floor5(d3.min(pts, p => p.cov)), 95);
+  const x = d3.scaleLinear([xLo, 100], [0, drawW]);
+  const y = d3.scaleLinear([yLo, 100], [drawH, 0]);
+
+  const svg = d3.create('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+  const g = svg.append('g').attr('transform', `translate(${PAD_L},${PAD_T})`);
+
+  // "Known" region
+  const kx = x(Math.max(_KNOWN_ID, xLo)), ky = y(Math.max(_KNOWN_COV, yLo));
+  g.append('rect').attr('x', kx).attr('y', 0).attr('width', drawW - kx).attr('height', ky)
+    .attr('fill', 'var(--vq-success)').attr('opacity', 0.07);
+
+  // Grid + ticks
+  x.ticks(6).forEach(t => {
+    g.append('line').attr('x1', x(t)).attr('x2', x(t)).attr('y1', 0).attr('y2', drawH)
+      .attr('stroke', 'var(--vq-c-grid)').attr('stroke-dasharray', '3,2').attr('stroke-width', 0.7);
+    g.append('text').attr('x', x(t)).attr('y', drawH + 13)
+      .attr('text-anchor', _tickAnchor(t, xLo, 100)).attr('font-size', 9)
+      .attr('fill', 'var(--vq-c-tick)').text(t + '%');
+  });
+  y.ticks(5).forEach(t => {
+    g.append('line').attr('x1', 0).attr('x2', drawW).attr('y1', y(t)).attr('y2', y(t))
+      .attr('stroke', 'var(--vq-c-grid)').attr('stroke-dasharray', '3,2').attr('stroke-width', 0.7);
+    g.append('text').attr('x', -5).attr('y', y(t) + 3)
+      .attr('text-anchor', 'end').attr('font-size', 9)
+      .attr('fill', 'var(--vq-c-tick)').text(t + '%');
+  });
+  g.append('line').attr('x1', 0).attr('x2', drawW).attr('y1', drawH).attr('y2', drawH)
+    .attr('stroke', 'var(--vq-c-baseline)');
+  g.append('line').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', drawH)
+    .attr('stroke', 'var(--vq-c-baseline)');
+  svg.append('text').attr('x', PAD_L + drawW / 2).attr('y', H - 3)
+    .attr('text-anchor', 'middle').attr('font-size', 9.5).attr('fill', 'var(--vq-c-tick)')
+    .text('identity (%)');
+  svg.append('text')
+    .attr('transform', `translate(10,${PAD_T + drawH / 2}) rotate(-90)`)
+    .attr('text-anchor', 'middle').attr('font-size', 9.5).attr('fill', 'var(--vq-c-tick)')
+    .text('query coverage (%)');
+
+  // Points — divergent drawn last so they stay visible over the dense known cluster
+  const order = { known: 0, related: 1, divergent: 2 };
+  pts.sort((a, b) => order[a.status] - order[b.status]).forEach(p => {
+    g.append('circle')
+      .attr('cx', x(p.id)).attr('cy', y(p.cov)).attr('r', 4.2)
+      .attr('fill', _STATUS_COLOR[p.status]).attr('fill-opacity', 0.72)
+      .attr('stroke', 'var(--vq-surface)').attr('stroke-width', 1)
+      .style('cursor', 'pointer')
+      .on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${esc(p.s.id)}</div>
+        <div style="margin-bottom:4px;font-style:italic">${esc(p.species)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Identity</span><span>${p.id.toFixed(1)}%</span>
+          <span class="vq-tooltip__key">Coverage</span><span>${Number(p.cov).toFixed(1)}%</span>
+          <span class="vq-tooltip__key">Family</span><span>${esc(p.s.taxonomy?.family || '—')}</span>
+          <span class="vq-tooltip__key">Status</span><span>${_STATUS_LABEL[p.status]}</span>
+        </div>`, evt))
+      .on('mouseleave', VQ.tooltipHide)
+      .on('click', () => { VQ.tooltipHide(); VQ.jumpToViewer(p.s.id); });
+  });
+
+  // Legend
+  const counts = { known: 0, related: 0, divergent: 0 };
+  pts.forEach(p => counts[p.status]++);
+  const lg = svg.append('g').attr('transform', `translate(${PAD_L + 4},10)`);
+  let lx = 0;
+  ['known', 'related', 'divergent'].forEach(k => {
+    const item = lg.append('g').attr('transform', `translate(${lx},0)`);
+    item.append('circle').attr('r', 4).attr('cy', 0).attr('fill', _STATUS_COLOR[k]);
+    const t = item.append('text').attr('x', 8).attr('y', 3.5).attr('font-size', 10)
+      .attr('fill', 'var(--vq-text-2)').text(`${_STATUS_LABEL[k]} ${counts[k]}`);
+    lx += 8 + (t.node().getComputedTextLength?.() || 60) + 16;
+  });
+
+  wrap.appendChild(svg.node());
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -1218,7 +1689,7 @@ function _renderFunnel(blast) {
     { label: 'Input sequences',    value: blast.total_input          ?? null, color: 'var(--vq-primary)'       },
     { label: 'RefSeq BLASTx hits', value: blast.refseq_unique_seqs   ?? 0,   color: 'var(--vq-accent)'        },
     { label: 'Viral flagged',      value: blast.total_viral_flagged  ?? null, color: 'var(--vq-primary-light)' },
-    { label: 'NR confirmed',       value: blast.total_confirmed       ?? 0,   color: 'var(--vq-success)'       },
+    { label: 'Confirmed viral',    value: blast.total_confirmed       ?? 0,   color: 'var(--vq-success)'       },
     { label: 'BLASTn annotated',   value: blast.blastn_unique_seqs   ?? null, color: 'var(--vq-accent-dark)'   },
   ].filter(s => s.value !== null);
 
@@ -1317,6 +1788,42 @@ function _renderFunnel(blast) {
 //  Chart 5 — BLASTx identity histogram (green card)
 // ────────────────────────────────────────────────────────────────────────
 
+// ── Data-driven x axis for the histograms (starts at the smallest value) ──
+
+const _PCT_BINS = 10;   // BLAST histograms: [min, 100%] split into equal bins
+
+/* x domain from the data; widened when every value is the same, so the
+   single bar still has width. */
+function _dataDomain(lo, hi, minSpan) {
+  return hi - lo >= minSpan ? [lo, hi] : [Math.max(0, hi - minSpan), hi];
+}
+
+/* Percent label: integers stay integers, others keep one decimal. */
+function _fmtPct(v) {
+  const r = Math.round(v * 10) / 10;
+  return (Number.isInteger(r) ? String(r) : r.toFixed(1)) + '%';
+}
+
+/* Tick values for [lo, hi]: both ends always labelled, plus the round ticks
+   between them that are not too close to either end. */
+function _edgeTicks(scale, lo, hi, n) {
+  const gap  = (hi - lo) * 0.12;
+  const mids = scale.ticks(n).filter(t => t > lo + gap && t < hi - gap);
+  return [lo, ...mids, hi];
+}
+
+/* End labels hug the axis ends so they are never clipped at the card edge. */
+function _tickAnchor(t, lo, hi) {
+  return t === lo ? 'start' : t === hi ? 'end' : 'middle';
+}
+
+/* Equal-width percent bins over [lo, 100]. */
+function _pctBins(values, lo) {
+  const width = (100 - lo) / _PCT_BINS;
+  const thresholds = d3.range(1, _PCT_BINS).map(i => lo + i * width);
+  return d3.bin().domain([lo, 100]).thresholds(thresholds)(values);
+}
+
 function _renderIdentityHistogram(sequences, mode = 'identity') {
   const wrap = document.getElementById('stats-identity-svg');
   if (!wrap) return;
@@ -1344,9 +1851,11 @@ function _renderIdentityHistogram(sequences, mode = 'identity') {
   const drawW = W - PAD_L - PAD_R;
   const drawH = H - PAD_T - PAD_B;
 
-  const bins   = d3.bin().domain([0, 100]).thresholds([10,20,30,40,50,60,70,80,90])(values);
+  // x axis from the lowest observed value up to 100%
+  const [lo]   = _dataDomain(d3.min(values), 100, 1);
+  const bins   = _pctBins(values, lo);
   const yMax   = d3.max(bins, b => b.length) || 1;
-  const xScale = d3.scaleLinear([0, 100], [0, drawW]);
+  const xScale = d3.scaleLinear([lo, 100], [0, drawW]);
   const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
 
   const metricLabel = isCoverage ? 'coverage' : 'identity';
@@ -1381,7 +1890,7 @@ function _renderIdentityHistogram(sequences, mode = 'identity') {
       .attr('d', _barPath(x, yScale(bin.length), bw, bh, r))
       .attr('fill', 'var(--vq-accent)').attr('opacity', 0.82)
       .on('mousemove', evt => VQ.tooltipShow(`
-        <div class="vq-tooltip__title">${bin.x0}–${bin.x1}% ${metricLabel}</div>
+        <div class="vq-tooltip__title">${_fmtPct(bin.x0)} – ${_fmtPct(bin.x1)} ${metricLabel}</div>
         <div class="vq-tooltip__row">
           <span class="vq-tooltip__key">Sequences</span><span>${bin.length}</span>
           <span class="vq-tooltip__key">Share</span>
@@ -1393,13 +1902,13 @@ function _renderIdentityHistogram(sequences, mode = 'identity') {
   // Baseline + x ticks (keep x-axis)
   g.append('line').attr('x1', 0).attr('y1', drawH).attr('x2', drawW).attr('y2', drawH)
     .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
-  [0, 50, 100].forEach(tick => {
+  _edgeTicks(xScale, lo, 100, 3).forEach(tick => {
     const tx = xScale(tick);
     g.append('line').attr('x1', tx).attr('y1', drawH).attr('x2', tx).attr('y2', drawH + 3)
       .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
     g.append('text').attr('x', tx).attr('y', drawH + 12)
-      .attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', 'var(--vq-c-tick)')
-      .text(tick + '%');
+      .attr('text-anchor', _tickAnchor(tick, lo, 100)).attr('font-size', 9).attr('fill', 'var(--vq-c-tick)')
+      .text(_fmtPct(tick));
   });
 
   wrap.appendChild(svg.node());
@@ -1436,6 +1945,7 @@ function _renderLengthHistogram(sequences) {
     return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v));
   }
 
+  const minL = d3.min(lengths);
   const maxL = d3.max(lengths);
   const STEP = _lengthBinStep(maxL);
 
@@ -1443,21 +1953,22 @@ function _renderLengthHistogram(sequences) {
   if (sub) sub.textContent =
     `${lengths.length.toLocaleString()} viral sequences · median ${_fmtLen(d3.median(lengths))} bp · ${STEP} bp bins`;
 
-  // Same frame as the BLASTx / BLASTn histograms
+  // Same frame as the BLASTx / BLASTn histograms; height fills the card
   const W     = Math.max(wrap.clientWidth || 0, 200);
   const PAD_L = 36; const PAD_R = 6;
   const PAD_T = 6;  const PAD_B = 28;
-  const H     = 130;
+  const H     = _fillHeight(wrap, 130);
   const drawW = W - PAD_L - PAD_R;
   const drawH = H - PAD_T - PAD_B;
 
-  // Fixed-width bins (width from _lengthBinStep)
-  const maxBin     = Math.ceil(maxL / STEP) * STEP;
-  const thresholds = d3.range(0, maxBin, STEP);
-  const bins       = d3.bin().domain([0, maxBin]).thresholds(thresholds)(lengths);
+  // x axis from the shortest to the longest sequence; fixed-width bins
+  // (width from _lengthBinStep) starting exactly at the shortest one.
+  const [lo, hi]   = _dataDomain(minL, maxL, STEP);
+  const thresholds = d3.range(lo + STEP, hi, STEP);
+  const bins       = d3.bin().domain([lo, hi]).thresholds(thresholds)(lengths);
 
   const yMax   = d3.max(bins, b => b.length) || 1;
-  const xScale = d3.scaleLinear([0, maxBin], [0, drawW]);
+  const xScale = d3.scaleLinear([lo, hi], [0, drawW]);
   const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
 
   const svg = d3.create('svg')
@@ -1502,12 +2013,12 @@ function _renderLengthHistogram(sequences) {
   // Baseline + x ticks
   g.append('line').attr('x1', 0).attr('y1', drawH).attr('x2', drawW).attr('y2', drawH)
     .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
-  xScale.ticks(Math.min(6, bins.length)).forEach(tick => {
+  _edgeTicks(xScale, lo, hi, Math.min(5, bins.length)).forEach(tick => {
     const tx = xScale(tick);
     g.append('line').attr('x1', tx).attr('y1', drawH).attr('x2', tx).attr('y2', drawH + 3)
       .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
     g.append('text').attr('x', tx).attr('y', drawH + 12)
-      .attr('text-anchor', 'middle').attr('font-size', 9)
+      .attr('text-anchor', _tickAnchor(tick, lo, hi)).attr('font-size', 9)
       .attr('fill', 'var(--vq-c-tick)').text(_fmtLen(tick));
   });
 
@@ -1551,9 +2062,11 @@ function _renderBLAstnHistogram(sequences, mode) {
   const drawW = W - PAD_L - PAD_R;
   const drawH = H - PAD_T - PAD_B;
 
-  const bins   = d3.bin().domain([0, 100]).thresholds([10,20,30,40,50,60,70,80,90])(values);
+  // x axis from the lowest observed value up to 100%
+  const [lo]   = _dataDomain(d3.min(values), 100, 1);
+  const bins   = _pctBins(values, lo);
   const yMax   = d3.max(bins, b => b.length) || 1;
-  const xScale = d3.scaleLinear([0, 100], [0, drawW]);
+  const xScale = d3.scaleLinear([lo, 100], [0, drawW]);
   const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
 
   const barColor = 'var(--vq-primary-light)';
@@ -1588,7 +2101,7 @@ function _renderBLAstnHistogram(sequences, mode) {
       .attr('d', _barPath(x, yScale(bin.length), bw, bh, Math.min(Math.ceil(bw / 2), 5)))
       .attr('fill', barColor).attr('opacity', 0.82)
       .on('mousemove', evt => VQ.tooltipShow(`
-        <div class="vq-tooltip__title">${bin.x0}–${bin.x1}% ${metricLabel}</div>
+        <div class="vq-tooltip__title">${_fmtPct(bin.x0)} – ${_fmtPct(bin.x1)} ${metricLabel}</div>
         <div class="vq-tooltip__row">
           <span class="vq-tooltip__key">Sequences</span><span>${bin.length}</span>
           <span class="vq-tooltip__key">Share</span>
@@ -1600,94 +2113,16 @@ function _renderBLAstnHistogram(sequences, mode) {
   // Baseline + x ticks
   g.append('line').attr('x1', 0).attr('y1', drawH).attr('x2', drawW).attr('y2', drawH)
     .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
-  [0, 25, 50, 75, 100].forEach(tick => {
+  _edgeTicks(xScale, lo, 100, 4).forEach(tick => {
     const tx = xScale(tick);
     g.append('line').attr('x1', tx).attr('y1', drawH).attr('x2', tx).attr('y2', drawH + 4)
       .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
     g.append('text').attr('x', tx).attr('y', drawH + 14)
-      .attr('text-anchor', 'middle').attr('font-size', 9.5).attr('fill', 'var(--vq-c-tick)')
-      .text(tick + '%');
+      .attr('text-anchor', _tickAnchor(tick, lo, 100)).attr('font-size', 9.5).attr('fill', 'var(--vq-c-tick)')
+      .text(_fmtPct(tick));
   });
 
   wrap.appendChild(svg.node());
-}
-
-
-// ────────────────────────────────────────────────────────────────────────
-//  Chart 7 — Top detected species table
-// ────────────────────────────────────────────────────────────────────────
-
-function _renderTopSpecies(sequences) {
-  const tableWrap = document.getElementById('stats-species-table');
-  const sub       = document.getElementById('stats-species-sub');
-  if (!tableWrap) return;
-
-  const viral = sequences.filter(s => s.is_viral && s.taxonomy && s.taxonomy.species);
-  const counts = {};
-  viral.forEach(s => {
-    const sp = s.taxonomy.species;
-    if (!counts[sp]) counts[sp] = { count: 0, family: s.taxonomy.family || '—', order: s.taxonomy.order || '—' };
-    counts[sp].count++;
-  });
-
-  const TOP_N  = 8;
-  const entries = Object.entries(counts)
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, TOP_N);
-
-  // Hide card when no species has more than one sequence — data is trivial
-  const multiSeqSpecies = Object.values(counts).filter(d => d.count > 1).length;
-  const card = document.getElementById('stats-species-card');
-  if (multiSeqSpecies <= 1) {
-    if (card) card.style.display = 'none';
-    return;
-  }
-  if (card) card.style.display = '';
-
-  if (sub) {
-    const uniq = Object.keys(counts).length;
-    sub.textContent = `top ${Math.min(TOP_N, uniq)} of ${uniq} species`;
-  }
-
-  if (!entries.length) {
-    tableWrap.innerHTML = '<div class="vq-empty" style="padding:20px;font-size:12px">No taxonomy data.</div>';
-    return;
-  }
-
-  const total = viral.length;
-  tableWrap.innerHTML = `
-    <table class="vq-table" style="font-size:11px">
-      <thead>
-        <tr>
-          <th style="width:24px;padding:4px 8px">#</th>
-          <th style="padding:4px 8px">Species</th>
-          <th style="padding:4px 8px">Family</th>
-          <th style="width:60px;padding:4px 8px">n</th>
-          <th style="width:110px;padding:4px 8px">%</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${entries.map(([sp, d], i) => {
-          const pct = (d.count / total * 100).toFixed(1);
-          return `
-          <tr>
-            <td style="color:var(--vq-text-3);padding:4px 8px">${i + 1}</td>
-            <td style="font-style:italic;padding:4px 8px">${VQ.esc(sp)}</td>
-            <td style="color:var(--vq-text-2);padding:4px 8px">${VQ.esc(d.family)}</td>
-            <td style="font-weight:600;padding:4px 8px;font-variant-numeric:tabular-nums">${d.count}</td>
-            <td style="padding:4px 8px">
-              <div style="display:flex;align-items:center;gap:5px">
-                <div style="flex:1;height:5px;background:var(--vq-bg);border-radius:3px">
-                  <div style="height:100%;width:${pct}%;background:var(--vq-accent);border-radius:3px;opacity:.8"></div>
-                </div>
-                <span style="font-size:10px;color:var(--vq-text-3);white-space:nowrap">${pct}%</span>
-              </div>
-            </td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  `;
 }
 
 
