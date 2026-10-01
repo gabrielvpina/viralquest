@@ -236,6 +236,12 @@ class ViralFamilyInfo:
 # LLM scoring output
 # ---------------------------------------------------------------------------
 
+# LlmOutput.classification values that mean "no assessment was made": the
+# request failed (api-error) or the model's reply could not be interpreted
+# (parse-error). Their vq_score is a placeholder 0 and must not be read as a score.
+LLM_ERROR_CLASSES = frozenset({"api-error", "parse-error"})
+
+
 @dataclass(slots=True)
 class LlmOutput:
     """Result produced by score_ai.SequenceScorer for one NucSequence."""

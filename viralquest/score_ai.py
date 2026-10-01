@@ -7,6 +7,7 @@ from pathlib import Path
 from loguru import logger
 
 from viralquest.biodata import (
+    LLM_ERROR_CLASSES,
     BlastnResult,
     BlastxResult,
     HmmDomain,
@@ -230,13 +231,27 @@ class _LlmBackend:
     def call(self, system_prompt: str, user_json: dict) -> str:
         raise NotImplementedError
 
+    def release(self) -> None:
+        """Free resources once scoring ends (no-op for cloud APIs)."""
+
 
 class OllamaBackend(_LlmBackend):
-    needs_rate_limit = False  # local process, no API rate limits
     """Direct Ollama backend. Uses think=False to suppress chain-of-thought."""
+
+    needs_rate_limit = False  # local process, no API rate limits
 
     def __init__(self, model_name: str):
         self.model_name = model_name
+
+    def release(self) -> None:
+        """
+        Unload the model right away. Ollama otherwise keeps it in memory for
+        5 minutes after the last request — RAM/VRAM the following pipeline
+        steps (and the next sample's Diamond/HMMER) need.
+        """
+        import ollama
+        ollama.generate(model=self.model_name, keep_alive=0)
+        logger.info(f"Ollama: model '{self.model_name}' unloaded from memory.")
 
     def call(self, system_prompt: str, user_json: dict) -> str:
         import ollama
@@ -373,50 +388,84 @@ _VALID_CLASSIFICATIONS = {"viral-known", "viral-unknown", "non-viral"}
 _RETRYABLE_RE = re.compile(r"\b(429|5\d{2})\b")
 
 
+class ResponseParseError(ValueError):
+    """The model replied, but the reply is not a usable assessment."""
+
+
 class ResponseParser:
-    """Parses the raw LLM text response into an LlmOutput dataclass."""
+    """
+    Parses the raw LLM text response into an LlmOutput dataclass.
+
+    The JSON object is located leniently (code fences, <think> blocks and prose
+    around it are tolerated — common with local models), but its content is
+    validated strictly: a reply without a numeric vq_score or with an unknown
+    classification is a parse-error, never silently turned into "non-viral".
+    """
+
+    _THINK_RE = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
+    _FENCE_RE = re.compile(r"```(?:json)?", re.IGNORECASE)
+
+    @classmethod
+    def _extract_json(cls, raw: str) -> dict:
+        text = cls._THINK_RE.sub("", raw or "")
+        text = cls._FENCE_RE.sub("", text).strip()
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Fallback: first decodable JSON object inside surrounding prose.
+            decoder, data = json.JSONDecoder(), None
+            for i, ch in enumerate(text):
+                if ch != "{":
+                    continue
+                try:
+                    data, _ = decoder.raw_decode(text[i:])
+                    break
+                except json.JSONDecodeError:
+                    continue
+            if data is None:
+                raise ResponseParseError("no JSON object in the reply")
+        if not isinstance(data, dict):
+            raise ResponseParseError("reply JSON is not an object")
+        return data
 
     @staticmethod
-    def parse(raw: str, seq_id: str, model: str, mode: str) -> LlmOutput:
+    def _normalise_class(value) -> str:
+        """'Viral Known' / 'viral_known' → 'viral-known'."""
+        return re.sub(r"[\s_]+", "-", str(value or "").strip().lower())
+
+    @classmethod
+    def parse(cls, raw: str, seq_id: str, model: str, mode: str) -> LlmOutput:
+        data = cls._extract_json(raw)       # raises ResponseParseError
+
+        score = data.get("vq_score")
+        if isinstance(score, bool) or score is None:
+            raise ResponseParseError("missing vq_score")
         try:
-            text = raw.strip()
-            # strip markdown code fences if the model added them
-            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-            text = re.sub(r"\s*```\s*$",        "", text)
-            data = json.loads(text)
+            vq_score = max(0, min(100, int(round(float(score)))))
+        except (TypeError, ValueError):
+            raise ResponseParseError(f"vq_score is not a number: {score!r}") from None
 
-            vq_score = max(0, min(100, int(data.get("vq_score", 0))))
+        classification = cls._normalise_class(data.get("classification"))
+        if classification not in _VALID_CLASSIFICATIONS:
+            raise ResponseParseError(
+                f"unknown classification {data.get('classification')!r}")
 
-            classification = str(data.get("classification", "")).strip().lower()
-            if classification not in _VALID_CLASSIFICATIONS:
-                logger.warning(
-                    f"Unexpected classification '{classification}' for {seq_id}; defaulting to non-viral"
-                )
-                classification = "non-viral"
+        return LlmOutput(
+            seq_id=seq_id,
+            model=model,
+            mode=mode,
+            vq_score=vq_score,
+            classification=classification,
+            analysis=str(data.get("analysis", "")).strip(),
+            blastn_species=str(data.get("blastn_species", "")).strip(),
+        )
 
-            analysis        = str(data.get("analysis",        "")).strip()
-            blastn_species  = str(data.get("blastn_species",  "")).strip()
-
-            return LlmOutput(
-                seq_id=seq_id,
-                model=model,
-                mode=mode,
-                vq_score=vq_score,
-                classification=classification,
-                analysis=analysis,
-                blastn_species=blastn_species,
-            )
-
-        except Exception as exc:
-            return LlmOutput(
-                seq_id=seq_id,
-                model=model,
-                mode=mode,
-                vq_score=0,
-                classification="non-viral",
-                analysis="",
-                error=f"ParseError: {exc} | raw[:300]: {raw[:300]}",
-            )
+    @staticmethod
+    def error_output(seq_id: str, model: str, mode: str, kind: str, message: str) -> LlmOutput:
+        """An LlmOutput that records a failure — kind is 'api-error' or 'parse-error'."""
+        assert kind in LLM_ERROR_CLASSES
+        return LlmOutput(seq_id=seq_id, model=model, mode=mode, vq_score=0,
+                         classification=kind, analysis="", error=message)
 
 
 # ---------------------------------------------------------------------------
@@ -461,64 +510,82 @@ class SequenceScorer:
         """
         Scores each sequence, attaches the result to seq.llm_output, and
         returns the full list of LlmOutput objects in the same order.
+        The backend is released at the end — even on error or Ctrl+C — so a
+        local Ollama model does not linger in memory.
         """
         outputs: list[LlmOutput] = []
-        for i, seq in enumerate(nuc_seqs):
-            logger.info(
-                f"[{i+1}/{len(nuc_seqs)}] Scoring {seq.id} "
-                f"({self._mode.value}-token, model={self._model_name})"
-            )
-            result = self._score_one(seq)
-            seq.llm_output = result
-            outputs.append(result)
-
-            if result.error:
-                logger.error(f"  ✗ {seq.id}: {result.error}")
-            else:
-                logger.success(
-                    f"  ✓ {seq.id}: score={result.vq_score}, "
-                    f"class={result.classification}"
+        try:
+            for i, seq in enumerate(nuc_seqs):
+                logger.info(
+                    f"[{i+1}/{len(nuc_seqs)}] Scoring {seq.id} "
+                    f"({self._mode.value}-token, model={self._model_name})"
                 )
+                result = self._score_one(seq)
+                seq.llm_output = result
+                outputs.append(result)
 
-            if (self._mode == LlmMode.LOW and self._low_mode_delay > 0
-                    and self._backend.needs_rate_limit
-                    and i < len(nuc_seqs) - 1 and not result.error):
-                logger.debug(f"Low-token mode: waiting {self._low_mode_delay}s before next request...")
-                time.sleep(self._low_mode_delay)
+                if result.error:
+                    logger.error(f"  ✗ {seq.id} [{result.classification}]: {result.error}")
+                else:
+                    logger.success(
+                        f"  ✓ {seq.id}: score={result.vq_score}, "
+                        f"class={result.classification}"
+                    )
+
+                if (self._mode == LlmMode.LOW and self._low_mode_delay > 0
+                        and self._backend.needs_rate_limit
+                        and i < len(nuc_seqs) - 1 and not result.error):
+                    logger.debug(f"Low-token mode: waiting {self._low_mode_delay}s before next request...")
+                    time.sleep(self._low_mode_delay)
+        finally:
+            try:
+                self._backend.release()
+            except Exception as exc:          # never let cleanup mask the real outcome
+                logger.warning(f"Could not release the LLM backend: {exc}")
 
         return outputs
 
     # Retry constants for transient backend failures.
     _MAX_RETRIES  = 3
     _RETRY_DELAYS = (15.0, 30.0, 60.0)   # seconds between successive attempts
+    # A reply that cannot be interpreted is asked for again this many times
+    # (models — local ones especially — are non-deterministic at temperature 0.3).
+    _PARSE_RETRIES = 1
 
     def _score_one(self, seq: NucSequence) -> LlmOutput:
+        user_json = PromptBuilder.build_input(seq, self._mode)
         last_exc: Exception | None = None
-        for attempt in range(self._MAX_RETRIES + 1):
+        api_attempt = parse_attempt = 0
+        while True:
             try:
-                user_json = PromptBuilder.build_input(seq, self._mode)
-                raw       = self._backend.call(self._system_prompt, user_json)
-                return ResponseParser.parse(raw, seq.id, self._model_name, self._mode.value)
+                raw = self._backend.call(self._system_prompt, user_json)
             except Exception as exc:
                 last_exc = exc
-                if _RETRYABLE_RE.search(str(exc)) and attempt < self._MAX_RETRIES:
-                    delay = self._RETRY_DELAYS[attempt]
+                if _RETRYABLE_RE.search(str(exc)) and api_attempt < self._MAX_RETRIES:
+                    delay = self._RETRY_DELAYS[api_attempt]
+                    api_attempt += 1
                     logger.warning(
                         f"Backend transient error for {seq.id} "
-                        f"(attempt {attempt + 1}/{self._MAX_RETRIES}): {exc} — "
+                        f"(attempt {api_attempt}/{self._MAX_RETRIES}): {exc} — "
                         f"retrying in {delay:.0f}s ..."
                     )
                     time.sleep(delay)
-                else:
-                    break
+                    continue
+                logger.error(f"Backend call failed for {seq.id}: {last_exc}")
+                return ResponseParser.error_output(
+                    seq.id, self._model_name, self._mode.value, "api-error", str(last_exc))
 
-        logger.error(f"Backend call failed for {seq.id}: {last_exc}")
-        return LlmOutput(
-            seq_id=seq.id,
-            model=self._model_name,
-            mode=self._mode.value,
-            vq_score=0,
-            classification="api-error",
-            analysis="",
-            error=str(last_exc),
-        )
+            try:
+                return ResponseParser.parse(raw, seq.id, self._model_name, self._mode.value)
+            except ResponseParseError as exc:
+                if parse_attempt < self._PARSE_RETRIES:
+                    parse_attempt += 1
+                    logger.warning(
+                        f"Unreadable reply for {seq.id} ({exc}) — asking again "
+                        f"({parse_attempt}/{self._PARSE_RETRIES}) ..."
+                    )
+                    continue
+                snippet = " ".join((raw or "").split())[:300]
+                return ResponseParser.error_output(
+                    seq.id, self._model_name, self._mode.value, "parse-error",
+                    f"Invalid model response: {exc}. Reply started with: {snippet!r}")

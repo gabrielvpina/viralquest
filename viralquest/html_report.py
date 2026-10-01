@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .biodata import LLM_ERROR_CLASSES
 from .d3_asset import load_d3
 
 _HERE        = Path(__file__).parent
@@ -126,7 +127,7 @@ def _build_llm_stats(seqs: list[dict], ps: dict) -> dict:
     scores = [
         s["llm_output"]["vq_score"]
         for s in scored
-        if s["llm_output"].get("classification") != "api-error"
+        if s["llm_output"].get("classification") not in LLM_ERROR_CLASSES
     ]
     first = scored[0]["llm_output"]
     return {
@@ -137,6 +138,7 @@ def _build_llm_stats(seqs: list[dict], ps: dict) -> dict:
         "viral_known":   sum(1 for s in scored if s["llm_output"].get("classification") == "viral-known"),
         "viral_unknown": sum(1 for s in scored if s["llm_output"].get("classification") == "viral-unknown"),
         "api_error":     sum(1 for s in scored if s["llm_output"].get("classification") == "api-error"),
+        "parse_error":   sum(1 for s in scored if s["llm_output"].get("classification") == "parse-error"),
         "avg_score":     round(sum(scores) / len(scores), 1) if scores else None,
     }
 

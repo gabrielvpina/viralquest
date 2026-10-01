@@ -533,12 +533,19 @@ function vqInitViewer(sequences, mountId) {
 
 // ── Scoring helpers ─────────────────────────────────────────────────────────
 
+/* LLM outputs that record a failure instead of an assessment. Their vq_score is
+   a placeholder 0 — never shown or used as a score. */
+const _LLM_ERROR_LABELS = { 'api-error': 'API error', 'parse-error': 'Invalid response' };
+function _llmFailed(l) {
+  return !!l && Object.prototype.hasOwnProperty.call(_LLM_ERROR_LABELS, l.classification);
+}
+
 /* Heuristic-primary: the rule-based score leads; the LLM score is the
    fallback only when no heuristic score is present. */
 function _primaryScore(seq) {
   const h = seq.heuristic_output, l = seq.llm_output;
   if (h) return { score: h.vq_score, cls: h.classification, src: 'heur' };
-  if (l) return { score: l.vq_score, cls: l.classification, src: 'llm'  };
+  if (l && !_llmFailed(l)) return { score: l.vq_score, cls: l.classification, src: 'llm' };
   return null;
 }
 
@@ -557,14 +564,27 @@ function _scoreChip(srcLabel, score, cls) {
     </span>`;
 }
 
+/* Header chip for a failed LLM call: no number, no meter — just the failure. */
+function _errorChip(srcLabel, l) {
+  const esc   = VQ.esc;
+  const label = _LLM_ERROR_LABELS[l.classification];
+  return `
+    <span class="vq-score-chip vq-score-chip--error"
+          title="${esc(srcLabel)}: ${esc(label)} — no score${l.error ? ' · ' + esc(l.error) : ''}">
+      <span class="vq-score-chip__src">${esc(srcLabel)}</span>
+      <span class="vq-score-chip__val">!</span>
+      <span class="vq-score-chip__err">${esc(label)}</span>
+    </span>`;
+}
+
 function _scoreChips(seq) {
   const esc = VQ.esc;
   const h = seq.heuristic_output, l = seq.llm_output;
   if (!h && !l) return '';
   const chips = [];
   if (h) chips.push(_scoreChip('H',  h.vq_score, h.classification));
-  if (l) chips.push(_scoreChip('AI', l.vq_score, l.classification));
-  const disagree = (h && l && h.classification !== l.classification)
+  if (l) chips.push(_llmFailed(l) ? _errorChip('AI', l) : _scoreChip('AI', l.vq_score, l.classification));
+  const disagree = (h && l && !_llmFailed(l) && h.classification !== l.classification)
     ? `<span class="vq-score-disagree" title="Heuristic and AI disagree: ${esc(h.classification)} vs ${esc(l.classification)}">⚠</span>`
     : '';
   return `<span class="vq-score-chips">${chips.join('')}${disagree}</span>`;
@@ -616,6 +636,22 @@ function _heurColumn(h, safe) {
 
 function _llmColumn(l) {
   const esc = VQ.esc;
+  if (_llmFailed(l)) {
+    const label = _LLM_ERROR_LABELS[l.classification];
+    const hint  = l.classification === 'parse-error'
+      ? 'The model replied, but its answer could not be read as an assessment, so this sequence has no AI score.'
+      : 'The request to the model failed, so this sequence has no AI score.';
+    return `
+    <div class="vq-score-col vq-score-col--error">
+      <div class="vq-score-col__head">
+        <span class="vq-score-col__title">AI · LLM analysis</span>
+        <span class="vq-badge vq-badge--${esc(l.classification)}">${esc(label)}</span>
+      </div>
+      <div class="vq-score-col__num vq-score-col__num--na">—</div>
+      <div class="vq-score-col__error">${esc(hint)}</div>
+      ${l.error ? `<div class="vq-score-col__error-detail">${esc(l.error)}</div>` : ''}
+    </div>`;
+  }
   return `
     <div class="vq-score-col">
       <div class="vq-score-col__head">
@@ -791,7 +827,7 @@ function _applyFilters() {
       if (heurMax !== null && hs > heurMax) return false;
     }
     if (llmMin !== null || llmMax !== null) {
-      const ls = s.llm_output?.vq_score;
+      const ls = _llmFailed(s.llm_output) ? null : s.llm_output?.vq_score;
       if (ls == null) return false;
       if (llmMin !== null && ls < llmMin) return false;
       if (llmMax !== null && ls > llmMax) return false;

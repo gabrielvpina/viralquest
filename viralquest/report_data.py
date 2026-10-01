@@ -24,6 +24,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from statistics import median
 
+from viralquest.biodata import LLM_ERROR_CLASSES
 from viralquest.report_loader import SampleReport
 
 
@@ -140,7 +141,7 @@ def _summarize_sample(s: SampleReport) -> dict:
         seq["llm_output"]["vq_score"]
         for seq in seqs
         if (seq.get("llm_output") or {}).get("vq_score") is not None
-        and seq["llm_output"].get("classification") != "api-error"
+        and seq["llm_output"].get("classification") not in LLM_ERROR_CLASSES
     ]
 
     return {

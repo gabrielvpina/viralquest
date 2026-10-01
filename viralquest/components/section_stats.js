@@ -245,10 +245,11 @@ function vqInitStats(report) {
             <div class="vq-chart-card__big">${llm.avg_score != null ? Number(llm.avg_score).toFixed(1) : '—'}</div>
           </div>
           <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start">
-            ${_miniRow('Scored',        fmtNum(llm.scored))}
+            ${_miniRow('Sent to LLM',   fmtNum(llm.scored))}
             ${_miniRow('Viral known',   fmtNum(llm.viral_known))}
             ${_miniRow('Viral unknown', fmtNum(llm.viral_unknown))}
-            ${llm.api_error ? _miniRow('API errors', fmtNum(llm.api_error)) : ''}
+            ${llm.api_error   ? _miniRow('API errors',        fmtNum(llm.api_error))   : ''}
+            ${llm.parse_error ? _miniRow('Invalid responses', fmtNum(llm.parse_error)) : ''}
           </div>
         </div>` : ''}
 

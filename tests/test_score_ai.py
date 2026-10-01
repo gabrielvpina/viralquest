@@ -18,6 +18,7 @@ from viralquest.biodata import (
 from viralquest.score_ai import (
     LlmMode,
     PromptBuilder,
+    ResponseParseError,
     ResponseParser,
     SequenceScorer,
     _blastx_dict,
@@ -453,30 +454,58 @@ class TestResponseParser:
         raw = "```\n" + good_response() + "\n```"
         assert self._parse(raw).error is None
 
-    def test_unknown_classification_defaults_to_non_viral(self):
+    def test_unknown_classification_is_a_parse_error(self):
+        # Never silently turned into "non-viral".
         raw = json.dumps({"vq_score": 50, "classification": "maybe-viral", "analysis": "x"})
-        r = self._parse(raw)
-        assert r.classification == "non-viral"
+        with pytest.raises(ResponseParseError, match="classification"):
+            self._parse(raw)
+
+    def test_classification_spaces_and_underscores_normalised(self):
+        for variant in ("Viral Known", "viral_known", " VIRAL-KNOWN "):
+            raw = json.dumps({"vq_score": 90, "classification": variant})
+            assert self._parse(raw).classification == "viral-known"
 
     def test_classification_normalised_to_lowercase(self):
         raw = json.dumps({"vq_score": 50, "classification": "Viral-Known", "analysis": "x"})
         r = self._parse(raw)
         assert r.classification == "viral-known"
 
-    def test_invalid_json_returns_error(self):
-        r = self._parse("this is not json")
-        assert r.error is not None
-        assert r.vq_score == 0
-        assert r.classification == "non-viral"
+    def test_invalid_json_is_a_parse_error(self):
+        with pytest.raises(ResponseParseError):
+            self._parse("this is not json")
 
-    def test_empty_string_returns_error(self):
-        r = self._parse("")
-        assert r.error is not None
+    def test_empty_string_is_a_parse_error(self):
+        with pytest.raises(ResponseParseError):
+            self._parse("")
 
-    def test_missing_vq_score_defaults_to_zero(self):
+    def test_missing_vq_score_is_a_parse_error(self):
         raw = json.dumps({"classification": "non-viral", "analysis": "x"})
+        with pytest.raises(ResponseParseError, match="vq_score"):
+            self._parse(raw)
+
+    def test_non_numeric_vq_score_is_a_parse_error(self):
+        raw = json.dumps({"vq_score": "high", "classification": "non-viral"})
+        with pytest.raises(ResponseParseError, match="vq_score"):
+            self._parse(raw)
+
+    def test_numeric_string_score_accepted(self):
+        raw = json.dumps({"vq_score": "72.6", "classification": "viral-unknown"})
+        assert self._parse(raw).vq_score == 73
+
+    def test_json_array_is_a_parse_error(self):
+        with pytest.raises(ResponseParseError):
+            self._parse("[1, 2, 3]")
+
+    # --- lenient extraction (common with local models) ---
+
+    def test_json_surrounded_by_prose_is_extracted(self):
+        raw = "Sure! Here is my assessment:\n" + good_response(64, "viral-unknown") + "\nHope it helps."
         r = self._parse(raw)
-        assert r.vq_score == 0
+        assert r.vq_score == 64 and r.classification == "viral-unknown"
+
+    def test_think_block_is_ignored(self):
+        raw = '<think>maybe {"vq_score": 1} hmm</think>\n' + good_response(88, "viral-known")
+        assert self._parse(raw).vq_score == 88
 
     def test_blastn_species_extracted(self):
         raw = json.dumps({"vq_score": 85, "classification": "viral-known",
@@ -492,10 +521,14 @@ class TestResponseParser:
                           "analysis": "x", "blastn_species": "  Tomato spotted wilt virus  "})
         assert self._parse(raw).blastn_species == "Tomato spotted wilt virus"
 
-    def test_error_path_blastn_species_empty(self):
-        r = self._parse("not json at all")
-        assert r.blastn_species == ""
-        assert r.error is not None
+    def test_error_output_marks_the_failure(self):
+        r = ResponseParser.error_output("s1", "m", "low", "parse-error", "bad reply")
+        assert r.classification == "parse-error" and r.error == "bad reply"
+        assert r.vq_score == 0 and r.blastn_species == "" and r.analysis == ""
+
+    def test_error_output_rejects_unknown_kind(self):
+        with pytest.raises(AssertionError):
+            ResponseParser.error_output("s1", "m", "low", "non-viral", "x")
 
     def test_metadata_fields_set(self):
         r = ResponseParser.parse(good_response(), "myseq", "gpt-4o", "high")
@@ -680,3 +713,74 @@ class TestUserMessage:
         src = inspect.getsource(score_ai)
         assert src.count("_to_user_message(user_json)") == 4
         assert src.count("json.dumps(user_json") == 1   # only inside the helper itself
+
+
+# ---------------------------------------------------------------------------
+# SequenceScorer — invalid replies and backend release
+# ---------------------------------------------------------------------------
+
+class TestScorerInvalidReplies:
+    def _scorer(self, replies):
+        s = SequenceScorer("ollama", "llama3", mode=LlmMode.LOW, low_mode_delay=0.0)
+        s._backend = MagicMock()
+        s._backend.call.side_effect = replies
+        return s
+
+    def test_invalid_reply_retried_once_then_succeeds(self):
+        s = self._scorer(["not json", good_response(70, "viral-unknown")])
+        out = s.score([make_seq()])[0]
+        assert out.classification == "viral-unknown" and out.error is None
+        assert s._backend.call.call_count == 2
+
+    def test_invalid_twice_becomes_parse_error_not_non_viral(self):
+        s = self._scorer(["not json", "still not json"])
+        out = s.score([make_seq()])[0]
+        assert out.classification == "parse-error"
+        assert "Invalid model response" in out.error and "still not json" in out.error
+        assert s._backend.call.call_count == 2
+
+    def test_backend_exception_is_api_error(self):
+        s = self._scorer([RuntimeError("connection refused")])
+        out = s.score([make_seq()])[0]
+        assert out.classification == "api-error" and "connection refused" in out.error
+
+    def test_one_bad_sequence_does_not_stop_the_others(self):
+        s = self._scorer(["x", "y", good_response(91, "viral-known")])
+        outs = s.score([make_seq("a"), make_seq("b")])
+        assert [o.classification for o in outs] == ["parse-error", "viral-known"]
+
+
+class TestBackendRelease:
+    def _scorer(self):
+        s = SequenceScorer("ollama", "llama3", mode=LlmMode.HIGH)
+        s._backend = MagicMock()
+        return s
+
+    def test_released_after_scoring(self):
+        s = self._scorer()
+        s._backend.call.return_value = good_response()
+        s.score([make_seq()])
+        s._backend.release.assert_called_once()
+
+    def test_released_even_when_scoring_is_interrupted(self):
+        s = self._scorer()
+        s._backend.call.side_effect = KeyboardInterrupt
+        with pytest.raises(KeyboardInterrupt):
+            s.score([make_seq()])
+        s._backend.release.assert_called_once()
+
+    def test_release_failure_does_not_break_scoring(self):
+        s = self._scorer()
+        s._backend.call.return_value = good_response(80, "viral-known")
+        s._backend.release.side_effect = ConnectionError("ollama down")
+        assert s.score([make_seq()])[0].vq_score == 80
+
+    def test_ollama_release_unloads_with_keep_alive_zero(self):
+        import ollama
+        with patch.object(ollama, "generate") as gen:
+            OllamaBackend("qwen3:4b").release()
+        gen.assert_called_once_with(model="qwen3:4b", keep_alive=0)
+
+    def test_cloud_backends_release_is_a_no_op(self):
+        from viralquest.score_ai import _LlmBackend
+        assert _LlmBackend().release() is None

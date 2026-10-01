@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 
 from viralquest.biodata import (
+    LLM_ERROR_CLASSES,
     InputFasta,
     NucSequence,
     SalmonQuantReport,
@@ -351,7 +352,7 @@ class ReportExporter:
         scored = [s for s in confirmed if s.llm_output]
         llm_scores = [
             s.llm_output.vq_score for s in scored
-            if s.llm_output.classification != "api-error"
+            if s.llm_output.classification not in LLM_ERROR_CLASSES
         ]
 
         # Heuristic — runs on every confirmed sequence
@@ -383,6 +384,7 @@ class ReportExporter:
                 "viral_known":   sum(1 for s in scored if s.llm_output.classification == "viral-known"),
                 "viral_unknown": sum(1 for s in scored if s.llm_output.classification == "viral-unknown"),
                 "api_error":     sum(1 for s in scored if s.llm_output.classification == "api-error"),
+                "parse_error":   sum(1 for s in scored if s.llm_output.classification == "parse-error"),
                 "avg_score":     round(sum(llm_scores) / len(llm_scores), 1) if llm_scores else None,
             },
             "heuristic": {

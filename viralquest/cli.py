@@ -1211,17 +1211,22 @@ def _run_pipeline(args):
                        model_name=args.model_name,
                        mode=mode,
                        api_key=args.api_key).score(viral_seqs)
-        scored     = [s for s in viral_seqs if s.llm_output]
-        api_errors = sum(1 for s in scored if s.llm_output.classification == "api-error")
+        from .biodata import LLM_ERROR_CLASSES
+        scored       = [s for s in viral_seqs if s.llm_output]
+        api_errors   = sum(1 for s in scored if s.llm_output.classification == "api-error")
+        parse_errors = sum(1 for s in scored if s.llm_output.classification == "parse-error")
+        failed       = sum(1 for s in scored if s.llm_output.classification in LLM_ERROR_CLASSES)
         llm_status, llm_msg = "done", None
-        if scored and api_errors == len(scored):
-            llm_status, llm_msg = "error", "every request returned an API error"
-        elif api_errors:
-            llm_status, llm_msg = "partial", f"{api_errors} of {len(scored)} requests returned an API error"
+        if failed:
+            parts = [f"{n} {what}" for n, what in ((api_errors, "API error(s)"),
+                                                   (parse_errors, "invalid response(s)")) if n]
+            llm_status = "error" if failed == len(scored) else "partial"
+            llm_msg    = f"{failed} of {len(scored)} sequences not assessed: " + ", ".join(parts)
         yield from _tick(t, "llm", {
-            "Model":      f"{args.model_type} / {args.model_name}",
-            "Scored":     len(scored),
-            "API errors": api_errors,
+            "Model":             f"{args.model_type} / {args.model_name}",
+            "Assessed":          len(scored) - failed,
+            "API errors":        api_errors,
+            "Invalid responses": parse_errors,
         }, status=llm_status, message=llm_msg)
     else:
         _skip("llm", "LLM scoring", "--model-type / --model-name not set")
