@@ -2157,15 +2157,6 @@ body {
     margin-bottom: .4cm;
   }
 
-  /* Dark length-distribution card — adapt for print */
-  body.vq-print-stats #stats-length-card {
-    background: #eef2f7 !important;
-    border-color: #ccc !important;
-  }
-  body.vq-print-stats #stats-length-card .vq-chart-card__title,
-  body.vq-print-stats #stats-length-card .vq-chart-card__sub {
-    color: #1a2e42 !important;
-  }
 }
 
 /* ============================================================

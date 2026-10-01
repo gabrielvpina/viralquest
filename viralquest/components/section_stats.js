@@ -177,12 +177,11 @@ function vqInitStats(report) {
         </div>` : ''}
 
         <!-- 6. Viral Length Distribution — always -->
-        <div class="vq-chart-card" id="stats-length-card"
-             style="min-height:auto;background:var(--vq-c-dark-bg);border-color:#0c2238">
+        <div class="vq-chart-card" id="stats-length-card" style="min-height:auto">
           <div class="vq-chart-card__head">
             <div>
-              <div class="vq-chart-card__title" style="color:#fff">Viral Length Distribution</div>
-              <div class="vq-chart-card__sub" style="color:rgba(255,255,255,.5)">viral · 500 bp bins</div>
+              <div class="vq-chart-card__title">Viral Length Distribution</div>
+              <div class="vq-chart-card__sub" id="stats-length-sub">viral sequences</div>
             </div>
           </div>
           <div class="vq-chart-card__body">
@@ -1411,6 +1410,14 @@ function _renderIdentityHistogram(sequences, mode = 'identity') {
 //  Chart 6 — Sequence length histogram, viral only (blue card)
 // ────────────────────────────────────────────────────────────────────────
 
+/* Bin width for the length histogram, scaled to the longest sequence so short
+   assemblies are not squeezed into a couple of 500 bp bars. */
+function _lengthBinStep(maxLen) {
+  if (maxLen <= 2000) return 100;
+  if (maxLen <= 4000) return 300;
+  return 500;
+}
+
 function _renderLengthHistogram(sequences) {
   const wrap = document.getElementById('stats-length-svg');
   if (!wrap) return;
@@ -1421,20 +1428,30 @@ function _renderLengthHistogram(sequences) {
     .map(s => s.length);
 
   if (!lengths.length) {
-    wrap.innerHTML = '<div style="padding:24px 16px;font-size:12px;color:rgba(255,255,255,.45);text-align:center">No sequence data.</div>';
+    wrap.innerHTML = '<div class="vq-empty" style="padding:24px 16px;font-size:12px">No sequence data.</div>';
     return;
   }
 
+  function _fmtLen(v) {
+    return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v));
+  }
+
+  const maxL = d3.max(lengths);
+  const STEP = _lengthBinStep(maxL);
+
+  const sub = document.getElementById('stats-length-sub');
+  if (sub) sub.textContent =
+    `${lengths.length.toLocaleString()} viral sequences · median ${_fmtLen(d3.median(lengths))} bp · ${STEP} bp bins`;
+
+  // Same frame as the BLASTx / BLASTn histograms
   const W     = Math.max(wrap.clientWidth || 0, 200);
-  const PAD_L = 40; const PAD_R = 10;
-  const PAD_T = 8;  const PAD_B = 24;
+  const PAD_L = 36; const PAD_R = 6;
+  const PAD_T = 6;  const PAD_B = 28;
   const H     = 130;
   const drawW = W - PAD_L - PAD_R;
   const drawH = H - PAD_T - PAD_B;
 
-  // 500 bp fixed-width bins
-  const maxL       = d3.max(lengths);
-  const STEP       = 500;
+  // Fixed-width bins (width from _lengthBinStep)
   const maxBin     = Math.ceil(maxL / STEP) * STEP;
   const thresholds = d3.range(0, maxBin, STEP);
   const bins       = d3.bin().domain([0, maxBin]).thresholds(thresholds)(lengths);
@@ -1443,42 +1460,35 @@ function _renderLengthHistogram(sequences) {
   const xScale = d3.scaleLinear([0, maxBin], [0, drawW]);
   const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
 
-  function _fmtLen(v) {
-    return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v));
-  }
-
   const svg = d3.create('svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
     .attr('preserveAspectRatio', 'xMinYMin meet')
     .style('width', '100%').style('height', 'auto');
 
-  // Deep blue background (uses --vq-c-dark-bg = var(--vq-primary))
-  svg.append('rect').attr('width', W).attr('height', H).attr('fill', 'var(--vq-c-dark-bg)');
-
   const g = svg.append('g').attr('transform', `translate(${PAD_L},${PAD_T})`);
 
-  // Y-axis: horizontal grid lines + tick labels
-  yScale.ticks(5).forEach(tick => {
+  // Y-axis grid + tick labels
+  yScale.ticks(4).forEach(tick => {
     g.append('line')
       .attr('x1', 0).attr('y1', yScale(tick))
       .attr('x2', drawW).attr('y2', yScale(tick))
-      .attr('stroke', 'var(--vq-c-dark-grid)').attr('stroke-dasharray', '3,2').attr('stroke-width', 0.8);
+      .attr('stroke', 'var(--vq-c-grid)').attr('stroke-dasharray', '3,2').attr('stroke-width', 0.7);
     g.append('text')
-      .attr('x', -8).attr('y', yScale(tick) + 3.5)
-      .attr('text-anchor', 'end').attr('font-size', 10)
-      .attr('fill', 'var(--vq-c-dark-tick)').text(tick);
+      .attr('x', -5).attr('y', yScale(tick) + 3)
+      .attr('text-anchor', 'end').attr('font-size', 9)
+      .attr('fill', 'var(--vq-c-tick)').text(tick);
   });
 
-  // White bars — rounded top, flat bottom
+  // Bars — single accent colour, rounded top / flat bottom
   bins.forEach(bin => {
     const x  = xScale(bin.x0);
-    const bw = Math.max(xScale(bin.x1) - xScale(bin.x0) - 1, 1);
+    const bw = Math.max(xScale(bin.x1) - xScale(bin.x0) - 2, 1);
     const bh = drawH - yScale(bin.length);
     if (bh <= 0) return;
     const r  = Math.min(Math.ceil(bw / 2), 5);
     g.append('path')
       .attr('d', _barPath(x, yScale(bin.length), bw, bh, r))
-      .attr('fill', 'var(--vq-c-dark-bar)')
+      .attr('fill', 'var(--vq-accent)').attr('opacity', 0.82)
       .on('mousemove', evt => VQ.tooltipShow(`
         <div class="vq-tooltip__title">${_fmtLen(bin.x0)} – ${_fmtLen(bin.x1)} bp</div>
         <div class="vq-tooltip__row">
@@ -1491,21 +1501,21 @@ function _renderLengthHistogram(sequences) {
 
   // Baseline + x ticks
   g.append('line').attr('x1', 0).attr('y1', drawH).attr('x2', drawW).attr('y2', drawH)
-    .attr('stroke', 'var(--vq-c-dark-base)').attr('stroke-width', 1);
+    .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
   xScale.ticks(Math.min(6, bins.length)).forEach(tick => {
     const tx = xScale(tick);
-    g.append('line').attr('x1', tx).attr('y1', drawH).attr('x2', tx).attr('y2', drawH + 4)
-      .attr('stroke', 'var(--vq-c-dark-base)').attr('stroke-width', 1);
-    g.append('text').attr('x', tx).attr('y', drawH + 14)
-      .attr('text-anchor', 'middle').attr('font-size', 10)
-      .attr('fill', 'var(--vq-c-dark-tick)').text(_fmtLen(tick));
+    g.append('line').attr('x1', tx).attr('y1', drawH).attr('x2', tx).attr('y2', drawH + 3)
+      .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
+    g.append('text').attr('x', tx).attr('y', drawH + 12)
+      .attr('text-anchor', 'middle').attr('font-size', 9)
+      .attr('fill', 'var(--vq-c-tick)').text(_fmtLen(tick));
   });
 
   // X axis label
   svg.append('text')
-    .attr('x', PAD_L + drawW / 2).attr('y', H - 1)
-    .attr('text-anchor', 'middle').attr('font-size', 10)
-    .attr('fill', 'rgba(255,255,255,.35)').text('bp');
+    .attr('x', PAD_L + drawW / 2).attr('y', H - 2)
+    .attr('text-anchor', 'middle').attr('font-size', 9)
+    .attr('fill', 'var(--vq-c-tick)').text('length (bp)');
 
   wrap.appendChild(svg.node());
 }
