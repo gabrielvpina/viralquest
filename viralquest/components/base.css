@@ -1003,6 +1003,45 @@ body {
   overflow:      auto;
 }
 
+/* Novelty tiers (heuristic / LLM): closest → farthest from known viruses */
+.vq-nov {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.vq-nov--known            { background: #e6f4ea; color: #1f7a3c; }
+.vq-nov--variant          { background: #eef6ee; color: #3f7f4c; }
+.vq-nov--novel-species    { background: var(--vq-accent-subtle); color: var(--vq-accent-dark); }
+.vq-nov--divergent        { background: #f1ecf8; color: #5b3f8a; }
+.vq-nov--highly-divergent { background: #e8e2f3; color: #3d2a66; }
+.vq-nov--non-viral        { background: #fbe3e6; color: #a8302b; }
+.vq-nov__flag {
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--vq-text-3);
+  white-space: nowrap;
+}
+.vq-nfill--known            { background: #1f7a3c; }
+.vq-nfill--variant          { background: #6aae78; }
+.vq-nfill--novel-species    { background: #2f86d6; }
+.vq-nfill--divergent        { background: #7a5bb0; }
+.vq-nfill--highly-divergent { background: #3d2a66; }
+.vq-nfill--non-viral        { background: #a8302b; }
+.vq-score-col__novelty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 6px;
+  font-size: 11px;
+  color: var(--vq-text-3);
+}
+
 /* Classification → meter colour (mirrors .vq-badge--* palette) */
 .vq-fill--viral-known   { background: #1f7a3c; }
 .vq-fill--viral-unknown { background: #9b6a09; }
@@ -1728,7 +1767,7 @@ body {
 .vq-vt-num { text-align: right; font-variant-numeric: tabular-nums; }
 .vq-vt-na  { color: var(--vq-text-3); }
 
-/* Contigs of a row split by heuristic class (palette of the Viewer badges) */
+/* Contigs of a row split by novelty tier */
 .vq-vt-classes {
   display: inline-flex;
   align-items: center;
@@ -1747,9 +1786,12 @@ body {
 }
 .vq-vt-classes__bar > span { display: block; height: 100%; }
 .vq-vt-cls { font-weight: 600; font-variant-numeric: tabular-nums; }
-.vq-vt-cls--viral-known   { color: #1f7a3c; }
-.vq-vt-cls--viral-unknown { color: #9b6a09; }
-.vq-vt-cls--non-viral     { color: #a8302b; }
+.vq-vt-cls--known            { color: #1f7a3c; }
+.vq-vt-cls--variant          { color: #3f7f4c; }
+.vq-vt-cls--novel-species    { color: var(--vq-accent-dark); }
+.vq-vt-cls--divergent        { color: #5b3f8a; }
+.vq-vt-cls--highly-divergent { color: #3d2a66; }
+.vq-vt-cls--non-viral        { color: #a8302b; }
 .vq-vt-dot { color: var(--vq-text-3); }
 
 /* Contigs with no BLASTx hit (HMM / BLASTn evidence only) */

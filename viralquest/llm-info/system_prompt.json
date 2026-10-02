@@ -20,6 +20,15 @@
     "viral-unknown": "viral evidence present (HMM hits or BLAST) but insufficient for species-level assignment",
     "non-viral":     "no convincing viral evidence"
   },
+  "novelty": {
+    "description": "how far the contig is from known viruses, from the best viral hit; first matching tier wins",
+    "known":            ">=95% nt identity and >=70% coverage (BLASTn)",
+    "variant":          ">=85% nt identity and >=70% coverage, or >=90% aa identity (BLASTx): known species, divergent variant",
+    "novel-species":    "70-90% aa identity: putative new species",
+    "divergent":        "40-70% aa identity: putative new genus or higher",
+    "highly-divergent": "<40% aa identity, or HMM domains without any BLAST hit: remote homology",
+    "non-viral":        "use when classification is non-viral"
+  },
   "field_extraction": {
     "blastn_species": "From the blastn_hits subject field, extract the virus species name only — omit strain designations, accession numbers, gene names, and segment info. Examples: 'Influenza A virus (A/PR/8/34(H1N1)) segment 1 PB2 gene' → 'Influenza A virus'; 'Tomato spotted wilt orthotospovirus isolate BR-DF-6 segment S' → 'Tomato spotted wilt orthotospovirus'. Return an empty string if blastn_hits is absent or empty."
   },
@@ -43,6 +52,7 @@
       "vq_score":       "integer 0-100",
       "classification": "viral-known | viral-unknown | non-viral",
       "blastn_species": "string — virus species name extracted from blastn subject title, or empty string if no blastn hits",
+      "novelty":        "known | variant | novel-species | divergent | highly-divergent | non-viral",
       "analysis":       "string, max 200 words"
     }
   }

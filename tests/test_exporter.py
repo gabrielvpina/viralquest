@@ -525,3 +525,19 @@ class TestWrite:
         written = json.loads(out.read_text())
         assert written["pipeline_stats"]["workflow"]["steps"][0]["key"] == "parse"
         assert len(written["sequences"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Heuristic novelty — carried to the JSON and counted in pipeline_stats
+# ---------------------------------------------------------------------------
+
+class TestHeuristicNovelty:
+    def test_novelty_exported_and_counted(self):
+        from viralquest.score_heuristic import HeuristicScorer
+        seq = _make_confirmed_seq("s1")
+        HeuristicScorer().score([seq])
+        report = ReportExporter().export([seq], [])
+        exported = report["sequences"][0]["heuristic_output"]
+        assert exported["novelty"] and isinstance(exported["novelty_flags"], list)
+        counts = report["pipeline_stats"]["heuristic"]["novelty"]
+        assert counts[exported["novelty"]] == 1 and sum(counts.values()) == 1

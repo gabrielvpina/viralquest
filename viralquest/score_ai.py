@@ -8,6 +8,7 @@ from loguru import logger
 
 from viralquest.biodata import (
     LLM_ERROR_CLASSES,
+    NOVELTY_TIERS,
     BlastnResult,
     BlastxResult,
     HmmDomain,
@@ -450,6 +451,14 @@ class ResponseParser:
             raise ResponseParseError(
                 f"unknown classification {data.get('classification')!r}")
 
+        # Novelty is optional: a missing or unknown tier is left empty rather than
+        # failing an otherwise valid assessment.
+        novelty = cls._normalise_class(data.get("novelty"))
+        if novelty not in NOVELTY_TIERS:
+            if novelty:
+                logger.warning(f"{seq_id}: unknown novelty {data.get('novelty')!r} — ignored.")
+            novelty = ""
+
         return LlmOutput(
             seq_id=seq_id,
             model=model,
@@ -458,6 +467,7 @@ class ResponseParser:
             classification=classification,
             analysis=str(data.get("analysis", "")).strip(),
             blastn_species=str(data.get("blastn_species", "")).strip(),
+            novelty=novelty,
         )
 
     @staticmethod

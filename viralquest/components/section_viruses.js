@@ -47,6 +47,9 @@ function _initViromeTab(report) {
   const viruses   = _virusRows(viral);
   const families  = new Set(viral.map(s => s.taxonomy?.family).filter(Boolean));
   const known     = viruses.filter(v => !v.noHit && v.known > 0).length;
+  const novelty   = Object.fromEntries(_NOV_ORDER.map(t => [t, 0]));
+  viral.forEach(s => { novelty[_seqNovelty(s).tier]++; });
+  const putativeNovel = _NOVEL_TIERS.reduce((a, t) => a + novelty[t], 0);
 
   const table = `
     <div class="vq-chart-card vq-span-3" id="stats-viruses-card">
@@ -58,12 +61,7 @@ function _initViromeTab(report) {
         <div class="vq-vt-tools">
           <input class="vq-input vq-input--sm" type="search" id="stats-viruses-search"
                  placeholder="Filter species, family…" aria-label="Filter detected viruses">
-          <div class="vq-toggle" id="stats-viruses-status" role="tablist" aria-label="Status">
-            <button class="vq-toggle__btn active" type="button" data-status="all">All</button>
-            <button class="vq-toggle__btn" type="button" data-status="viral-known">Known</button>
-            <button class="vq-toggle__btn" type="button" data-status="viral-unknown">Unknown</button>
-            <button class="vq-toggle__btn" type="button" data-status="non-viral">Non-viral</button>
-          </div>
+          <select class="vq-select" id="stats-viruses-novelty" aria-label="Filter by novelty tier"></select>
         </div>
       </div>
       <div class="vq-chart-card__body" style="justify-content:flex-start">
@@ -131,6 +129,17 @@ function _initViromeTab(report) {
       </div>
     </div>
     <div class="vq-stack">
+      <div class="vq-chart-card" id="stats-novelty-card">
+        <div class="vq-chart-card__head">
+          <div>
+            <div class="vq-chart-card__title">Novelty Profile</div>
+            <div class="vq-chart-card__sub" id="stats-novelty-sub">contigs per novelty tier</div>
+          </div>
+        </div>
+        <div class="vq-chart-card__body">
+          <div id="stats-novelty-svg" style="width:100%"></div>
+        </div>
+      </div>
       <div class="vq-chart-card" id="stats-identity-card">
         <div class="vq-chart-card__head">
           <div class="vq-chart-card__title" id="stats-blastx-title">BLASTx Identity</div>
@@ -196,9 +205,11 @@ function _initViromeTab(report) {
         ${_chip('Families', _fmtNum(families.size), '', 'with resolved taxonomy')}
         ${_chip('Known Viruses', _fmtNum(known), 'success',
                 'species with ≥1 viral-known contig')}
+        ${_chip('Putative Novel', _fmtNum(putativeNovel), 'accent',
+                'contigs <90% aa to any known virus')}
       </div>
 
-      ${_group('Viruses', 'one row per species of the best BLASTx hit · classes from the heuristic score', table)}
+      ${_group('Viruses', 'one row per species of the best BLASTx hit · novelty tiers from the heuristic score', table)}
       ${_group('Taxonomy', 'what kinds of viruses were found', taxonomy)}
       ${_group('Similarity to known viruses', 'how close each sequence is to its best reference', similarity)}
       ${_group('Sequences & proteins', 'contig sizes and protein domains',
@@ -211,11 +222,9 @@ function _initViromeTab(report) {
   document.getElementById('stats-viruses-search')?.addEventListener('input', e => {
     tableState.q = e.target.value.trim().toLowerCase(); drawTable();
   });
-  const statusBtns = document.querySelectorAll('#stats-viruses-status [data-status]');
-  statusBtns.forEach(btn => btn.addEventListener('click', () => {
-    statusBtns.forEach(b => b.classList.toggle('active', b === btn));
-    tableState.status = btn.dataset.status; drawTable();
-  }));
+  document.getElementById('stats-viruses-novelty')?.addEventListener('change', e => {
+    tableState.status = e.target.value; drawTable();
+  });
   document.getElementById('stats-viruses-table')?.addEventListener('click', e => {
     const th = e.target.closest('th[data-sort]');
     if (th) {
@@ -292,6 +301,7 @@ function _initViromeTab(report) {
     _renderGenomeTypes(viral);
     _renderNRClassification(seqs);
     drawBlast();
+    _renderNoveltyProfile(viral);
     if (domainDb) _renderTopDomains(seqs, domainDb);
     _renderSimilarityScatter(viral, scatterSrc);
     _renderLengthHistogram(seqs);
@@ -311,22 +321,11 @@ function _initViromeTab(report) {
 // or a dominant non-viral BLASTn hit (likely host / contaminant).
 const _KNOWN_ID  = 90;
 const _KNOWN_COV = 70;
-const _CLASS_ORDER = ['viral-known', 'viral-unknown', 'non-viral'];
 const _CLASS_LABEL = {
   'viral-known':   'Known',
   'viral-unknown': 'Unknown',
   'non-viral':     'Non-viral',
 };
-// Same palette as the Viewer's badges / score meters (.vq-fill--*)
-const _CLASS_COLOR = {
-  'viral-known':   '#1f7a3c',
-  'viral-unknown': '#9b6a09',
-  'non-viral':     '#a8302b',
-};
-const _CLASS_CRITERION =
-  `known = ≥${_KNOWN_ID}% identity and ≥${_KNOWN_COV}% coverage to the best BLASTx hit (aa) ` +
-  `or to a viral BLASTn hit (nt)`;
-
 // Viral-subject matcher — mirrors score_heuristic._VIRAL_RE.
 const _VIRAL_RE = /vir(?:us|al|idae|ales|inae|oid|ion|aceae)|phage|bacteriophage/i;
 
@@ -356,6 +355,48 @@ function _seqClass(s) {
   const bx = _bestBlastx(s);
   if (bx && bx.pct_identity >= _KNOWN_ID && (bx.query_coverage ?? 0) >= _KNOWN_COV) return 'viral-known';
   return 'viral-unknown';
+}
+
+// Novelty tiers (score_heuristic._novelty): closest → farthest from known viruses.
+const _NOV_ORDER = ['known', 'variant', 'novel-species', 'divergent', 'highly-divergent', 'non-viral'];
+const _NOV_LABEL = {
+  'known': 'Known', 'variant': 'Variant', 'novel-species': 'Novel species',
+  'divergent': 'Divergent', 'highly-divergent': 'Highly divergent', 'non-viral': 'Non-viral',
+};
+const _NOV_LONG = {
+  'known':            'Known · ≥95% nt identity (≥70% coverage)',
+  'variant':          'Known species, variant · ≥85% nt (≥70% cov) or ≥90% aa',
+  'novel-species':    'Putative novel species · 70–90% aa',
+  'divergent':        'Divergent (new genus or above) · 40–70% aa',
+  'highly-divergent': 'Highly divergent · <40% aa or HMM evidence only',
+  'non-viral':        'Non-viral · host / contaminant or no viral evidence',
+};
+const _NOV_COLOR = {
+  'known': '#1f7a3c', 'variant': '#6aae78', 'novel-species': '#2f86d6',
+  'divergent': '#7a5bb0', 'highly-divergent': '#3d2a66', 'non-viral': '#a8302b',
+};
+const _NOVEL_TIERS = ['novel-species', 'divergent', 'highly-divergent'];
+
+/* Novelty of one contig: the heuristic's, or recomputed with the same rule for
+   reports written before the field existed. */
+function _seqNovelty(s) {
+  const h = s.heuristic_output;
+  if (h && _NOV_LABEL[h.novelty]) return { tier: h.novelty, flags: h.novelty_flags || [] };
+  if (_seqClass(s) === 'non-viral') return { tier: 'non-viral', flags: [] };
+  const bn = _bestViralBlastn(s), bx = _bestBlastx(s);
+  const nt = bn ? bn.pident : null, ntCov = bn ? (bn.qcovhsp ?? 0) : 0;
+  const aa = bx ? bx.pct_identity : null, aaCov = bx ? (bx.query_coverage ?? 0) : 0;
+  if (nt != null && nt >= 95 && ntCov >= 70) return { tier: 'known', flags: [] };
+  if (nt != null && nt >= 85 && ntCov >= 70) return { tier: 'variant', flags: [] };
+  if (aa != null && aa >= 90) return { tier: 'variant', flags: aaCov >= 70 ? [] : ['low-coverage'] };
+  if (aa == null && nt == null) return { tier: 'highly-divergent', flags: ['hmm-only'] };
+  if (aa == null) {
+    const flags = ['nt-only'].concat(nt >= 85 ? ['low-coverage'] : []);
+    return { tier: nt >= 70 ? 'novel-species' : 'divergent', flags };
+  }
+  if (aa >= 70) return { tier: 'novel-species', flags: [] };
+  if (aa >= 40) return { tier: 'divergent', flags: [] };
+  return { tier: 'highly-divergent', flags: [] };
 }
 
 /* Species of a hit: parsed `species`, else the bracketed organism in the title. */
@@ -389,13 +430,15 @@ function _virusRows(viral) {
     const hit = _bestBlastx(s);
     const key = hit ? _hitSpecies(hit) : _NO_BLASTX;
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({ seq: s, hit, bn: _bestBlastn(s), cls: _seqClass(s) });
+    groups.get(key).push({ seq: s, hit, bn: _bestBlastn(s), cls: _seqClass(s), nov: _seqNovelty(s).tier });
   });
 
   return [...groups.entries()].map(([species, items]) => {
     const noHit  = species === _NO_BLASTX;
     const counts = { 'viral-known': 0, 'viral-unknown': 0, 'non-viral': 0 };
     items.forEach(i => { counts[i.cls]++; });
+    const nov = Object.fromEntries(_NOV_ORDER.map(t => [t, 0]));
+    items.forEach(i => { nov[i.nov]++; });
     const withHit = items.filter(i => i.hit);
     const best = withHit.length
       ? withHit.reduce((a, b) => (b.hit.pct_identity > a.hit.pct_identity ? b : a)) : null;
@@ -409,8 +452,9 @@ function _virusRows(viral) {
       || best
       || items.slice().sort((a, b) => score(b) - score(a))[0];
     return {
-      species, noHit, counts,
+      species, noHit, counts, nov,
       known:    counts['viral-known'],
+      closest:  _NOV_ORDER.findIndex(t => nov[t] > 0),   // sort key: closest tier first
       family:   _mostCommon(items.map(i => i.seq.taxonomy?.family)) || '',
       genome:   _mostCommon(items.map(i => i.seq.taxonomy?.genome)) || '',
       contigs:  items.length,
@@ -434,13 +478,13 @@ function _pctCell(v) {
     </span>`;
 }
 
-/* Contigs of a row split by class: stacked bar + "8 known · 23 unknown". */
-function _classCell(counts, total) {
-  const parts = _CLASS_ORDER.filter(c => counts[c]);
-  const bar = parts.map(c =>
-    `<span class="vq-fill--${c}" style="width:${(counts[c] / total * 100).toFixed(1)}%"></span>`).join('');
-  const text = parts.map(c =>
-    `<span class="vq-vt-cls vq-vt-cls--${c}">${counts[c]} ${_CLASS_LABEL[c].toLowerCase()}</span>`)
+/* Contigs of a row split by novelty tier: stacked bar + "2 variant · 5 novel species". */
+function _noveltyCell(nov, total) {
+  const parts = _NOV_ORDER.filter(t => nov[t]);
+  const bar = parts.map(t =>
+    `<span class="vq-nfill--${t}" style="width:${(nov[t] / total * 100).toFixed(1)}%"></span>`).join('');
+  const text = parts.map(t =>
+    `<span class="vq-vt-cls vq-vt-cls--${t}" title="${VQ.esc(_NOV_LONG[t])}">${nov[t]} ${_NOV_LABEL[t].toLowerCase()}</span>`)
     .join('<span class="vq-vt-dot">·</span>');
   return `<span class="vq-vt-classes"><span class="vq-vt-classes__bar">${bar}</span>${text}</span>`;
 }
@@ -450,17 +494,18 @@ function _renderVirusTable(rows, st) {
   if (!wrap) return;
   const esc = VQ.esc;
 
-  // Filter counts = species having at least one contig of that class.
-  const counts = { all: rows.length };
-  _CLASS_ORDER.forEach(c => { counts[c] = rows.filter(r => r.counts[c] > 0).length; });
-  document.querySelectorAll('#stats-viruses-status [data-status]').forEach(b => {
-    const k = b.dataset.status;
-    b.textContent = `${k === 'all' ? 'All' : _CLASS_LABEL[k]} · ${counts[k]}`;
-    b.hidden = k !== 'all' && counts[k] === 0;
-  });
+  // Filter counts = species (rows) having at least one contig in that tier.
+  const sel = document.getElementById('stats-viruses-novelty');
+  if (sel && !sel.dataset.built) {
+    const n = t => rows.filter(r => r.nov[t] > 0).length;
+    sel.innerHTML = `<option value="all">All novelty tiers · ${rows.length}</option>` +
+      _NOV_ORDER.filter(t => n(t)).map(t =>
+        `<option value="${t}">${_NOV_LABEL[t]} · ${n(t)}</option>`).join('');
+    sel.dataset.built = '1';
+  }
 
   let view = rows.filter(r =>
-    (st.status === 'all' || r.counts[st.status] > 0) &&
+    (st.status === 'all' || r.nov[st.status] > 0) &&
     (!st.q || `${r.species} ${r.family} ${r.genome}`.toLowerCase().includes(st.q)));
   const key = st.sort;
   view = view.sort((a, b) => {
@@ -476,7 +521,7 @@ function _renderVirusTable(rows, st) {
   const sub = document.getElementById('stats-viruses-sub');
   if (sub) sub.textContent =
     `${nSpecies} species${noHit ? ` + ${noHit.contigs} contigs without a BLASTx hit` : ''} · ` +
-    `classes per contig from the heuristic score (${_CLASS_CRITERION}) · click a row to open its best contig`;
+    `contigs by novelty tier (heuristic score; hover a tier for its criterion) · click a row to open its best contig`;
 
   if (!rows.length) {
     wrap.innerHTML = '<div class="vq-empty" style="padding:24px;font-size:12px">No viral sequences.</div>';
@@ -494,7 +539,7 @@ function _renderVirusTable(rows, st) {
     <table class="vq-table vq-vt">
       <thead><tr>
         ${th('species',  'Species')}
-        ${th('known',    'Contigs by class')}
+        ${th('closest',  'Contigs by novelty')}
         ${th('family',   'Family')}
         ${th('genome',   'Genome')}
         ${th('contigs',  'Contigs',  'vq-vt-num')}
@@ -513,7 +558,7 @@ function _renderVirusTable(rows, st) {
             <td class="vq-vt-species">${r.noHit
               ? `${esc(r.species)}<span class="vq-vt-note">viral evidence from HMM / BLASTn only</span>`
               : esc(r.species)}</td>
-            <td>${_classCell(r.counts, r.contigs)}</td>
+            <td>${_noveltyCell(r.nov, r.contigs)}</td>
             <td>${r.family ? esc(r.family) : '<span class="vq-vt-na">—</span>'}</td>
             <td>${r.genome ? esc(r.genome) : '<span class="vq-vt-na">—</span>'}</td>
             <td class="vq-vt-num">${r.contigs.toLocaleString()}</td>
@@ -528,6 +573,75 @@ function _renderVirusTable(rows, st) {
         }).join('')}
       </tbody>
     </table>` : '<div class="vq-empty" style="padding:24px;font-size:12px">No species match the filter.</div>';
+}
+
+/* Contigs per novelty tier, closest → farthest, with the qualifier flags. */
+function _renderNoveltyProfile(viral) {
+  const wrap = document.getElementById('stats-novelty-svg');
+  if (!wrap) return;
+  VQ.tooltipHide();
+  wrap.innerHTML = '';
+
+  const counts = Object.fromEntries(_NOV_ORDER.map(t => [t, 0]));
+  const flags  = {};
+  viral.forEach(s => {
+    const n = _seqNovelty(s);
+    counts[n.tier]++;
+    n.flags.forEach(f => { flags[f] = (flags[f] || 0) + 1; });
+  });
+  const data = _NOV_ORDER.filter(t => counts[t]).map(t => ({ t, n: counts[t] }));
+
+  const sub = document.getElementById('stats-novelty-sub');
+  const flagText = Object.entries(flags).map(([f, n]) => `${n} ${f}`).join(' · ');
+  if (sub) sub.textContent = `contigs per tier${flagText ? ' · flags: ' + flagText : ''}`;
+
+  if (!data.length) {
+    wrap.innerHTML = '<div class="vq-empty" style="padding:24px;font-size:12px">No sequences.</div>';
+    return;
+  }
+
+  const W = Math.max(wrap.clientWidth || 0, 220);
+  const PAD_L = 104, PAD_R = 40, ROW_H = 24, BAR_H = 12;
+  const H = data.length * ROW_H + 6;
+  const drawW = W - PAD_L - PAD_R;
+  const xScale = d3.scaleLinear([0, d3.max(data, d => d.n) || 1], [0, drawW]);
+  const total = viral.length;
+
+  const svg = d3.create('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMinYMin meet')
+    .style('width', '100%').style('height', 'auto');
+
+  data.forEach((d, i) => {
+    const y = 4 + i * ROW_H;
+    const tip = evt => VQ.tooltipShow(`
+      <div class="vq-tooltip__title">${VQ.esc(_NOV_LABEL[d.t])}</div>
+      <div style="margin-bottom:4px">${VQ.esc(_NOV_LONG[d.t])}</div>
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Contigs</span><span>${d.n.toLocaleString()}</span>
+        <span class="vq-tooltip__key">Share</span><span>${_pct(d.n, total)}</span>
+      </div>`, evt);
+    svg.append('text')
+      .attr('x', PAD_L - 8).attr('y', y + BAR_H / 2 + 4)
+      .attr('text-anchor', 'end').attr('font-size', 11).attr('font-weight', 500)
+      .attr('fill', 'var(--vq-text-2)').text(_NOV_LABEL[d.t])
+      .on('mousemove', tip).on('mouseleave', VQ.tooltipHide);
+    svg.append('rect')
+      .attr('x', PAD_L).attr('y', y).attr('width', drawW).attr('height', BAR_H)
+      .attr('rx', BAR_H / 2).attr('fill', 'var(--vq-bg)');
+    const bw = Math.max(xScale(d.n), 4);
+    svg.append('rect')
+      .attr('x', PAD_L).attr('y', y).attr('width', bw).attr('height', BAR_H)
+      .attr('rx', BAR_H / 2).attr('fill', _NOV_COLOR[d.t])
+      .on('mousemove', tip).on('mouseleave', VQ.tooltipHide);
+    svg.append('text')
+      .attr('x', PAD_L + bw + 6).attr('y', y + BAR_H / 2 + 4)
+      .attr('font-size', 11).attr('font-weight', 600)
+      .attr('fill', 'var(--vq-text)').attr('font-variant-numeric', 'tabular-nums')
+      .text(d.n.toLocaleString());
+  });
+
+  wrap.appendChild(svg.node());
 }
 
 const _GENOME_COLORS = [
@@ -620,14 +734,14 @@ function _renderSimilarityScatter(viral, source) {
     const cov = isX ? h.query_coverage : h.qcovhsp;
     if (id == null || cov == null) return null;
     return {
-      s, id, cov, cls: _seqClass(s),
+      s, id, cov, cls: _seqNovelty(s).tier,
       species: isX ? _hitSpecies(h) : (h.stitle || ''),
     };
   }).filter(Boolean);
 
   const sub = document.getElementById('stats-scatter-sub');
   if (sub) sub.textContent =
-    `${pts.length} sequences · best ${isX ? 'BLASTx' : 'BLASTn'} hit · colour = heuristic class · ` +
+    `${pts.length} sequences · best ${isX ? 'BLASTx' : 'BLASTn'} hit · colour = novelty tier · ` +
     `shaded area = ≥${_KNOWN_ID}% id and ≥${_KNOWN_COV}% cov · click a point to open it`;
 
   if (!pts.length) {
@@ -685,12 +799,11 @@ function _renderSimilarityScatter(viral, source) {
     .attr('text-anchor', 'middle').attr('font-size', 9.5).attr('fill', 'var(--vq-c-tick)')
     .text('query coverage (%)');
 
-  // Points — rarer classes drawn last so they stay visible on top
-  const order = { 'viral-unknown': 0, 'viral-known': 1, 'non-viral': 2 };
-  pts.sort((a, b) => order[a.cls] - order[b.cls]).forEach(p => {
+  // Points — the closest tiers drawn last so they stay visible on top
+  pts.sort((a, b) => _NOV_ORDER.indexOf(b.cls) - _NOV_ORDER.indexOf(a.cls)).forEach(p => {
     g.append('circle')
       .attr('cx', x(p.id)).attr('cy', y(p.cov)).attr('r', 4.2)
-      .attr('fill', _CLASS_COLOR[p.cls]).attr('fill-opacity', 0.72)
+      .attr('fill', _NOV_COLOR[p.cls]).attr('fill-opacity', 0.75)
       .attr('stroke', 'var(--vq-surface)').attr('stroke-width', 1)
       .style('cursor', 'pointer')
       .on('mousemove', evt => VQ.tooltipShow(`
@@ -700,23 +813,26 @@ function _renderSimilarityScatter(viral, source) {
           <span class="vq-tooltip__key">Identity</span><span>${p.id.toFixed(1)}%</span>
           <span class="vq-tooltip__key">Coverage</span><span>${Number(p.cov).toFixed(1)}%</span>
           <span class="vq-tooltip__key">Family</span><span>${esc(p.s.taxonomy?.family || '—')}</span>
-          <span class="vq-tooltip__key">Class</span><span>${_CLASS_LABEL[p.cls]}</span>
+          <span class="vq-tooltip__key">Class</span><span>${_CLASS_LABEL[_seqClass(p.s)]}</span>
+          <span class="vq-tooltip__key">Novelty</span><span>${_NOV_LABEL[p.cls]}</span>
         </div>`, evt))
       .on('mouseleave', VQ.tooltipHide)
       .on('click', () => { VQ.tooltipHide(); VQ.jumpToViewer(p.s.id); });
   });
 
   // Legend
-  const counts = { 'viral-known': 0, 'viral-unknown': 0, 'non-viral': 0 };
+  const counts = Object.fromEntries(_NOV_ORDER.map(t => [t, 0]));
   pts.forEach(p => counts[p.cls]++);
   const lg = svg.append('g').attr('transform', `translate(${PAD_L + 4},10)`);
   let lx = 0;
-  _CLASS_ORDER.filter(k => counts[k]).forEach(k => {
+  _NOV_ORDER.filter(k => counts[k]).forEach(k => {
     const item = lg.append('g').attr('transform', `translate(${lx},0)`);
-    item.append('circle').attr('r', 4).attr('cy', 0).attr('fill', _CLASS_COLOR[k]);
+    item.append('circle').attr('r', 4).attr('cy', 0).attr('fill', _NOV_COLOR[k]);
     const t = item.append('text').attr('x', 8).attr('y', 3.5).attr('font-size', 10)
-      .attr('fill', 'var(--vq-text-2)').text(`${_CLASS_LABEL[k]} ${counts[k]}`);
-    lx += 8 + (t.node().getComputedTextLength?.() || 60) + 16;
+      .attr('fill', 'var(--vq-text-2)').text(`${_NOV_LABEL[k]} ${counts[k]}`);
+    // The SVG is not in the document yet, so text cannot be measured: estimate
+    // from the label length (10 px font ≈ 5.6 px per character).
+    lx += 8 + t.text().length * 5.6 + 16;
   });
 
   wrap.appendChild(svg.node());

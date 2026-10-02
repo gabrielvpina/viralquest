@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .biodata import LLM_ERROR_CLASSES
+from .biodata import LLM_ERROR_CLASSES, NOVELTY_TIERS
 from .d3_asset import load_d3
 
 _HERE        = Path(__file__).parent
@@ -158,6 +158,8 @@ def _build_heuristic_stats(seqs: list[dict], ps: dict) -> dict:
         "viral_unknown": sum(1 for s in scored if s["heuristic_output"].get("classification") == "viral-unknown"),
         "non_viral":     sum(1 for s in scored if s["heuristic_output"].get("classification") == "non-viral"),
         "avg_score":     round(sum(scores) / len(scores), 1) if scores else None,
+        "novelty":       {t: n for t in NOVELTY_TIERS
+                          if (n := sum(1 for s in scored if s["heuristic_output"].get("novelty") == t))},
     }
 
 

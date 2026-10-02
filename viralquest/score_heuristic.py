@@ -102,6 +102,34 @@ HMM_QUAL_W,   HMM_QUANT_W  = 0.7,  0.3      # qualitative vs quantitative mix
 # Classification: "viral-known" demands near-species-level evidence.
 KNOWN_ID, KNOWN_COV = 90.0, 70.0
 
+# Novelty tier — how far a viral contig sits from known viruses. Finer than the
+# classification; evaluated top-down, the first tier whose criterion is met wins.
+#   known            >= NOVELTY_KNOWN_NT nt  (and >= NOVELTY_COV coverage)
+#                    95% ANI = species-level vOTU for virus genomes (MIUViG,
+#                    Roux et al. 2019).
+#   variant          >= NOVELTY_VARIANT_NT nt (>= NOVELTY_COV cov), or
+#                    >= NOVELTY_SPECIES_AA aa: same species, divergent variant.
+#                    <90% RdRp aa identity separates species (Babaian & Edgar
+#                    2022); species split into several vOTUs above ~82.5% ANI
+#                    (Virus Evolution 2024, doi:10.1093/ve/veae059).
+#   novel-species    NOVELTY_GENUS_AA – NOVELTY_SPECIES_AA aa: 70–90% is the
+#                    genus-rank range for RdRp (Babaian & Edgar 2022).
+#   divergent        NOVELTY_DIVERGENT_AA – NOVELTY_GENUS_AA aa: new genus or above.
+#   highly-divergent < NOVELTY_DIVERGENT_AA aa, or HMM evidence only (no BLAST):
+#                    remote homology (Shi et al. 2016 describe <40% aa as highly
+#                    divergent; a descriptive, not a formal, cut-off).
+# The aa thresholds come from RdRp studies but are applied to the best BLASTx hit
+# of any protein — an approximation worth stating when reporting.
+NOVELTY_KNOWN_NT     = 95.0
+NOVELTY_VARIANT_NT   = 85.0
+NOVELTY_SPECIES_AA   = 90.0
+NOVELTY_GENUS_AA     = 70.0
+NOVELTY_DIVERGENT_AA = 40.0
+# Coverage behind a species-level (known / variant) call. A >=90% aa hit below
+# it stays "variant" but is flagged "low-coverage": on long contigs of large DNA
+# viruses one protein hit covers a small fraction of the contig by nature.
+NOVELTY_COV          = 70.0
+
 # False-positive penalty: a dominant BLASTn hit to a non-viral subject at this
 # strength damps the final score by NON_VIRAL_PENALTY (heavy, can override).
 FP_ID, FP_COV       = 90.0, 80.0
@@ -276,6 +304,39 @@ def _build_analysis(
 # Classification
 # ===========================================================================
 
+def _novelty(
+    classification: str,
+    viral_bn: BlastnResult | None,
+    bx: BlastxResult | None,
+) -> tuple[str, list[str]]:
+    """Novelty tier + qualifying flags (see NOVELTY_* in CALIBRATION)."""
+    if classification == "non-viral":
+        return "non-viral", []
+    nt, nt_cov = (viral_bn.pident, viral_bn.qcovhsp) if viral_bn else (None, 0.0)
+    aa, aa_cov = (bx.pct_identity, bx.query_coverage) if bx else (None, 0.0)
+
+    if nt is not None and nt >= NOVELTY_KNOWN_NT and nt_cov >= NOVELTY_COV:
+        return "known", []
+    if nt is not None and nt >= NOVELTY_VARIANT_NT and nt_cov >= NOVELTY_COV:
+        return "variant", []
+    if aa is not None and aa >= NOVELTY_SPECIES_AA:
+        return "variant", ([] if aa_cov >= NOVELTY_COV else ["low-coverage"])
+
+    if aa is None and nt is None:
+        return "highly-divergent", ["hmm-only"]
+    if aa is None:                                   # viral BLASTn only
+        flags = ["nt-only"]
+        if nt >= NOVELTY_VARIANT_NT:                 # close nt hit, short footprint
+            flags.append("low-coverage")
+        return ("novel-species" if nt >= NOVELTY_GENUS_AA else "divergent"), flags
+
+    if aa >= NOVELTY_GENUS_AA:
+        return "novel-species", []
+    if aa >= NOVELTY_DIVERGENT_AA:
+        return "divergent", []
+    return "highly-divergent", []
+
+
 def _classify(
     present: dict[str, float],
     viral_bn: BlastnResult | None,
@@ -367,10 +428,13 @@ class HeuristicScorer:
 
         vq_score = int(max(0, min(100, round(raw_score * penalty))))
         classification = _classify(present, viral_bn, bx, fp_penalty)
+        novelty, novelty_flags = _novelty(classification, viral_bn, bx)
         blastn_species = _extract_species(viral_bn.stitle) if viral_bn else ""
         analysis = _build_analysis(
             seq, present, applied, fp_penalty, single_penalty, fp_hit, viral_bn, bx
         )
+        analysis += (f" Novelty: {novelty}"
+                     + (f" ({', '.join(novelty_flags)})" if novelty_flags else "") + ".")
 
         return HeuristicScore(
             seq_id=seq.id,
@@ -385,4 +449,6 @@ class HeuristicScorer:
                 weights={k: round(v, 4) for k, v in applied.items()},
                 penalty=penalty,
             ),
+            novelty=novelty,
+            novelty_flags=novelty_flags,
         )

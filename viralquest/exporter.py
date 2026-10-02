@@ -9,6 +9,7 @@ from loguru import logger
 
 from viralquest.biodata import (
     LLM_ERROR_CLASSES,
+    NOVELTY_TIERS,
     InputFasta,
     NucSequence,
     SalmonQuantReport,
@@ -394,6 +395,8 @@ class ReportExporter:
                 "viral_unknown": sum(1 for s in heur if s.heuristic_output.classification == "viral-unknown"),
                 "non_viral":     sum(1 for s in heur if s.heuristic_output.classification == "non-viral"),
                 "avg_score":     round(sum(heur_scores) / len(heur_scores), 1) if heur_scores else None,
+                "novelty":       {t: sum(1 for s in heur if s.heuristic_output.novelty == t)
+                                  for t in NOVELTY_TIERS},
             },
             "clusters": len(clusters),
         }

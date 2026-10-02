@@ -236,6 +236,21 @@ class ViralFamilyInfo:
 # LLM scoring output
 # ---------------------------------------------------------------------------
 
+# Novelty tiers — how far a contig sits from known viruses (finer than the
+# classification). Ordered from closest to farthest; "non-viral" mirrors the
+# classification. Criteria live in score_heuristic (CALIBRATION).
+NOVELTY_TIERS = (
+    "known",             # same species, close strain   (>=95% nt)
+    "variant",           # known species, divergent variant (>=90% aa or >=85% nt)
+    "novel-species",     # putative new species          (70–90% aa)
+    "divergent",         # putative new genus or above   (40–70% aa)
+    "highly-divergent",  # remote homology / HMM only    (<40% aa)
+    "non-viral",
+)
+# Qualifiers attached to a novelty tier.
+NOVELTY_FLAGS = ("low-coverage", "nt-only", "hmm-only")
+
+
 # LlmOutput.classification values that mean "no assessment was made": the
 # request failed (api-error) or the model's reply could not be interpreted
 # (parse-error). Their vq_score is a placeholder 0 and must not be read as a score.
@@ -253,6 +268,7 @@ class LlmOutput:
     analysis:       str        # plain-text summary (max ~200 words)
     blastn_species: str        = field(default="")
     error:          str | None = field(default=None)
+    novelty:        str        = field(default="")   # one of NOVELTY_TIERS, "" if not given
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +307,8 @@ class HeuristicScore:
     blastn_species: str = ""
     analysis:       str = ""     # plain-text, template-generated breakdown
     components:     ScoreComponents | None = None
+    novelty:        str = ""     # one of NOVELTY_TIERS
+    novelty_flags:  list[str] = field(default_factory=list)   # subset of NOVELTY_FLAGS
 
 
 # ---------------------------------------------------------------------------

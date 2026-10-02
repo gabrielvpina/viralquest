@@ -218,10 +218,15 @@ class TestPromptBuilderSystemPrompt:
         data = json.loads(PromptBuilder.system_prompt())
         assert {"role", "task", "scoring", "classification", "output"}.issubset(data)
 
-    def test_output_schema_has_four_fields(self):
+    def test_output_schema_fields(self):
         data = json.loads(PromptBuilder.system_prompt())
         schema = data["output"]["schema"]
-        assert set(schema) == {"vq_score", "classification", "blastn_species", "analysis"}
+        assert set(schema) == {"vq_score", "classification", "blastn_species", "novelty", "analysis"}
+
+    def test_novelty_tiers_defined_in_prompt(self):
+        from viralquest.biodata import NOVELTY_TIERS
+        tiers = json.loads(PromptBuilder.system_prompt())["novelty"]
+        assert set(NOVELTY_TIERS) <= set(tiers)
 
     def test_field_extraction_blastn_species_defined(self):
         data = json.loads(PromptBuilder.system_prompt())
@@ -520,6 +525,16 @@ class TestResponseParser:
         raw = json.dumps({"vq_score": 85, "classification": "viral-known",
                           "analysis": "x", "blastn_species": "  Tomato spotted wilt virus  "})
         assert self._parse(raw).blastn_species == "Tomato spotted wilt virus"
+
+    def test_novelty_parsed(self):
+        raw = json.dumps({"vq_score": 70, "classification": "viral-unknown", "novelty": "Novel Species"})
+        assert self._parse(raw).novelty == "novel-species"
+
+    def test_novelty_missing_or_unknown_is_empty_not_an_error(self):
+        assert self._parse(json.dumps({"vq_score": 70, "classification": "viral-unknown"})).novelty == ""
+        raw = json.dumps({"vq_score": 70, "classification": "viral-unknown", "novelty": "weird"})
+        out = self._parse(raw)
+        assert out.novelty == "" and out.classification == "viral-unknown"
 
     def test_error_output_marks_the_failure(self):
         r = ResponseParser.error_output("s1", "m", "low", "parse-error", "bad reply")

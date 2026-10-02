@@ -590,6 +590,21 @@ function _scoreChips(seq) {
   return `<span class="vq-score-chips">${chips.join('')}${disagree}</span>`;
 }
 
+/* Novelty tier pill (+ qualifier flags) shown under a score. */
+const _NOVELTY_LABEL = {
+  'known': 'Known', 'variant': 'Known species · variant',
+  'novel-species': 'Putative novel species', 'divergent': 'Divergent',
+  'highly-divergent': 'Highly divergent', 'non-viral': 'Non-viral',
+};
+function _noveltyRow(o) {
+  const esc = VQ.esc;
+  const tier = o && o.novelty;
+  if (!_NOVELTY_LABEL[tier]) return '';
+  const flags = (o.novelty_flags || []).map(f => `<span class="vq-nov__flag">${esc(f)}</span>`).join('');
+  return `<div class="vq-score-col__novelty">Novelty
+    <span class="vq-nov vq-nov--${tier}">${_NOVELTY_LABEL[tier]}</span>${flags}</div>`;
+}
+
 /* One heuristic component sub-score bar (width = magnitude; null = absent). */
 function _compBar(label, val, weight) {
   if (val == null) {
@@ -628,6 +643,7 @@ function _heurColumn(h, safe) {
         <span class="vq-badge vq-badge--${esc(h.classification)}">${esc(h.classification)}</span>
       </div>
       <div class="vq-score-col__num">${h.vq_score}<small> / 100</small></div>
+      ${_noveltyRow(h)}
       ${comps}
       ${penalty}
       ${h.analysis ? `<div class="vq-score-col__analysis">${esc(h.analysis)}</div>` : ''}
@@ -659,6 +675,7 @@ function _llmColumn(l) {
         <span class="vq-badge vq-badge--${esc(l.classification)}">${esc(l.classification)}</span>
       </div>
       <div class="vq-score-col__num">${l.vq_score}<small> / 100</small></div>
+      ${_noveltyRow(l)}
       ${l.analysis ? `<div class="vq-score-col__analysis">${esc(l.analysis)}</div>` : ''}
     </div>`;
 }
