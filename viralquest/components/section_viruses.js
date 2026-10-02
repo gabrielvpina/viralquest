@@ -1558,4 +1558,9 @@ function _renderNRClassification(sequences) {
 
 
 window.vqInitViruses = vqInitViruses;
+// Novelty rule + palette, shared with the multi-sample Overview.
+window.vqNovelty = {
+  tier: s => _seqNovelty(s).tier,
+  order: _NOV_ORDER, label: _NOV_LABEL, long: _NOV_LONG, color: _NOV_COLOR, novel: _NOVEL_TIERS,
+};
 })();

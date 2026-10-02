@@ -2704,3 +2704,105 @@ button.ov-wf-cell:hover .ov-wf-dot { filter: brightness(1.08); transform: scale(
 .hm-ctl select        { min-width: 120px; }
 .hm-ctl--check        { cursor: pointer; color: var(--vq-text-2); }
 
+
+/* ── Overview: full-width cards stacked inside a titled group ─────────── */
+.ov-stack { display: flex; flex-direction: column; gap: var(--vq-space-3); }
+.ov-stack > .vq-chart-card { min-width: 0; }
+
+/* Shared hover band for SVG rows (funnel, bubble matrix) */
+.ov-funnel__hover { fill: transparent; }
+.ov-funnel__row:hover .ov-funnel__hover,
+.ov-bubbles__row:hover .ov-funnel__hover { fill: var(--vq-surface-2); }
+
+/* Detection funnel */
+.ov-funnel { overflow-x: auto; overflow-y: hidden; justify-content: flex-start; }
+.ov-funnel__stage  { font-size: 11px; font-weight: 600; fill: var(--vq-text-3); font-family: var(--vq-font); }
+.ov-funnel__sample { font-size: 12px; font-weight: 600; fill: var(--vq-text); font-family: var(--vq-font); }
+.ov-funnel__count  { font-size: 12px; font-weight: 700; fill: var(--vq-text);
+                     font-family: var(--vq-font-mono); font-variant-numeric: tabular-nums; }
+.ov-funnel__rate   { font-size: 10.5px; fill: var(--vq-text-3); font-family: var(--vq-font-mono); }
+
+/* Family × sample bubble matrix */
+.ov-bubbles { overflow-x: auto; overflow-y: hidden; justify-content: flex-start; }
+.ov-bubbles__col   { font-size: 11px; fill: var(--vq-text-2); font-family: var(--vq-font); font-weight: 600; }
+.ov-bubbles__col--meta { fill: var(--vq-text-3); font-weight: 600; }
+.ov-bubbles__fam   { font-size: 12px; fill: var(--vq-text); font-family: var(--vq-font); }
+.ov-bubbles__fam.is-muted { fill: var(--vq-text-3); font-style: italic; }
+.ov-bubbles__guide { stroke: var(--vq-border); stroke-width: 1; stroke-dasharray: 2,4; }
+.ov-bubbles__empty { fill: var(--vq-border-dark); opacity: .55; }
+.ov-bubbles__dot   { stroke: var(--vq-surface); stroke-width: 1.5; fill-opacity: .88;
+                     transition: fill-opacity var(--vq-dur) var(--vq-ease); }
+.ov-bubbles__dot:hover { fill-opacity: 1; stroke: var(--vq-text); }
+.ov-bubbles__val   { font-size: 9.5px; font-weight: 700; fill: #fff; pointer-events: none;
+                     font-family: var(--vq-font-mono); }
+.ov-bubbles__track { fill: var(--vq-c-track); }
+.ov-bubbles__prev  { font-size: 11px; fill: var(--vq-text-2); font-family: var(--vq-font-mono); }
+
+/* Salmon read mapping & viral load */
+.ov-salmon { overflow-x: auto; padding: 2px 0 4px; }
+.ov-salmon__grid {
+  display: grid;
+  grid-template-columns: minmax(110px, max-content) max-content minmax(180px, 2fr)
+                         max-content max-content minmax(200px, 2fr);
+  align-items: stretch;
+  min-width: 860px;
+  font-size: 12px;
+}
+.ov-salmon__grid > * { padding: 7px 9px; border-bottom: 1px solid var(--vq-border);
+                       display: flex; flex-direction: column; justify-content: center; }
+.ov-salmon__grid > .ov-salmon__num { align-items: flex-end; }
+.ov-salmon__grid > .ov-salmon__load { flex-direction: row; align-items: center; }
+.ov-salmon__grid > :nth-last-child(-n+6) { border-bottom: 0; }
+.ov-salmon__hd { font-size: 11px; font-weight: 600; color: var(--vq-text-3); white-space: nowrap; }
+.ov-salmon__hd--num, .ov-salmon__num { text-align: right; }
+.ov-salmon__sample { font-weight: 600; color: var(--vq-text); max-width: 200px; }
+.ov-salmon__sample > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-salmon__num { font-family: var(--vq-font-mono); font-variant-numeric: tabular-nums;
+                  color: var(--vq-text); white-space: nowrap; }
+.ov-salmon__muted { display: block; font-size: 10.5px; color: var(--vq-text-3); }
+.ov-salmon__grid > .ov-salmon__bar { flex-direction: row; justify-content: flex-start; align-items: center; }
+.ov-salmon__bar::before { content: none; }
+.ov-salmon__track {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--vq-c-track);
+  box-shadow: inset 0 0 0 1px var(--vq-border);
+}
+.ov-salmon__seg { display: block; height: 100%; }
+.ov-salmon__seg--viral { background: var(--vq-accent); }
+.ov-salmon__seg--other { background: var(--vq-primary-light); opacity: .45; }
+.ov-salmon__load { display: flex; align-items: center; gap: 10px; }
+.ov-salmon__loadtrack {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--vq-c-track);
+}
+.ov-salmon__loadtrack > i {
+  position: absolute; top: -2px; bottom: -2px; width: 1px;
+  background: var(--vq-border-dark); opacity: .6;
+}
+.ov-salmon__loadfill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--vq-primary-light), var(--vq-accent));
+}
+.ov-salmon__loadval { min-width: 54px; text-align: right; font-family: var(--vq-font-mono);
+                      font-weight: 700; color: var(--vq-text); }
+.ov-salmon__axis {
+  position: relative;
+  height: 14px;
+  margin: 0 73px 0 9px;
+  font-size: 10px;
+  color: var(--vq-text-3);
+  font-family: var(--vq-font-mono);
+  padding: 2px 0 0 !important;
+  display: block !important;
+}
+.ov-salmon__axis > span { position: absolute; transform: translateX(-50%); }
+.ov-salmon__axis > span:first-child { transform: none; }
+.ov-salmon__axis > span:last-child  { transform: translateX(-100%); }

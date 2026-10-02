@@ -10,15 +10,7 @@
    samples to many, and degrades gracefully when data is absent.
    ============================================================ */
 
-const PALETTE = [
-  '#2563eb', '#16a34a', '#db2777', '#d97706', '#7c3aed',
-  '#0891b2', '#dc2626', '#65a30d', '#c026d3', '#0d9488',
-  '#ea580c', '#4f46e5', '#059669', '#e11d48', '#9333ea',
-];
-const colorFor = i => PALETTE[i % PALETTE.length];
-
-// Single accent colour for all quantitative-per-sample charts; only the
-// family-distribution chart distinguishes samples/categories by colour.
+// Single accent colour for the quantitative-per-sample charts.
 const QUANT = 'var(--vq-accent)';
 
 function vqInitOverview(report) {
@@ -27,7 +19,6 @@ function vqInitOverview(report) {
 
   const esc      = VQ.esc;
   const samples  = report.samples || [];
-  const meta     = report.meta || {};
 
   if (!samples.length) {
     el.innerHTML = `<div class="vq-empty">No samples loaded.</div>`;
@@ -35,17 +26,52 @@ function vqInitOverview(report) {
   }
 
   // ── Aggregates ──────────────────────────────────────────────────────────
+  const NOV = window.vqNovelty;
+  const seqs = report.sequences || [];
+  const bySample = new Map(samples.map(s => [s.sample, []]));
+  seqs.forEach(q => { if (bySample.has(q.sample)) bySample.get(q.sample).push(q); });
+
   const totalConfirmed = samples.reduce((a, s) => a + (s.n_confirmed || 0), 0);
   const familyUnion = new Set();
   samples.forEach(s => Object.keys(s.families || {}).forEach(f => familyUnion.add(f)));
-  const totalClusters = (report.clusters || []).length;
+  const coreFamilies = [...familyUnion].filter(f =>
+    f !== 'Unclassified' && samples.every(s => (s.families || {})[f]));
+
+  // Species: best BLASTx hit (NR first, RefSeq fallback), as in report_data.
+  const speciesSamples = new Map();
+  seqs.forEach(q => {
+    const hits = (q.blastx_nr_hits || []).length ? q.blastx_nr_hits : (q.blastx_hits || []);
+    const sp = hits.length ? hits[0].species : null;
+    if (!sp) return;
+    if (!speciesSamples.has(sp)) speciesSamples.set(sp, new Set());
+    speciesSamples.get(sp).add(q.sample);
+  });
+  const sharedSpecies = [...speciesSamples.values()].filter(ss => ss.size > 1).length;
+
+  const novelOf = list => NOV ? list.filter(q => NOV.novel.includes(NOV.tier(q))).length : null;
+  samples.forEach(s => { s._novel = novelOf(bySample.get(s.sample) || []); });
+  const totalNovel = NOV ? samples.reduce((a, s) => a + (s._novel || 0), 0) : null;
+
+  const confirmedPer = samples.map(s => s.n_confirmed || 0).sort((a, b) => a - b);
+  const medConfirmed = confirmedPer[Math.floor((confirmedPer.length - 1) / 2)];
+
   const anyLLM  = samples.some(s => (s.llm_scores || []).length);
   const anyHeur = samples.some(s => (s.heuristic_scores || []).length);
   const salmonSamples = samples.filter(s => s.salmon);
   const anySalmon = salmonSamples.length > 0;
   const anyConserved = salmonSamples.some(s => Object.keys(s.salmon.conserved || {}).length);
+  const nWorkflow = samples.filter(s => s.workflow).length;
 
   const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString();
+
+  const group = (title, hint, body) => `
+    <section class="vq-group">
+      <div class="vq-group__head">
+        <h3 class="vq-group__title">${esc(title)}</h3>
+        ${hint ? `<span class="vq-group__hint">${esc(hint)}</span>` : ''}
+      </div>
+      <div class="ov-stack">${body}</div>
+    </section>`;
 
   // ── Scaffold ────────────────────────────────────────────────────────────
   el.innerHTML = `
@@ -62,50 +88,54 @@ function vqInitOverview(report) {
 
     <div class="vq-stats-page">
       <div class="vq-stats-row vq-stats-row--top">
-        ${_chip('Samples',            fmt(samples.length), 'accent', 'ViralQuest runs')}
-        ${_chip('Confirmed Viral',    fmt(totalConfirmed), 'success', 'across all samples')}
-        ${_chip('Viral Families',     fmt(familyUnion.size), '', 'distinct, union')}
-        ${_chip('Cross-sample Clusters', fmt(totalClusters), 'accent',
-                report.has_clusters ? 'shared between samples' : 'none detected')}
+        ${_chip('Samples', fmt(samples.length), 'accent',
+                [`${nWorkflow} with workflow record`, anySalmon ? `${salmonSamples.length} with Salmon` : '']
+                  .filter(Boolean).join(' · '))}
+        ${_chip('Confirmed Viral', fmt(totalConfirmed), 'success',
+                `median ${fmt(medConfirmed)} per sample (${fmt(confirmedPer[0])}–${fmt(confirmedPer[confirmedPer.length - 1])})`)}
+        ${_chip('Viral Species', fmt(speciesSamples.size), '',
+                `best BLASTx hit · ${fmt(sharedSpecies)} shared by ≥2 samples`)}
+        ${totalNovel != null ? _chip('Putative Novel', fmt(totalNovel), 'accent',
+                `${VQ.pct(totalNovel, totalConfirmed)} of confirmed · novel species + divergent`) : ''}
+        ${_chip('Viral Families', fmt(familyUnion.size), '',
+                `${fmt(coreFamilies.length)} found in every sample`)}
       </div>
 
-      <!-- Pipeline workflow per sample — always full width -->
-      ${_workflowCardHtml(samples)}
+      ${group('Run', 'pipeline steps, status and options per sample', _workflowCardHtml(samples))}
 
-      ${anyConserved ? `
-      <!-- Host attribution — full width, one column per sample -->
-      <div class="vq-chart-card" id="ov-kingdoms-card" style="min-height:auto">
-        <div class="vq-chart-card__head">
-          <div>
-            <div class="vq-chart-card__title">Conserved Housekeeping by Kingdom</div>
-            <div class="vq-chart-card__sub">
-              total TPM and detected genes per kingdom — host provenance and contamination
+      ${group('Detection & composition', 'from input contigs to putative novel viruses, and what they are', `
+        ${_funnelCardHtml(NOV)}
+        ${_bubbleCardHtml(samples)}`)}
+
+      ${anySalmon ? group('Read support', 'Salmon quantification — how much of each library is viral', `
+        ${_salmonCardHtml(salmonSamples)}
+        ${anyConserved ? `
+        <div class="vq-chart-card" id="ov-kingdoms-card" style="min-height:auto">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Conserved Housekeeping by Kingdom</div>
+              <div class="vq-chart-card__sub">
+                total TPM and detected genes per kingdom — host provenance and contamination
+              </div>
             </div>
           </div>
-        </div>
-        <div class="vq-chart-card__body" id="ov-kingdoms-body"></div>
-      </div>` : ''}
+          <div class="vq-chart-card__body" id="ov-kingdoms-body"></div>
+        </div>` : ''}`) : ''}
 
-      <div class="vq-masonry">
-        ${anySalmon ? _card('ov-maprate', 'Salmon Mapping Rate per Sample', '% of reads mapped') : ''}
-        ${_card('ov-seqs',    'Confirmed Sequences per Sample', 'final viral contigs')}
-        ${_card('ov-famdist', 'Family Distribution per Sample', 'composition, all samples')}
+      ${VQ.cardGroup('Sequence properties', 'length and score distributions per sample', `
         ${_card('ov-lengths', 'Sequence Length per Sample', 'min · median · max (nt)')}
         ${anyHeur ? _card('ov-heur', 'Heuristic Score per Sample', 'VQ score distribution') : ''}
-        ${anyLLM  ? _card('ov-llm',  'LLM Score per Sample', 'VQ score distribution') : ''}
-      </div>
+        ${anyLLM  ? _card('ov-llm',  'LLM Score per Sample', 'VQ score distribution') : ''}`,
+        1 + anyHeur + anyLLM)}
     </div>
   `;
 
   // ── Render charts ───────────────────────────────────────────────────────
   _renderWorkflowMatrix(samples);
+  _renderFunnel(samples, NOV);
+  _renderBubbleMatrix(samples, bySample, NOV);
+  if (anySalmon) _renderSalmon(salmonSamples);
   if (anyConserved) _renderKingdomMatrix(_body('ov-kingdoms'), salmonSamples);
-  if (anySalmon)
-    _barChart(_body('ov-maprate'),
-              salmonSamples.map(s => ({ label: s.sample, value: s.salmon.mapping_rate ?? 0 })),
-              { unit: '%' });
-  _barChart(_body('ov-seqs'),    samples.map(s => ({ label: s.sample, value: s.n_confirmed || 0 })));
-  _stackedFamilies(_body('ov-famdist'), samples);
   _lengthRanges(_body('ov-lengths'), samples);
   if (anyHeur) _scoreBoxes(_body('ov-heur'), samples, 'heuristic_scores');
   if (anyLLM)  _scoreBoxes(_body('ov-llm'),  samples, 'llm_scores');
@@ -519,98 +549,416 @@ function _svg(host, width, height) {
 // Row height scales with sample count so few/many both look right.
 const _rowH = n => Math.max(16, Math.min(34, Math.round(360 / Math.max(n, 1))));
 
-// ── Horizontal bar chart ────────────────────────────────────────────────────
+// ── Detection funnel per sample ─────────────────────────────────────────────
+// One horizontal funnel per sample: input contigs → viral-flagged (RefSeq +
+// HMM) → confirmed → putative novel.  Bar height is log-scaled against the
+// largest input so samples stay comparable; the band between two stages
+// carries the retention rate.
 
-function _barChart(host, data, opts) {
+function _funnelStages(NOV) {
+  return [
+    { key: 'n_input',     label: 'Input contigs',  color: 'var(--vq-text-3)' },
+    { key: 'n_viral',     label: 'Viral-flagged',  color: 'var(--vq-primary-light)' },
+    { key: 'n_confirmed', label: 'Confirmed',      color: 'var(--vq-success)' },
+    ...(NOV ? [{ key: '_novel', label: 'Putative novel', color: NOV.color['novel-species'] }] : []),
+  ];
+}
+
+function _funnelCardHtml(NOV) {
+  return `
+    <div class="vq-chart-card" id="ov-funnel-card" style="min-height:auto">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Detection Funnel per Sample</div>
+          <div class="vq-chart-card__sub">
+            input contigs → viral-flagged (RefSeq + HMM) → confirmed${NOV ? ' → putative novel' : ''}
+            &nbsp;·&nbsp; bar height on a log scale, band label = share kept from the previous stage
+          </div>
+        </div>
+      </div>
+      <div class="vq-chart-card__body ov-funnel" id="ov-funnel-body"></div>
+    </div>`;
+}
+
+function _renderFunnel(samples, NOV) {
+  const host = _body('ov-funnel');
   if (!host) return;
-  if (!data.length) { host.innerHTML = `<div class="vq-empty">No data.</div>`; return; }
-  const unit = (opts && opts.unit) || '';
+  const draw = () => _drawFunnel(host, samples, NOV);
+  draw();
+  VQ.redrawOnResize(host, draw);
+}
 
-  const W = 440, padL = 110, padR = 48, padT = 8;
-  const rh = _rowH(data.length), gap = 6;
-  const H  = padT + data.length * (rh + gap);
-  const max = d3.max(data, d => d.value) || 1;
-  const x = d3.scaleLinear().domain([0, max]).range([padL, W - padR]);
+function _drawFunnel(host, samples, NOV) {
+  const esc    = VQ.esc;
+  const stages = _funnelStages(NOV);
+  const val    = (s, st) => { const v = s[st.key]; return v == null || isNaN(v) ? null : +v; };
+  const maxN   = d3.max(samples, s => d3.max(stages, st => val(s, st) || 0)) || 1;
 
-  const svg = _svg(host, W, H);
-  data.forEach((d, i) => {
-    const y = padT + i * (rh + gap);
-    const g = svg.append('g');
-    g.append('text').attr('x', padL - 8).attr('y', y + rh / 2)
-      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
-      .attr('class', 'ov-axis-label').text(_trunc(d.label, 16));
-    g.append('rect').attr('x', padL).attr('y', y)
-      .attr('width', Math.max(1, x(d.value) - padL)).attr('height', rh)
-      .attr('rx', 3).attr('fill', QUANT);
-    g.append('text').attr('x', x(d.value) + 6).attr('y', y + rh / 2)
-      .attr('dominant-baseline', 'central').attr('class', 'ov-value-label')
-      .text(d.value.toLocaleString() + unit);
+  const W = Math.max(host.clientWidth || 0, 640);
+  const padL = 150, padR = 16, headH = 28, rowH = 48, barW = 8;
+  const H = headH + samples.length * rowH + 4;
+  const lastW = 110;                               // last stage only carries its count
+  const colW = (W - padL - padR - lastW) / Math.max(1, stages.length - 1);
+  const xBar = i => padL + i * colW + 6;
+  const hOf  = n => n == null ? 0 : Math.max(3, (Math.log10(n + 1) / Math.log10(maxN + 1)) * (rowH - 10));
+
+  host.innerHTML = '';
+  const svg = d3.select(host).append('svg')
+    .attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`)
+    .style('display', 'block');
+
+  stages.forEach((st, i) => {
+    svg.append('text').attr('class', 'ov-funnel__stage')
+      .attr('x', xBar(i)).attr('y', 14).text(st.label);
+    svg.append('rect').attr('x', xBar(i)).attr('y', 19).attr('width', 18).attr('height', 3)
+      .attr('rx', 1.5).attr('fill', st.color);
+  });
+
+  samples.forEach((s, r) => {
+    const mid = headH + r * rowH + rowH / 2;
+    const g = svg.append('g').attr('class', 'ov-funnel__row');
+    g.append('rect').attr('class', 'ov-funnel__hover')
+      .attr('x', 0).attr('y', mid - rowH / 2).attr('width', W).attr('height', rowH);
+    if (r) g.append('line').attr('class', 'ov-grid')
+      .attr('x1', 0).attr('x2', W).attr('y1', mid - rowH / 2).attr('y2', mid - rowH / 2);
+
+    g.append('text').attr('class', 'ov-funnel__sample')
+      .attr('x', 8).attr('y', mid).attr('dominant-baseline', 'central')
+      .text(_trunc(s.sample, 20));
+
+    const vals = stages.map(st => val(s, st));
+    // Bands between consecutive stages (drawn first, under the bars).
+    stages.forEach((st, i) => {
+      if (!i || vals[i] == null || vals[i - 1] == null) return;
+      const h0 = hOf(vals[i - 1]), h1 = hOf(vals[i]);
+      const x0 = xBar(i - 1) + barW, x1 = xBar(i);
+      g.append('path')
+        .attr('d', `M${x0},${mid - h0 / 2} L${x1},${mid - h1 / 2} L${x1},${mid + h1 / 2} L${x0},${mid + h0 / 2} Z`)
+        .attr('fill', st.color).attr('opacity', 0.13);
+      g.append('text').attr('class', 'ov-funnel__rate')
+        .attr('x', x1 - 8).attr('y', mid).attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+        .text(VQ.pct(vals[i], vals[i - 1]));
+    });
+    stages.forEach((st, i) => {
+      const x = xBar(i), h = hOf(vals[i]);
+      if (vals[i] != null) g.append('rect')
+        .attr('x', x).attr('y', mid - h / 2).attr('width', barW).attr('height', h)
+        .attr('rx', 2).attr('fill', st.color);
+      g.append('text').attr('class', 'ov-funnel__count')
+        .attr('x', x + barW + 6).attr('y', mid).attr('dominant-baseline', 'central')
+        .text(vals[i] == null ? '—' : vals[i].toLocaleString());
+    });
+
+    g.on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${esc(s.sample)}</div>
+        <div class="vq-tooltip__row">
+          ${stages.map((st, i) => `
+            <span class="vq-tooltip__key">${esc(st.label)}</span>
+            <span>${vals[i] == null ? '—' : vals[i].toLocaleString()}${
+              i && vals[i] != null && vals[i - 1] != null ? ` · ${VQ.pct(vals[i], vals[i - 1])}` : ''}</span>`).join('')}
+        </div>`, evt))
+     .on('mouseleave', VQ.tooltipHide);
   });
 }
 
-// ── Stacked family distribution (one row per sample) ────────────────────────
+// ── Family × sample bubble matrix ───────────────────────────────────────────
+// Rows = viral families (top N by prevalence, then abundance), columns =
+// samples.  Bubble area ∝ the chosen measure; colour = the family's dominant
+// novelty tier in that sample.  The right margin shows prevalence (in how many
+// samples the family occurs) — core vs sample-specific families at a glance.
 
-function _stackedFamilies(host, samples) {
+const _BUBBLE_TOP = 15;
+
+function _bubbleCardHtml(samples) {
+  const anyTpm = samples.some(s => s.salmon);
+  return `
+    <div class="vq-chart-card" id="ov-bubbles-card" style="min-height:auto">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Viral Families across Samples</div>
+          <div class="vq-chart-card__sub">
+            bubble area ∝ value · colour = dominant novelty tier · right: prevalence across samples
+          </div>
+        </div>
+        <div class="vq-toggle" id="ov-bubbles-mode" role="tablist" aria-label="Bubble size">
+          <button class="vq-toggle__btn active" type="button" data-mode="n">Sequences</button>
+          <button class="vq-toggle__btn" type="button" data-mode="pct">% of sample</button>
+          ${anyTpm ? `<button class="vq-toggle__btn" type="button" data-mode="tpm">TPM</button>` : ''}
+        </div>
+      </div>
+      <div class="vq-chart-card__body ov-bubbles" id="ov-bubbles-body"></div>
+      <div class="ov-legend" id="ov-bubbles-legend"></div>
+    </div>`;
+}
+
+function _bubbleData(samples, bySample, NOV) {
+  const cells = new Map();                       // family → sample → cell
+  const totals = new Map(samples.map(s => [s.sample, 0]));
+  samples.forEach(s => (bySample.get(s.sample) || []).forEach(q => {
+    const fam = (q.taxonomy || {}).family || 'Unclassified';
+    if (!cells.has(fam)) cells.set(fam, new Map());
+    const row = cells.get(fam);
+    if (!row.has(s.sample)) row.set(s.sample, { n: 0, tpm: 0, nov: {} });
+    const c = row.get(s.sample);
+    c.n += 1;
+    c.tpm += q.tpm || 0;
+    if (NOV) { const t = NOV.tier(q); c.nov[t] = (c.nov[t] || 0) + 1; }
+    totals.set(s.sample, totals.get(s.sample) + 1);
+  }));
+
+  const famStats = [...cells.entries()].map(([fam, row]) => ({
+    fam, row,
+    prev:  row.size,
+    total: [...row.values()].reduce((a, c) => a + c.n, 0),
+  }));
+  const ranked = famStats.filter(f => f.fam !== 'Unclassified')
+    .sort((a, b) => b.prev - a.prev || b.total - a.total || a.fam.localeCompare(b.fam));
+  const rows = ranked.slice(0, _BUBBLE_TOP);
+
+  // Fold the tail into "Other families"; keep "Unclassified" as its own last row.
+  const merge = (label, list) => {
+    const row = new Map();
+    list.forEach(f => f.row.forEach((c, smp) => {
+      if (!row.has(smp)) row.set(smp, { n: 0, tpm: 0, nov: {} });
+      const m = row.get(smp);
+      m.n += c.n; m.tpm += c.tpm;
+      Object.entries(c.nov).forEach(([t, k]) => { m.nov[t] = (m.nov[t] || 0) + k; });
+    }));
+    return { fam: label, row, prev: row.size, total: list.reduce((a, f) => a + f.total, 0), folded: list.length };
+  };
+  const tail = ranked.slice(_BUBBLE_TOP);
+  if (tail.length) rows.push(merge(`Other families (${tail.length})`, tail));
+  const uncl = famStats.find(f => f.fam === 'Unclassified');
+  if (uncl) rows.push(uncl);
+  return { rows, totals };
+}
+
+function _renderBubbleMatrix(samples, bySample, NOV) {
+  const host = _body('ov-bubbles');
+  if (!host) return;
+  const data = _bubbleData(samples, bySample, NOV);
+  let mode = 'n';
+  const draw = () => _drawBubbles(host, samples, data, NOV, mode);
+
+  document.querySelectorAll('#ov-bubbles-mode .vq-toggle__btn').forEach(btn =>
+    btn.addEventListener('click', () => {
+      mode = btn.dataset.mode;
+      document.querySelectorAll('#ov-bubbles-mode .vq-toggle__btn')
+        .forEach(b => b.classList.toggle('active', b === btn));
+      VQ.tooltipHide();
+      draw();
+    }));
+
+  // Legend: novelty tiers present + size note.
+  const legend = document.getElementById('ov-bubbles-legend');
+  if (legend && NOV) {
+    const present = new Set();
+    data.rows.forEach(r => r.row.forEach(c => Object.keys(c.nov).forEach(t => present.add(t))));
+    legend.innerHTML = NOV.order.filter(t => present.has(t)).map(t =>
+      `<span class="ov-legend__item" title="${VQ.esc(NOV.long[t])}">
+         <span class="ov-legend__dot" style="background:${NOV.color[t]}"></span>${VQ.esc(NOV.label[t])}</span>`).join('')
+      + `<span class="ov-legend__item">dominant tier of the family in that sample</span>`;
+  }
+
+  if (!data.rows.length) { host.innerHTML = `<div class="vq-empty">No family data.</div>`; return; }
+  draw();
+  VQ.redrawOnResize(host, draw);
+}
+
+function _drawBubbles(host, samples, data, NOV, mode) {
+  const esc = VQ.esc;
+  const { rows, totals } = data;
+  const value = (c, smp) => !c ? 0
+    : mode === 'pct' ? (totals.get(smp) ? 100 * c.n / totals.get(smp) : 0)
+    : mode === 'tpm' ? c.tpm
+    : c.n;
+  const fmtV = v => mode === 'pct' ? v.toFixed(1) + '%'
+    : mode === 'tpm' ? _fmtTpm(v) : v.toLocaleString();
+  const dominant = c => {
+    const e = Object.entries(c.nov);
+    return e.length ? e.reduce((a, b) => (b[1] > a[1] ? b : a))[0] : null;
+  };
+
+  const avail = host.clientWidth || 900;
+  const padL = 190, padR = 150, rowH = 30;
+  const longest = d3.max(samples, s => s.sample.length) || 6;
+  const minCol = 34;
+  const colW = Math.max(minCol, Math.min(150, (avail - padL - padR) / samples.length));
+  const rotate = colW < longest * 6.6 + 8;
+  const headH = rotate ? Math.min(120, longest * 5.2 + 22) : 30;
+  const W = Math.max(avail, padL + padR + colW * samples.length);
+  const gridW = colW * samples.length;
+  const H = headH + rows.length * rowH + 6;
+
+  const maxV = d3.max(rows, r => d3.max(samples, s => value(r.row.get(s.sample), s.sample))) || 1;
+  const rMax = Math.min(colW, rowH) / 2 - 1.5;
+  const rOf  = d3.scaleSqrt().domain([0, maxV]).range([0, rMax]);
+  const xOf  = i => padL + i * colW + colW / 2;
+  const yOf  = j => headH + j * rowH + rowH / 2;
+
+  host.innerHTML = '';
+  const svg = d3.select(host).append('svg')
+    .attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`)
+    .style('display', 'block');
+
+  // Column headers (rotated when samples are many / names long).
+  samples.forEach((s, i) => {
+    const t = svg.append('text').attr('class', 'ov-bubbles__col').text(_trunc(s.sample, 22));
+    if (rotate) t.attr('transform', `translate(${xOf(i) + 3},${headH - 8}) rotate(-40)`);
+    else t.attr('x', xOf(i)).attr('y', headH - 10).attr('text-anchor', 'middle');
+    t.append('title').text(s.sample);
+  });
+  svg.append('text').attr('class', 'ov-bubbles__col ov-bubbles__col--meta')
+    .attr('x', padL + gridW + 14).attr('y', headH - 10).text('prevalence · total');
+
+  rows.forEach((r, j) => {
+    const y = yOf(j);
+    const g = svg.append('g').attr('class', 'ov-bubbles__row');
+    g.append('rect').attr('class', 'ov-funnel__hover')
+      .attr('x', 0).attr('y', y - rowH / 2).attr('width', W).attr('height', rowH);
+    g.append('line').attr('class', 'ov-bubbles__guide')
+      .attr('x1', padL).attr('x2', padL + gridW).attr('y1', y).attr('y2', y);
+    g.append('text').attr('class', 'ov-bubbles__fam' + (r.folded || r.fam === 'Unclassified' ? ' is-muted' : ''))
+      .attr('x', padL - 12).attr('y', y).attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(_trunc(r.fam, 28)).append('title').text(r.fam);
+
+    samples.forEach((s, i) => {
+      const c = r.row.get(s.sample);
+      const v = value(c, s.sample);
+      if (!c || v <= 0) {
+        g.append('circle').attr('cx', xOf(i)).attr('cy', y).attr('r', 1.6).attr('class', 'ov-bubbles__empty');
+        return;
+      }
+      const tier = NOV ? dominant(c) : null;
+      g.append('circle')
+        .attr('class', 'ov-bubbles__dot')
+        .attr('cx', xOf(i)).attr('cy', y).attr('r', Math.max(2.5, rOf(v)))
+        .attr('fill', tier ? NOV.color[tier] : 'var(--vq-accent)')
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${esc(r.fam)}</div>
+          <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">Sample</span><span>${esc(s.sample)}</span>
+            <span class="vq-tooltip__key">Sequences</span><span>${c.n.toLocaleString()}</span>
+            <span class="vq-tooltip__key">of sample</span><span>${VQ.pct(c.n, totals.get(s.sample))}</span>
+            ${s.salmon ? `<span class="vq-tooltip__key">TPM</span><span>${_fmtTpm(c.tpm)}</span>` : ''}
+            ${NOV ? NOV.order.filter(t => c.nov[t]).map(t =>
+              `<span class="vq-tooltip__key">${esc(NOV.label[t])}</span><span>${c.nov[t]}</span>`).join('') : ''}
+          </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+      if (rOf(v) >= 11) g.append('text').attr('class', 'ov-bubbles__val')
+        .attr('x', xOf(i)).attr('y', y).attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+        .text(mode === 'pct' ? Math.round(v) : (mode === 'tpm' ? '' : v));
+    });
+
+    // Prevalence bar + total in the selected measure.
+    const px = padL + gridW + 14, pw = 60;
+    g.append('rect').attr('x', px).attr('y', y - 3).attr('width', pw).attr('height', 6)
+      .attr('rx', 3).attr('class', 'ov-bubbles__track');
+    g.append('rect').attr('x', px).attr('y', y - 3).attr('width', pw * r.prev / samples.length)
+      .attr('height', 6).attr('rx', 3)
+      .attr('fill', r.prev === samples.length ? 'var(--vq-success)' : 'var(--vq-accent)');
+    const tot = mode === 'pct' ? null
+      : samples.reduce((a, s) => a + value(r.row.get(s.sample), s.sample), 0);
+    g.append('text').attr('class', 'ov-bubbles__prev')
+      .attr('x', px + pw + 8).attr('y', y).attr('dominant-baseline', 'central')
+      .text(`${r.prev}/${samples.length}${tot != null ? ' · ' + fmtV(tot) : ''}`);
+  });
+}
+
+// ── Salmon read support per sample ──────────────────────────────────────────
+// Where each library's reads went: viral contigs / other indexed targets
+// (housekeeping, host) / unmapped, plus the viral load in reads per million.
+// Viral reads are usually a tiny share, so the load is shown on a log scale.
+
+function _salmonCardHtml(salmonSamples) {
+  return `
+    <div class="vq-chart-card" id="ov-salmon-card" style="min-height:auto">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Read Mapping &amp; Viral Load</div>
+          <div class="vq-chart-card__sub">
+            Salmon · ${salmonSamples.length} sample${salmonSamples.length === 1 ? '' : 's'}
+            &nbsp;·&nbsp; read fate per library and viral reads per million (log scale)
+          </div>
+        </div>
+      </div>
+      <div class="ov-salmon" id="ov-salmon-body"></div>
+      <div class="ov-legend">
+        <span class="ov-legend__item"><span class="ov-legend__dot" style="background:var(--vq-accent)"></span>viral contigs</span>
+        <span class="ov-legend__item"><span class="ov-legend__dot" style="background:var(--vq-primary-light);opacity:.45"></span>other targets (housekeeping · host)</span>
+        <span class="ov-legend__item"><span class="ov-legend__dot" style="background:var(--vq-c-track);border:1px solid var(--vq-border)"></span>unmapped</span>
+      </div>
+    </div>`;
+}
+
+function _renderSalmon(salmonSamples) {
+  const host = _body('ov-salmon');
   if (!host) return;
   const esc = VQ.esc;
-
-  // Union of families ranked by total abundance → stable colour mapping.
-  const totals = {};
-  samples.forEach(s => Object.entries(s.families || {}).forEach(([f, n]) => {
-    totals[f] = (totals[f] || 0) + n;
-  }));
-  const families = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
-  if (!families.length) { host.innerHTML = `<div class="vq-empty">No family data.</div>`; return; }
-  const cIdx = Object.fromEntries(families.map((f, i) => [f, i]));
-
-  const W = 440, padL = 110, padR = 12, padT = 6;
-  const rh = _rowH(samples.length), gap = 6;
-  const H  = padT + samples.length * (rh + gap);
-  const svg = _svg(host, W, H);
-
-  samples.forEach((s, i) => {
-    const y = padT + i * (rh + gap);
-    const total = Object.values(s.families || {}).reduce((a, n) => a + n, 0) || 1;
-    const x = d3.scaleLinear().domain([0, total]).range([padL, W - padR]);
-
-    svg.append('text').attr('x', padL - 8).attr('y', y + rh / 2)
-      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
-      .attr('class', 'ov-axis-label').text(_trunc(s.sample, 16));
-
-    // Rounded outer corners (matching the other overview bars) via a per-row
-    // clip; inner segment boundaries stay crisp.
-    const clipId = `ov-fam-clip-${i}`;
-    svg.append('clipPath').attr('id', clipId)
-      .append('rect').attr('x', padL).attr('y', y)
-      .attr('width', (W - padR) - padL).attr('height', rh).attr('rx', 3).attr('ry', 3);
-    const rowG = svg.append('g').attr('clip-path', `url(#${clipId})`);
-
-    let acc = 0;
-    // Draw segments in the global family order for visual consistency.
-    families.forEach(f => {
-      const n = (s.families || {})[f];
-      if (!n) return;
-      const x0 = x(acc), x1 = x(acc + n);
-      rowG.append('rect').attr('x', x0).attr('y', y)
-        .attr('width', Math.max(0.5, x1 - x0)).attr('height', rh)
-        .attr('fill', colorFor(cIdx[f]))
-        .on('mousemove', e => VQ.tooltipShow(`<b>${esc(f)}</b><br>${esc(s.sample)}: ${n}`, e))
-        .on('mouseleave', () => VQ.tooltipHide());
-      acc += n;
-    });
+  const rows = salmonSamples.map(s => {
+    const q      = s.salmon;
+    const rate   = q.mapping_rate ?? null;                 // % of input reads
+    const mapped = q.total_reads ?? null;                  // reads assigned to any target
+    const input  = mapped != null && rate ? mapped / (rate / 100) : null;
+    const viral  = q.viral_reads ?? null;
+    const rpm    = viral != null && input ? viral / input * 1e6 : null;
+    return { s, rate, mapped, input, viral, rpm };
   });
+  const LOG_MAX = 6;                                       // 10^6 RPM = every read viral
+  const fmtN = n => n == null ? '—' : Math.round(n).toLocaleString();
+  const fmtRpm = v => v == null ? '—' : v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1);
 
-  // Legend (top families; rest folded into "other" note)
-  const legendMax = 12;
-  const shown = families.slice(0, legendMax);
-  const legend = shown.map(f =>
-    `<span class="ov-legend__item"><span class="ov-legend__dot" style="background:${colorFor(cIdx[f])}"></span>${esc(f)}</span>`
-  ).join('');
-  const extra = families.length > legendMax ? `<span class="ov-legend__item">+${families.length - legendMax} more</span>` : '';
-  const wrap = document.createElement('div');
-  wrap.className = 'ov-legend';
-  wrap.innerHTML = legend + extra;
-  host.appendChild(wrap);
+  host.innerHTML = `
+    <div class="ov-salmon__grid">
+      <div class="ov-salmon__hd">Sample</div>
+      <div class="ov-salmon__hd ov-salmon__hd--num">Reads</div>
+      <div class="ov-salmon__hd">Read fate</div>
+      <div class="ov-salmon__hd ov-salmon__hd--num">Mapped</div>
+      <div class="ov-salmon__hd ov-salmon__hd--num">Viral reads</div>
+      <div class="ov-salmon__hd">Viral load (reads per million)</div>
+      ${rows.map((r, i) => {
+        const pv = r.viral != null && r.input ? 100 * r.viral / r.input : 0;
+        const pm = r.rate ?? 0;
+        const loadW = r.rpm ? Math.max(1, 100 * Math.min(LOG_MAX, Math.log10(r.rpm + 1)) / LOG_MAX) : 0;
+        return `
+        <div class="ov-salmon__sample" title="${esc(r.s.sample)}"><span>${esc(r.s.sample)}</span></div>
+        <div class="ov-salmon__num">${r.input != null ? fmtN(r.input) : '—'}</div>
+        <div class="ov-salmon__bar" data-i="${i}"><span class="ov-salmon__track">
+          <span class="ov-salmon__seg ov-salmon__seg--viral" style="width:${pv > 0 ? Math.max(pv, 0.8) : 0}%"></span>
+          <span class="ov-salmon__seg ov-salmon__seg--other" style="width:${Math.max(0, pm - Math.max(pv, pv > 0 ? 0.8 : 0))}%"></span>
+        </span></div>
+        <div class="ov-salmon__num"><strong>${r.rate != null ? r.rate.toFixed(1) + '%' : '—'}</strong></div>
+        <div class="ov-salmon__num">${fmtN(r.viral)}
+          <span class="ov-salmon__muted">${r.input ? VQ.pct(r.viral, r.input) : ''}</span></div>
+        <div class="ov-salmon__load" data-i="${i}">
+          <span class="ov-salmon__loadtrack">
+            ${[1, 2, 3, 4, 5].map(k => `<i style="left:${100 * k / LOG_MAX}%"></i>`).join('')}
+            <span class="ov-salmon__loadfill" style="width:${loadW}%"></span>
+          </span>
+          <span class="ov-salmon__loadval">${fmtRpm(r.rpm)}</span>
+        </div>`;
+      }).join('')}
+      <div></div><div></div><div></div><div></div><div></div>
+      <div class="ov-salmon__axis">
+        ${['1', '10', '100', '1k', '10k', '100k', '1M'].map((t, k) =>
+          `<span style="left:${100 * k / LOG_MAX}%">${t}</span>`).join('')}
+      </div>
+    </div>`;
+
+  host.querySelectorAll('[data-i]').forEach(el => {
+    const r = rows[+el.dataset.i];
+    el.addEventListener('mousemove', evt => VQ.tooltipShow(`
+      <div class="vq-tooltip__title">${esc(r.s.sample)}</div>
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Input reads</span><span>${fmtN(r.input)} (estimated)</span>
+        <span class="vq-tooltip__key">Mapped</span><span>${fmtN(r.mapped)} · ${r.rate != null ? r.rate.toFixed(1) + '%' : '—'}</span>
+        <span class="vq-tooltip__key">Viral reads</span><span>${fmtN(r.viral)} · ${r.input ? VQ.pct(r.viral, r.input) : '—'}</span>
+        <span class="vq-tooltip__key">of mapped</span><span>${r.mapped ? VQ.pct(r.viral, r.mapped) : '—'}</span>
+        <span class="vq-tooltip__key">Viral load</span><span>${fmtRpm(r.rpm)} RPM</span>
+        <span class="vq-tooltip__key">Viral TPM</span><span>${_fmtTpm(r.s.salmon.viral_tpm_sum)}</span>
+      </div>`, evt));
+    el.addEventListener('mouseleave', VQ.tooltipHide);
+  });
 }
 
 // ── Length ranges per sample (min · median · max) ───────────────────────────

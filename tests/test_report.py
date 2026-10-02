@@ -312,3 +312,26 @@ def test_overview_renders_workflow_card(results_root):
     assert "Pipeline Workflow per Sample" in html
     assert "_renderWorkflowMatrix(samples)" in html
     assert ".ov-wf-matrix" in html and ".vq-wf-pill--error" in html   # card CSS shipped
+
+
+def test_salmon_summary_has_viral_reads(tmp_path):
+    rep = _report([_seq("k141_1"), _seq("k141_2")], salmon=True)
+    rep["salmon_quant"].update(total_reads=1000)
+    for i, e in enumerate(rep["salmon_quant"]["viral_quant"]):
+        e["num_reads"] = 10.5 + i
+    _write_sample(tmp_path, "s1", rep)
+    salmon = build_report_data(load_samples(tmp_path))["samples"][0]["salmon"]
+    assert salmon["viral_reads"] == 22.0
+    assert salmon["total_reads"] == 1000
+
+
+def test_overview_cards(results_root):
+    html = _render_template(build_report_data(load_samples(results_root)), d3_js=STUB_D3)
+    for card in ("ov-funnel-card", "ov-bubbles-card", "ov-salmon-card", "Putative Novel"):
+        assert card in html, card
+    # Removed from the overview.
+    for gone in ("Viral Family Diversity per Sample", "Cross-sample Clusters per Sample",
+                 "Family Distribution per Sample"):
+        assert gone not in html, gone
+    # The overview reuses the Virome tab's novelty rule rather than a copy.
+    assert "window.vqNovelty = {" in html

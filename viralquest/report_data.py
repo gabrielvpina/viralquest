@@ -123,6 +123,8 @@ def _summarize_salmon(s: SampleReport) -> dict | None:
         "mapping_rate":  sq.get("mapping_rate"),
         "total_reads":   sq.get("total_reads"),
         "viral_tpm_sum": round(sum(_tpm(e) for e in (sq.get("viral_quant") or [])), 3),
+        # Reads assigned to the viral contigs (Salmon's NumReads, fractional).
+        "viral_reads":   round(sum(e.get("num_reads") or 0.0 for e in (sq.get("viral_quant") or [])), 1),
         "conserved":     conserved,
         "ref_hk": {
             "n":        len(ref_hk),
