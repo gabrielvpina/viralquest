@@ -80,6 +80,8 @@ These are optional but required for full pipeline runs.
 |---|---|---|
 | `nr.dmnd` | Diamond BLASTx NR confirmation | ~346 GB |
 | BLAST `nt` | BLASTn local search | ~1 TB |
+| `clustered_nr.dmnd` *(compact alternative to NR)* | Diamond BLASTx NR confirmation | ~263 GB BLAST db (~194 GB download) |
+| BLAST `core_nt` *(compact alternative to nt)* | BLASTn local search | ~301 GB (~256 GB download) |
 
 Build NR Diamond database:
 
@@ -90,6 +92,38 @@ diamond makedb --in nr --db nr.dmnd
 ```
 
 BLASTn can also run online (`--blastn-online`); the NR step is optional.
+
+### Compact alternatives: ClusteredNR and core_nt
+
+If disk space or search time is a constraint, NCBI publishes two smaller
+databases that can replace NR and nt:
+
+- **ClusteredNR (`clustered_nr`)** — NR with near-identical proteins clustered
+  together (~546 million representatives instead of ~1.16 billion sequences).
+  Each hit is the cluster's representative, so the reported subject/species may
+  be a close relative of the sequence that would hit in the full NR.
+- **core_nt** — nt without most of the large eukaryotic genome-assembly records
+  that make up the bulk of nt (~301 GB instead of ~1.2 TB).
+
+Both are distributed as pre-formatted BLAST databases, downloaded with
+`update_blastdb.pl` (part of BLAST+, installed by `viralquest-setup`).
+ClusteredNR must be exported to FASTA before building the Diamond database:
+
+```bash
+# ClusteredNR → Diamond database for -nr / --nr-db
+update_blastdb.pl --decompress clustered_nr
+blastdbcmd -db clustered_nr -entry all -out clustered_nr.fasta
+diamond makedb --in clustered_nr.fasta --db clustered_nr.dmnd
+
+# core_nt → used directly by -n / --blastn-local (pass the database prefix)
+update_blastdb.pl --decompress core_nt
+```
+
+```bash
+viralquest -in SAMPLE.fasta -out SAMPLE_output \
+  --nr-db clustered_nr.dmnd \
+  --blastn-local /path/to/core_nt
+```
 
 ---
 
