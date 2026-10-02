@@ -89,12 +89,10 @@ function vqInitOverview(report) {
       <div class="vq-masonry">
         ${anySalmon ? _card('ov-maprate', 'Salmon Mapping Rate per Sample', '% of reads mapped') : ''}
         ${_card('ov-seqs',    'Confirmed Sequences per Sample', 'final viral contigs')}
-        ${_card('ov-fams',    'Viral Family Diversity per Sample', 'distinct families')}
         ${_card('ov-famdist', 'Family Distribution per Sample', 'composition, all samples')}
         ${_card('ov-lengths', 'Sequence Length per Sample', 'min · median · max (nt)')}
         ${anyHeur ? _card('ov-heur', 'Heuristic Score per Sample', 'VQ score distribution') : ''}
         ${anyLLM  ? _card('ov-llm',  'LLM Score per Sample', 'VQ score distribution') : ''}
-        ${report.has_clusters ? _card('ov-clusters', 'Cross-sample Clusters per Sample', 'shared sequence groups') : ''}
       </div>
     </div>
   `;
@@ -107,13 +105,10 @@ function vqInitOverview(report) {
               salmonSamples.map(s => ({ label: s.sample, value: s.salmon.mapping_rate ?? 0 })),
               { unit: '%' });
   _barChart(_body('ov-seqs'),    samples.map(s => ({ label: s.sample, value: s.n_confirmed || 0 })));
-  _lineDotChart(_body('ov-fams'), samples.map(s => ({ label: s.sample, value: Object.keys(s.families || {}).length })));
   _stackedFamilies(_body('ov-famdist'), samples);
   _lengthRanges(_body('ov-lengths'), samples);
   if (anyHeur) _scoreBoxes(_body('ov-heur'), samples, 'heuristic_scores');
   if (anyLLM)  _scoreBoxes(_body('ov-llm'),  samples, 'llm_scores');
-  if (report.has_clusters)
-    _barChart(_body('ov-clusters'), samples.map(s => ({ label: s.sample, value: s.n_clusters || 0 })));
 }
 
 // ── Card scaffolding ────────────────────────────────────────────────────────
@@ -550,45 +545,6 @@ function _barChart(host, data, opts) {
     g.append('text').attr('x', x(d.value) + 6).attr('y', y + rh / 2)
       .attr('dominant-baseline', 'central').attr('class', 'ov-value-label')
       .text(d.value.toLocaleString() + unit);
-  });
-}
-
-// ── Connected dots / line chart (per sample) ────────────────────────────────
-
-function _lineDotChart(host, data) {
-  if (!host) return;
-  if (!data.length) { host.innerHTML = `<div class="vq-empty">No data.</div>`; return; }
-
-  const W = 440, padL = 40, padR = 24, padT = 16, padB = 64;
-  const H = 240;
-  const max = d3.max(data, d => d.value) || 1;
-  const x = d3.scalePoint().domain(data.map((_, i) => i)).range([padL, W - padR]).padding(0.5);
-  const y = d3.scaleLinear().domain([0, max]).nice().range([H - padB, padT]);
-
-  const svg = _svg(host, W, H);
-
-  // y gridlines
-  y.ticks(4).forEach(t => {
-    svg.append('line').attr('x1', padL).attr('x2', W - padR)
-      .attr('y1', y(t)).attr('y2', y(t)).attr('class', 'ov-grid');
-    svg.append('text').attr('x', padL - 6).attr('y', y(t))
-      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
-      .attr('class', 'ov-axis-label').text(t);
-  });
-
-  const line = d3.line().x((_, i) => x(i)).y(d => y(d.value));
-  svg.append('path').datum(data).attr('fill', 'none')
-    .attr('stroke', QUANT).attr('stroke-width', 2).attr('d', line);
-
-  data.forEach((d, i) => {
-    svg.append('circle').attr('cx', x(i)).attr('cy', y(d.value)).attr('r', 4)
-      .attr('fill', QUANT).attr('stroke', '#fff').attr('stroke-width', 1.5)
-      .on('mousemove', e => VQ.tooltipShow(`<b>${VQ.esc(d.label)}</b><br>${d.value}`, e))
-      .on('mouseleave', () => VQ.tooltipHide());
-    svg.append('text').attr('x', x(i)).attr('y', H - padB + 12)
-      .attr('text-anchor', 'end').attr('class', 'ov-axis-label')
-      .attr('transform', `rotate(-40 ${x(i)} ${H - padB + 12})`)
-      .text(_trunc(d.label, 12));
   });
 }
 
