@@ -56,6 +56,7 @@
   <!-- Component scripts -->
   <script src="export.js"></script>
   <script src="section_stats.js"></script>
+  <script src="section_viruses.js"></script>
   <script src="section_clusters.js"></script>
   <script src="section_viewer.js"></script>
   <script src="section_taxonomy.js"></script>
@@ -122,6 +123,7 @@
       : '';
 
     vqInitStats(VQ_REPORT);
+    vqInitViruses(VQ_REPORT);
     vqInitClusters(VQ_REPORT.clusters || []);
     vqInitViewer(VQ_REPORT.sequences || []);
     vqInitTaxonomy(VQ_REPORT._taxonomy_tree || null, VQ_REPORT.sequences || []);

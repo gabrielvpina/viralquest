@@ -85,6 +85,7 @@
   <script>{{VQ_EXPORT}}</script>
   <script>{{VQ_ABOUT}}</script>
   <script>{{VQ_STATS}}</script>
+  <script>{{VQ_VIRUSES}}</script>
   <script>{{VQ_CLUSTERS}}</script>
   <script>{{VQ_VIEWER}}</script>
   <script>{{VQ_TAXONOMY}}</script>
@@ -183,6 +184,7 @@
     // --- Init all sections ------------------------------------------
     vqInitAbout();
     vqInitStats(VQ_REPORT);
+    vqInitViruses(VQ_REPORT);
     vqInitClusters(VQ_REPORT.clusters || []);
     vqInitViewer(VQ_REPORT.sequences || []);
     vqInitTaxonomy(VQ_REPORT._taxonomy_tree || null, VQ_REPORT.sequences || []);

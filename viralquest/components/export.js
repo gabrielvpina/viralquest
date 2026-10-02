@@ -358,6 +358,56 @@ function _download(url, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// ── Overview tabs (Run · Virome) — card / layout helpers ─────────────────────
+
+/** KPI chip: label, big value and an optional sub-line. */
+function vqStatChip(label, value, mod = '', sub = '') {
+  return `
+    <div class="vq-stat-chip${mod ? ' vq-stat-chip--' + mod : ''}">
+      <div class="vq-stat-chip__label">${vqEsc(label)}</div>
+      <div class="vq-stat-chip__value" title="${vqEsc(value)}">${value}</div>
+      ${sub ? `<div class="vq-stat-chip__sub" title="${vqEsc(sub)}">${sub}</div>` : ''}
+    </div>`;
+}
+
+/** Locale-formatted number, or an em dash when missing. */
+function vqFmtNum(n) {
+  return (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString();
+}
+
+/** a / b as a one-decimal percentage string ('—' when b is 0 or missing). */
+function vqPct(a, b) {
+  if (!b || isNaN(a) || isNaN(b)) return '—';
+  return ((a / b) * 100).toFixed(1) + '%';
+}
+
+/** Titled group of cards on a grid. `slots` = grid columns the cards fill
+    (a span-2 card counts as 2): 1–2 slots use a 2-column grid so a short group
+    does not leave an empty third column. Empty groups vanish. */
+function vqCardGroup(title, hint, cardsHtml, slots = 3) {
+  if (!cardsHtml.trim() || !slots) return '';
+  return `
+    <section class="vq-group">
+      <div class="vq-group__head">
+        <h3 class="vq-group__title">${vqEsc(title)}</h3>
+        ${hint ? `<span class="vq-group__hint">${vqEsc(hint)}</span>` : ''}
+      </div>
+      <div class="vq-grid${slots <= 2 ? ' vq-grid--2' : ''}">${cardsHtml}</div>
+    </section>`;
+}
+
+/** Re-render a panel's charts when it is first shown or resized: a hidden tab
+    has zero width, so its charts are drawn at a fallback size until revealed. */
+function vqRedrawOnResize(el, redraw) {
+  let lastW = 0;
+  new ResizeObserver(() => {
+    const w = el.clientWidth;
+    if (!w || w === lastW) return;
+    lastW = w;
+    redraw();
+  }).observe(el);
+}
+
 // ── Expose on window.VQ ─────────────────────────────────────────────────────
 
 window.VQ = Object.assign(window.VQ || {}, {
@@ -377,4 +427,9 @@ window.VQ = Object.assign(window.VQ || {}, {
   tooltipMove:  vqTooltipMove,
   tooltipHide:  vqTooltipHide,
   jumpToViewer: vqJumpToViewer,
+  statChip:       vqStatChip,
+  fmtNum:         vqFmtNum,
+  pct:            vqPct,
+  cardGroup:      vqCardGroup,
+  redrawOnResize: vqRedrawOnResize,
 });

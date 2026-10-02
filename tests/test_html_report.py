@@ -194,11 +194,23 @@ class TestRenderTemplate:
     def test_all_placeholders_replaced(self):
         html = _render_template(MINIMAL_REPORT, d3_js=STUB_D3)
         remaining = [m for m in ["{{VQ_STYLES}}", "{{VQ_DATA}}", "{{VQ_D3}}",
-                                  "{{VQ_EXPORT}}", "{{VQ_STATS}}", "{{VQ_CLUSTERS}}",
+                                  "{{VQ_EXPORT}}", "{{VQ_STATS}}", "{{VQ_VIRUSES}}", "{{VQ_CLUSTERS}}",
                                   "{{VQ_VIEWER}}", "{{VQ_TAXONOMY}}", "{{VQ_SALMON}}",
                                   "{{SAMPLE_NAME}}"]
                      if m in html]
         assert remaining == [], f"Unresolved placeholders: {remaining}"
+
+    def test_run_and_virome_tabs_each_have_their_own_script(self):
+        html = _render_template(MINIMAL_REPORT, d3_js=STUB_D3)
+        assert 'id="section-run"' in html and 'id="section-virome"' in html
+        assert "window.vqInitStats = vqInitStats" in html          # Run tab
+        assert "window.vqInitViruses = vqInitViruses" in html      # Virome tab
+        assert "vqInitStats(VQ_REPORT);" in html and "vqInitViruses(VQ_REPORT);" in html
+
+    def test_overview_helpers_shared_through_vq(self):
+        html = _render_template(MINIMAL_REPORT, d3_js=STUB_D3)
+        for name in ("statChip", "fmtNum", "pct", "cardGroup", "redrawOnResize"):
+            assert f"{name}:" in html, name
 
     def test_report_data_is_valid_json_in_output(self):
         html = _render_template(MINIMAL_REPORT, d3_js=STUB_D3)
