@@ -28,7 +28,7 @@ from viralquest.report_clusters import (
 from viralquest.report_data import build_report_data
 from viralquest.report_loader import load_samples
 
-__version__ = "3.0.7"
+__version__ = "3.0.8"
 
 HTML_NAME = "viralquest_report.html"
 
