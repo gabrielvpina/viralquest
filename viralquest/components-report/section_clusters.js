@@ -5,19 +5,27 @@
 
 /* ============================================================
    section_clusters.js — Section 2: General (cross-sample) Clusters
-   Top: bipartite network — each cluster (VQR_CLU_####) is a hub,
-        the samples that contain it link to it.
-   Bottom: per-cluster alignment view (members vs representative),
-        plus a species-homogeneity annotation.
-   Dynamic identity / coverage sliders filter everything client-side.
+   Cluster-centred page: pick a cluster in the explorer table and the
+   detail card shows only that cluster — sample presence, members,
+   species agreement and the alignment against the representative.
+   Below, two across-sample views of every cluster passing the filters:
+   a cluster × sample presence matrix and a sample-similarity heatmap
+   (UPGMA-ordered), both highlighting the selected cluster.
+   Identity / coverage sliders and the other filters act client-side.
    ============================================================ */
 
 const FLOOR_ID  = 90;   // matches report_clusters.FLOOR_IDENTITY
 const FLOOR_COV = 70;   // matches report_clusters.FLOOR_COVERAGE
 
 let _clusters = [];
-let _state    = { id: FLOOR_ID, cov: FLOOR_COV, mode: 'cluster', focus: null };
-let _adj      = { clusterToSamples: {}, sampleToClusters: {} };
+let _samples  = [];          // every loaded sample name, report order
+let _seqByGid = new Map();
+let _hasTpm   = false;
+let _state = {
+  id: FLOOR_ID, cov: FLOOR_COV, minSamples: 2, agree: 'all', family: 'all', novelty: 'all',
+  q: '', sort: 'nSamples', dir: -1, sel: null, matrixMode: 'presence', simMetric: 'jaccard',
+};
+let _view = [];              // clusters passing the filters, table order
 
 function vqInitClusters(clusters, samples) {
   const el = document.getElementById('section-clusters');
@@ -30,25 +38,43 @@ function vqInitClusters(clusters, samples) {
     return;
   }
 
+  _samples = (samples || []).map(s => s.sample).filter(Boolean);
+  _clusters.forEach(c => c.members.forEach(m => {
+    if (!_samples.includes(m.sample)) _samples.push(m.sample);
+  }));
+  const seqs = (typeof VQ_REPORT !== 'undefined' ? VQ_REPORT.sequences : null) || [];
+  _seqByGid = new Map(seqs.map(s => [s.gid, s]));
+  _hasTpm = _clusters.some(c => c.members.some(m => m.tpm != null));
+  if (_hasTpm) { _state.matrixMode = 'tpm'; }
+
+  // Family / novelty of each cluster come from its representative contig.
+  const NOV = window.vqNovelty;
+  _clusters.forEach(c => {
+    const rep = _seqByGid.get(c.representative);
+    c._family  = rep?.taxonomy?.family || '';
+    c._novelty = rep && NOV ? NOV.tier(rep) : '';
+  });
+
+  const families  = [...new Set(_clusters.map(c => c._family).filter(Boolean))].sort();
+  const novelties = NOV ? NOV.order.filter(t => _clusters.some(c => c._novelty === t)) : [];
   const esc = VQ.esc;
+
   el.innerHTML = `
     <div class="vq-section-header">
       <div>
         <div class="vq-section-title">General Clusters</div>
         <div class="vq-section-sub">
           ${_clusters.length} cross-sample cluster${_clusters.length > 1 ? 's' : ''}
-          · sequences shared between samples
+          · sequences shared between ${_samples.length} samples · pick a cluster to explore it
         </div>
       </div>
     </div>
 
-    <div class="vq-card" style="margin-bottom:var(--vq-space-4)">
-      <div class="vq-card__header">
-        <div class="vq-card__title">Filters</div>
-        <div class="ov-filter-readout" id="clu-readout"></div>
-      </div>
-      <div class="vq-card__body">
-        <div class="ov-filter-row">
+    <div class="vq-stats-page">
+      <div class="vq-stats-row vq-stats-row--top" id="clu-kpis"></div>
+
+      <div class="vq-chart-card clu-filters" style="min-height:auto">
+        <div class="clu-filters__row">
           <label>Min identity
             <input type="range" id="clu-id"  min="${FLOOR_ID}"  max="100" step="1" value="${_state.id}">
             <output id="clu-id-out">${_state.id}%</output>
@@ -57,32 +83,103 @@ function vqInitClusters(clusters, samples) {
             <input type="range" id="clu-cov" min="${FLOOR_COV}" max="100" step="1" value="${_state.cov}">
             <output id="clu-cov-out">${_state.cov}%</output>
           </label>
+          <label>Min samples
+            <select class="vq-select" id="clu-minsamples">
+              ${_samples.slice(1).map((_, i) => `<option value="${i + 2}">${i + 2}</option>`).join('')}
+            </select>
+          </label>
+          <label>Species
+            <select class="vq-select" id="clu-agree">
+              <option value="all">all clusters</option>
+              <option value="ok">members agree</option>
+              <option value="warn">members disagree</option>
+            </select>
+          </label>
+          ${families.length ? `
+          <label>Family
+            <select class="vq-select" id="clu-family">
+              <option value="all">all</option>
+              ${families.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('')}
+            </select>
+          </label>` : ''}
+          ${novelties.length ? `
+          <label>Novelty
+            <select class="vq-select" id="clu-novelty">
+              <option value="all">all</option>
+              ${novelties.map(t => `<option value="${t}">${esc(NOV.label[t])}</option>`).join('')}
+            </select>
+          </label>` : ''}
+          <span class="clu-filters__readout" id="clu-readout"></span>
         </div>
       </div>
-    </div>
 
-    <div class="vq-card" style="margin-bottom:var(--vq-space-4)">
-      <div class="vq-card__header">
-        <div class="vq-card__title">Cluster Network</div>
-        <div class="vq-card__sub" id="clu-net-sub"></div>
-      </div>
-      <div class="vq-card__body">
-        <div class="clu-net-controls">
-          <div class="clu-mode" role="radiogroup" aria-label="Network direction">
-            <label class="clu-radio"><input type="radio" name="clu-mode" value="cluster" checked> Cluster → samples</label>
-            <label class="clu-radio"><input type="radio" name="clu-mode" value="sample"> Sample → clusters</label>
+      <section class="vq-group">
+        <div class="vq-group__head">
+          <h3 class="vq-group__title">Cluster explorer</h3>
+          <span class="vq-group__hint">pick a cluster — the card below shows only that cluster</span>
+        </div>
+        <div class="clu-stack">
+          <div class="vq-chart-card" id="clu-table-card" style="min-height:auto">
+            <div class="vq-chart-card__head">
+              <div>
+                <div class="vq-chart-card__title">Clusters</div>
+                <div class="vq-chart-card__sub" id="clu-table-sub"></div>
+              </div>
+              <div class="vq-vt-tools">
+                <input class="vq-input vq-input--sm" type="search" id="clu-search"
+                       placeholder="Filter cluster, species, sample…" aria-label="Filter clusters">
+                <button class="vq-btn vq-btn--sm" type="button" id="clu-csv"
+                        title="Download the clusters shown (filters and sort applied) as CSV">Export CSV</button>
+              </div>
+            </div>
+            <div class="vq-chart-card__body" style="justify-content:flex-start">
+              <div class="vq-vt-wrap clu-table-wrap" id="clu-table"></div>
+            </div>
           </div>
-          <select id="clu-focus" class="clu-select" aria-label="Focus"></select>
+          <div class="vq-chart-card clu-detail" id="clu-detail" style="min-height:auto"></div>
         </div>
-        <div id="clu-graph" class="clu-graph"></div>
-      </div>
-    </div>
+      </section>
 
-    <div id="clu-cards"></div>
+      <section class="vq-group">
+        <div class="vq-group__head">
+          <h3 class="vq-group__title">Across samples</h3>
+          <span class="vq-group__hint">every cluster passing the filters · the selected cluster is highlighted</span>
+        </div>
+        <div class="clu-across">
+          <div class="vq-chart-card" id="clu-matrix-card" style="min-height:auto">
+            <div class="vq-chart-card__head">
+              <div>
+                <div class="vq-chart-card__title">Cluster Presence</div>
+                <div class="vq-chart-card__sub">clusters × samples · shared core on top · columns in similarity order · click a row to select</div>
+              </div>
+              <div class="vq-toggle" id="clu-matrix-mode" role="tablist" aria-label="Cell value">
+                <button class="vq-toggle__btn${_state.matrixMode === 'presence' ? ' active' : ''}" type="button" data-mode="presence">Presence</button>
+                <button class="vq-toggle__btn${_state.matrixMode === 'members' ? ' active' : ''}" type="button" data-mode="members">Members</button>
+                ${_hasTpm ? `<button class="vq-toggle__btn${_state.matrixMode === 'tpm' ? ' active' : ''}" type="button" data-mode="tpm">TPM</button>` : ''}
+              </div>
+            </div>
+            <div class="vq-chart-card__body clu-scroll" id="clu-matrix"></div>
+          </div>
+          <div class="vq-chart-card" id="clu-sim-card" style="min-height:auto">
+            <div class="vq-chart-card__head">
+              <div>
+                <div class="vq-chart-card__title">Sample Similarity</div>
+                <div class="vq-chart-card__sub" id="clu-sim-sub"></div>
+              </div>
+              <div class="vq-toggle" id="clu-sim-metric" role="tablist" aria-label="Similarity metric">
+                <button class="vq-toggle__btn active" type="button" data-metric="jaccard">Jaccard</button>
+                ${_hasTpm ? `<button class="vq-toggle__btn" type="button" data-metric="bray">Bray-Curtis</button>` : ''}
+              </div>
+            </div>
+            <div class="vq-chart-card__body clu-scroll" id="clu-sim"></div>
+          </div>
+        </div>
+      </section>
+    </div>
   `;
 
-  const idIn  = document.getElementById('clu-id');
-  const covIn = document.getElementById('clu-cov');
+  // ── Filters ──
+  const idIn = document.getElementById('clu-id'), covIn = document.getElementById('clu-cov');
   const apply = () => {
     _state.id  = +idIn.value;
     _state.cov = +covIn.value;
@@ -92,23 +189,49 @@ function vqInitClusters(clusters, samples) {
   };
   idIn.addEventListener('input', apply);
   covIn.addEventListener('input', apply);
+  [['clu-minsamples', 'minSamples', Number], ['clu-agree', 'agree', String],
+   ['clu-family', 'family', String], ['clu-novelty', 'novelty', String]].forEach(([id, key, cast]) =>
+    document.getElementById(id)?.addEventListener('change', e => { _state[key] = cast(e.target.value); _rerender(); }));
 
-  el.querySelectorAll('input[name="clu-mode"]').forEach(r =>
-    r.addEventListener('change', () => {
-      if (!r.checked) return;
-      _state.mode = r.value;
-      _state.focus = null;          // re-default focus for the new direction
-      _refreshNetwork();
-    }));
-  document.getElementById('clu-focus').addEventListener('change', e => {
-    _state.focus = e.target.value;
-    _drawEgo();
+  // ── Table ──
+  document.getElementById('clu-search').addEventListener('input', e => {
+    _state.q = e.target.value.trim().toLowerCase(); _rerender();
   });
+  document.getElementById('clu-table').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (th) {
+      const key = th.dataset.sort;
+      const asc = ['gid', 'species', 'family', 'novRank', 'agreeRank'];
+      _state.dir = _state.sort === key ? -_state.dir : (asc.includes(key) ? 1 : -1);
+      _state.sort = key;
+      _rerender();
+      return;
+    }
+    const tr = e.target.closest('tr[data-gid]');
+    if (tr) _select(tr.dataset.gid);
+  });
+  document.getElementById('clu-csv').addEventListener('click', () =>
+    VQ.downloadText(_clustersCsv(), 'viralquest_clusters.csv'));
+
+  // ── Across-sample toggles ──
+  document.querySelectorAll('#clu-matrix-mode [data-mode]').forEach(b => b.addEventListener('click', () => {
+    _state.matrixMode = b.dataset.mode;
+    document.querySelectorAll('#clu-matrix-mode [data-mode]').forEach(x => x.classList.toggle('active', x === b));
+    VQ.tooltipHide();
+    _drawMatrix();
+  }));
+  document.querySelectorAll('#clu-sim-metric [data-metric]').forEach(b => b.addEventListener('click', () => {
+    _state.simMetric = b.dataset.metric;
+    document.querySelectorAll('#clu-sim-metric [data-metric]').forEach(x => x.classList.toggle('active', x === b));
+    VQ.tooltipHide();
+    _drawAcross();
+  }));
 
   _rerender();
+  VQ.redrawOnResize(document.getElementById('clu-matrix'), _drawAcross);
 }
 
-// ── Filtering ───────────────────────────────────────────────────────────────
+// ── Filtering & per-cluster summary ─────────────────────────────────────────
 
 function _passing(cluster) {
   // Representative always passes (100/100). Returns members meeting thresholds.
@@ -116,257 +239,612 @@ function _passing(cluster) {
     m.is_representative || (m.identity >= _state.id && m.coverage >= _state.cov));
 }
 
-function _activeClusters() {
-  // A cluster stays visible only while its passing members span ≥2 samples.
-  return _clusters
-    .map(c => ({ cluster: c, members: _passing(c) }))
-    .filter(({ members }) => new Set(members.map(m => m.sample)).size >= 2);
+/* Summary of a cluster restricted to its passing members. */
+function _summary(c) {
+  const members = _passing(c);
+  const rep     = members.find(m => m.is_representative) || members[0];
+  const others  = members.filter(m => !m.is_representative);
+  const bySample = new Map();
+  members.forEach(m => {
+    if (!bySample.has(m.sample)) bySample.set(m.sample, { n: 0, tpm: 0, hasTpm: false });
+    const b = bySample.get(m.sample);
+    b.n += 1;
+    if (m.tpm != null) { b.tpm += m.tpm; b.hasTpm = true; }
+  });
+  const named = members.filter(m => m.species_db === 'nr' || m.species_db === 'refseq');
+  const divergent = named.filter(m => m.species && m.species !== c.species).length;
+  const NOV = window.vqNovelty;
+  return {
+    c, gid: c.gid, members, rep, bySample,
+    species:   c.species || '',
+    family:    c._family,
+    novelty:   c._novelty,
+    novRank:   NOV && c._novelty ? NOV.order.indexOf(c._novelty) : 99,
+    size:      members.length,
+    nSamples:  bySample.size,
+    minId:     others.length ? d3.min(others, m => m.identity) : null,
+    meanId:    others.length ? d3.mean(others, m => m.identity) : null,
+    minCov:    others.length ? d3.min(others, m => m.coverage) : null,
+    repLen:    rep?.length || 0,
+    tpm:       _hasTpm ? d3.sum([...bySample.values()], b => b.tpm) : null,
+    divergent,
+    agreeRank: divergent ? 1 : 0,
+  };
+}
+
+function _filtered() {
+  const q = _state.q;
+  let rows = _clusters.map(_summary).filter(r =>
+    r.nSamples >= Math.max(2, _state.minSamples) &&
+    (_state.agree === 'all' || (_state.agree === 'ok' ? !r.divergent : r.divergent > 0)) &&
+    (_state.family === 'all' || r.family === _state.family) &&
+    (_state.novelty === 'all' || r.novelty === _state.novelty) &&
+    (!q || `${r.gid} ${r.species} ${r.family} ${[...r.bySample.keys()].join(' ')}`.toLowerCase().includes(q)));
+  const key = _state.sort, dir = _state.dir;
+  return rows.sort((a, b) => {
+    const x = a[key], y = b[key];
+    let d;
+    if (typeof x === 'string' || typeof y === 'string') {
+      if (!x !== !y) return !x ? 1 : -1;
+      d = dir * String(x).localeCompare(String(y));
+    } else {
+      if ((x == null) !== (y == null)) return x == null ? 1 : -1;
+      d = dir * ((x ?? 0) - (y ?? 0));
+    }
+    return d || b.nSamples - a.nSamples || b.size - a.size || a.gid.localeCompare(b.gid);
+  });
 }
 
 function _rerender() {
-  const active = _activeClusters();
+  _view = _filtered();
+  if (!_view.some(r => r.gid === _state.sel)) _state.sel = _view.length ? _view[0].gid : null;
   const readout = document.getElementById('clu-readout');
-  if (readout)
-    readout.textContent = `${active.length} / ${_clusters.length} cluster(s) shown`;
-  _refreshNetwork();
-  _renderCards(document.getElementById('clu-cards'), active);
+  if (readout) readout.textContent = `${_view.length} / ${_clusters.length} clusters shown`;
+  _renderKpis();
+  _renderTable();
+  _renderDetail();
+  _drawAcross();
 }
 
-// ── Ego network graph (one focus node + its connections) ────────────────────
-
-function _connCount(name, isCluster) {
-  return isCluster ? (_adj.clusterToSamples[name] || []).length
-                   : (_adj.sampleToClusters[name] || []).length;
+function _select(gid) {
+  if (!gid || gid === _state.sel) return;
+  _state.sel = gid;
+  _renderTable();
+  _renderDetail();
+  _drawAcross();
 }
 
-// Recompute the cluster↔sample adjacency, repopulate the focus dropdown for the
-// current direction, then (re)draw the ego graph.
-function _refreshNetwork() {
-  const active = _activeClusters();
-  const c2s = {}, s2c = {};
-  active.forEach(({ cluster, members }) => {
-    const samples = [...new Set(members.map(m => m.sample))].sort();
-    c2s[cluster.gid] = samples;
-    samples.forEach(s => { (s2c[s] = s2c[s] || []).push(cluster.gid); });
-  });
-  Object.values(s2c).forEach(a => a.sort());
-  _adj = { clusterToSamples: c2s, sampleToClusters: s2c };
+// ── KPIs ────────────────────────────────────────────────────────────────────
 
-  const sel = document.getElementById('clu-focus');
-  const sub = document.getElementById('clu-net-sub');
-  if (!sel) return;
+function _renderKpis() {
+  const host = document.getElementById('clu-kpis');
+  if (!host) return;
+  const fmt = VQ.fmtNum;
+  const connected = new Set(_view.flatMap(r => [...r.bySample.keys()]));
+  const core = _view.filter(r => r.nSamples === _samples.length).length;
+  const hetero = _view.filter(r => r.divergent > 0).length;
+  const largest = _view.reduce((a, r) => (!a || r.size > a.size ? r : a), null);
+  host.innerHTML = [
+    VQ.statChip('Clusters', fmt(_view.length), 'accent',
+      _view.length === _clusters.length ? 'shared by ≥2 samples' : `of ${fmt(_clusters.length)} · filters applied`),
+    VQ.statChip('Samples Connected', `${connected.size}/${_samples.length}`, '',
+      'share at least one cluster'),
+    VQ.statChip('Shared by All', fmt(core), 'success', `present in all ${_samples.length} samples`),
+    VQ.statChip('Species Disagree', fmt(hetero), hetero ? 'warn' : '',
+      'members hit a different species'),
+    VQ.statChip('Largest Cluster', largest ? fmt(largest.size) : '—', '',
+      largest ? `${largest.gid} · ${largest.nSamples} samples` : ''),
+  ].join('');
+}
 
-  const isCluster = _state.mode === 'cluster';
-  const entities = isCluster ? Object.keys(c2s).sort() : Object.keys(s2c).sort();
+// ── Cluster table (the selector) ────────────────────────────────────────────
 
-  if (!entities.length) {
-    sel.innerHTML = '';
-    sel.disabled = true;
-    if (sub) sub.textContent = '';
-    _state.focus = null;
-    _drawEgo();
+const _fmt1 = v => (v == null || isNaN(v)) ? '—' : v.toFixed(1);
+
+function _novPill(t) {
+  const NOV = window.vqNovelty;
+  if (!t || !NOV) return '<span class="vq-vt-na">—</span>';
+  return `<span class="vq-nov vq-nov--${t}" title="${VQ.esc(NOV.long[t])}">${VQ.esc(NOV.label[t])}</span>`;
+}
+
+function _agreePill(r) {
+  return r.divergent
+    ? `<span class="vq-wf-pill vq-wf-pill--partial" title="${r.divergent} member(s) hit a different species">⚠ ${r.divergent} disagree</span>`
+    : `<span class="vq-wf-pill vq-wf-pill--done" title="every named member hits the representative's species">✓ agree</span>`;
+}
+
+/* Identity vs the representative, coloured like the virus table (nt cut-offs). */
+function _idCell(v) {
+  if (v == null || isNaN(v)) return '<td class="vq-vt-num"><span class="vq-vt-na">—</span></td>';
+  const q = v >= 95 ? ['hi', '≥95% nt · same species'] : v >= 85 ? ['ok', '85–95% nt · variant']
+          : v >= 70 ? ['mid', '70–85% nt · distant'] : ['lo', '<70% nt'];
+  return `<td class="vq-vt-num"><span class="vq-q vq-q--${q[0]}" title="${q[1]}">${v.toFixed(1)}</span></td>`;
+}
+
+function _covCell(v) {
+  if (v == null || isNaN(v)) return '<td class="vq-vt-num"><span class="vq-vt-na">—</span></td>';
+  const q = v >= 70 ? 'hi' : v >= 40 ? 'mid' : 'lo';
+  return `<td class="vq-vt-num"><span class="vq-q vq-q--${q}">${v.toFixed(1)}</span></td>`;
+}
+
+function _renderTable() {
+  const wrap = document.getElementById('clu-table');
+  if (!wrap) return;
+  const esc = VQ.esc;
+  const sub = document.getElementById('clu-table-sub');
+  if (sub) sub.textContent =
+    `${_view.length} cluster${_view.length === 1 ? '' : 's'} · identity vs the representative · click a row to select`;
+
+  const th = (k, label, cls = '') => {
+    const on = _state.sort === k;
+    return `<th data-sort="${k}" class="${cls}${on ? ' vq-vt-sorted' : ''}" scope="col">
+      ${label}<span class="vq-vt-arrow">${on ? (_state.dir > 0 ? '▲' : '▼') : ''}</span></th>`;
+  };
+
+  wrap.innerHTML = _view.length ? `
+    <table class="vq-table vq-vt">
+      <thead><tr>
+        ${th('gid', 'Cluster')}
+        ${th('species', 'Species')}
+        ${th('family', 'Family')}
+        ${th('novRank', 'Novelty')}
+        ${th('nSamples', 'Samples', 'vq-vt-num')}
+        ${th('size', 'Members', 'vq-vt-num')}
+        ${th('minId', 'Min id %', 'vq-vt-num')}
+        ${th('meanId', 'Mean id %', 'vq-vt-num')}
+        ${th('minCov', 'Min cov %', 'vq-vt-num')}
+        ${th('repLen', 'Rep. length', 'vq-vt-num')}
+        ${_hasTpm ? th('tpm', 'TPM', 'vq-vt-num') : ''}
+        ${th('agreeRank', 'Species agreement')}
+      </tr></thead>
+      <tbody>
+        ${_view.map(r => `
+          <tr data-gid="${esc(r.gid)}" class="${r.gid === _state.sel ? 'is-selected' : ''}">
+            <td class="vq-td--mono">${esc(r.gid)}</td>
+            <td class="vq-vt-species">${r.species ? esc(r.species) : '<span class="vq-vt-na">—</span>'}</td>
+            <td>${r.family ? esc(r.family) : '<span class="vq-vt-na">—</span>'}</td>
+            <td>${_novPill(r.novelty)}</td>
+            <td class="vq-vt-num" title="${esc([...r.bySample.keys()].join(', '))}">${r.nSamples}/${_samples.length}</td>
+            <td class="vq-vt-num">${r.size}</td>
+            ${_idCell(r.minId)}
+            ${_idCell(r.meanId)}
+            ${_covCell(r.minCov)}
+            <td class="vq-vt-num">${r.repLen.toLocaleString()}</td>
+            ${_hasTpm ? `<td class="vq-vt-num">${_fmtTpm(r.tpm)}</td>` : ''}
+            <td>${_agreePill(r)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : '<div class="vq-empty" style="padding:24px;font-size:12px">No cluster passes the filters.</div>';
+
+  // Keep the selected row visible inside the table only (never scroll the page).
+  const tr = wrap.querySelector('tr.is-selected');
+  if (tr) {
+    const head = wrap.querySelector('thead')?.offsetHeight || 0;
+    const top = tr.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
+    if (top - head < wrap.scrollTop || top + tr.offsetHeight > wrap.scrollTop + wrap.clientHeight)
+      wrap.scrollTop = Math.max(0, top - head - (wrap.clientHeight - head) / 2);
+  }
+}
+
+function _fmtTpm(v) {
+  if (v == null || isNaN(v)) return '—';
+  if (v === 0) return '0';
+  if (v >= 1000) return Math.round(v).toLocaleString();
+  if (v >= 10) return v.toFixed(1);
+  return v.toFixed(2);
+}
+
+/* CSV of the clusters shown: plain numbers, RFC 4180 quoting, lists joined by ";". */
+function _clustersCsv() {
+  const cols = [
+    ['cluster_id',        r => r.gid],
+    ['species',           r => r.species],
+    ['family',            r => r.family],
+    ['novelty',           r => r.novelty],
+    ['n_samples',         r => r.nSamples],
+    ['samples',           r => [...r.bySample.keys()].join(';')],
+    ['n_members',         r => r.size],
+    ['min_identity',      r => r.minId == null ? null : +r.minId.toFixed(2)],
+    ['mean_identity',     r => r.meanId == null ? null : +r.meanId.toFixed(2)],
+    ['min_coverage',      r => r.minCov == null ? null : +r.minCov.toFixed(2)],
+    ['representative',    r => r.c.representative],
+    ['representative_length', r => r.repLen],
+    ...(_hasTpm ? [['total_tpm', r => +r.tpm.toFixed(3)]] : []),
+    ['species_agreement', r => r.divergent ? 'disagree' : 'agree'],
+    ['divergent_members', r => r.divergent],
+  ];
+  return _csv(cols, _view);
+}
+
+function _membersCsv(r) {
+  const cols = [
+    ['cluster_id',     () => r.gid],
+    ['sample',         m => m.sample],
+    ['contig_id',      m => m.seq_id],
+    ['representative', m => m.is_representative ? 1 : 0],
+    ['length_bp',      m => m.length],
+    ['identity',       m => m.identity],
+    ['coverage',       m => m.coverage],
+    ['species',        m => m.species],
+    ['species_source', m => m.species_db],
+    ...(_hasTpm ? [['tpm', m => m.tpm]] : []),
+  ];
+  return _csv(cols, r.members);
+}
+
+function _csv(cols, rows) {
+  const cell = v => {
+    if (v == null || (typeof v === 'number' && isNaN(v))) return '';
+    const s = String(v);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [cols.map(([h]) => h).join(','),
+          ...rows.map(r => cols.map(([, f]) => cell(f(r))).join(','))].join('\r\n') + '\r\n';
+}
+
+// ── Selected cluster detail ─────────────────────────────────────────────────
+
+function _renderDetail() {
+  const host = document.getElementById('clu-detail');
+  if (!host) return;
+  const esc = VQ.esc;
+  const r = _view.find(x => x.gid === _state.sel);
+  if (!r) {
+    host.innerHTML = '<div class="vq-empty" style="padding:24px">No cluster selected — relax the filters.</div>';
     return;
   }
-  sel.disabled = false;
+  const idx = _view.indexOf(r);
+  const safe = VQ.safeId(r.gid);
+  const maxTpm = d3.max([...r.bySample.values()], b => b.tpm) || 0;
 
-  // Keep the current focus if it still exists, else default to the busiest node.
-  if (!_state.focus || !entities.includes(_state.focus)) {
-    _state.focus = entities.slice()
-      .sort((a, b) => _connCount(b, isCluster) - _connCount(a, isCluster))[0];
-  }
-
-  sel.innerHTML = entities.map(name => {
-    const n = _connCount(name, isCluster);
-    const unit = isCluster ? 'sample' : 'cluster';
-    const label = `${name} — ${n} ${unit}${n !== 1 ? 's' : ''}`;
-    return `<option value="${VQ.esc(name)}"${name === _state.focus ? ' selected' : ''}>${VQ.esc(label)}</option>`;
+  const chips = _samples.map(s => {
+    const b = r.bySample.get(s);
+    if (!b) return `<span class="clu-presence clu-presence--off" title="${esc(s)}: not in this cluster">
+                      <span class="clu-presence__name">${esc(s)}</span><span class="clu-presence__val">—</span></span>`;
+    const tpmTxt = b.hasTpm ? ` · ${_fmtTpm(b.tpm)} TPM` : '';
+    const w = b.hasTpm && maxTpm > 0 ? Math.max(4, 100 * b.tpm / maxTpm) : 100;
+    return `<span class="clu-presence" title="${esc(s)}: ${b.n} member${b.n > 1 ? 's' : ''}${tpmTxt}">
+              <span class="clu-presence__name">${esc(s)}</span>
+              <span class="clu-presence__val">${b.n}×${b.hasTpm ? ` · ${_fmtTpm(b.tpm)}` : ''}</span>
+              ${b.hasTpm ? `<span class="clu-presence__bar"><span style="width:${w.toFixed(1)}%"></span></span>` : ''}
+            </span>`;
   }).join('');
 
-  if (sub)
-    sub.textContent = isCluster
-      ? `${entities.length} cluster${entities.length !== 1 ? 's' : ''} · pick one to see its samples`
-      : `${entities.length} sample${entities.length !== 1 ? 's' : ''} · pick one to see its clusters`;
+  const stat = (k, v) => `<div class="clu-stat"><span>${esc(k)}</span><strong>${v}</strong></div>`;
 
-  _drawEgo();
-}
-
-// Switch the focus to a clicked neighbour (pivot to the opposite direction).
-function _pivot(name, asType) {
-  _state.mode = asType;
-  _state.focus = name;
-  document.querySelectorAll('input[name="clu-mode"]')
-    .forEach(r => { r.checked = (r.value === asType); });
-  _refreshNetwork();
-}
-
-function _egoNode(g, d) {
-  if (d.type === 'cluster') {
-    g.append('circle').attr('r', d.center ? 9 : 7)
-      .attr('fill', 'var(--vq-accent)').attr('stroke', '#fff').attr('stroke-width', 1.5);
-  } else {
-    const s = d.center ? 12 : 10;
-    g.append('rect').attr('x', -s / 2).attr('y', -s / 2).attr('width', s).attr('height', s)
-      .attr('rx', 2).attr('fill', 'var(--vq-primary)').attr('stroke', '#fff').attr('stroke-width', 1.5);
-  }
-}
-
-function _drawEgo() {
-  const host = document.getElementById('clu-graph');
-  if (!host) return;
-  host.innerHTML = '';
-
-  const isCluster = _state.mode === 'cluster';
-  const focus = _state.focus;
-  const neighborType = isCluster ? 'sample' : 'cluster';
-  const neighbors = focus
-    ? (isCluster ? _adj.clusterToSamples[focus] : _adj.sampleToClusters[focus]) || []
-    : [];
-
-  if (!focus || !neighbors.length) {
-    host.innerHTML = `<div class="vq-empty">No connections to display.</div>`;
-    return;
-  }
-
-  // Compact canvas; height grows only mildly with the number of neighbours.
-  const W = 640;
-  const H = Math.max(150, Math.min(280, 130 + neighbors.length * 7));
-  const cx = W / 2, cy = H / 2;
-  const rx = W / 2 - 96, ry = H / 2 - 30;
-
-  const svg = d3.select(host).append('svg')
-    .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('preserveAspectRatio', 'xMidYMid meet')
-    .style('width', '100%').style('height', 'auto').style('display', 'block');
-
-  const positions = neighbors.map((name, i) => {
-    const a = -Math.PI / 2 + (i / neighbors.length) * 2 * Math.PI;
-    return { name, x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry };
-  });
-
-  // Links (focus → each neighbour); brighten on hover.
-  const linkG = svg.append('g').attr('stroke', '#cbd5e1')
-    .attr('stroke-width', 1).attr('stroke-opacity', 0.3);
-  const lineSel = linkG.selectAll('line').data(positions).join('line')
-    .attr('x1', cx).attr('y1', cy).attr('x2', d => d.x).attr('y2', d => d.y);
-
-  // Neighbour nodes.
-  const nb = svg.append('g').selectAll('g').data(positions).join('g')
-    .attr('transform', d => `translate(${d.x},${d.y})`)
-    .style('cursor', 'pointer');
-
-  nb.each(function (d) { _egoNode(d3.select(this), { type: neighborType }); });
-
-  nb.append('text')
-    .attr('text-anchor', d => d.x < cx - 1 ? 'end' : d.x > cx + 1 ? 'start' : 'middle')
-    .attr('x', d => d.x < cx - 1 ? -11 : d.x > cx + 1 ? 11 : 0)
-    .attr('y', d => Math.abs(d.x - cx) <= 1 ? (d.y < cy ? -11 : 17) : 3)
-    .attr('font-size', 9)
-    .attr('font-family', neighborType === 'cluster' ? 'var(--vq-font-mono)' : 'var(--vq-font)')
-    .attr('fill', 'var(--vq-text-2)')
-    .text(d => d.name);
-
-  nb.on('mouseover', function (e, d) {
-      lineSel.attr('stroke', l => l === d ? 'var(--vq-accent)' : '#cbd5e1')
-             .attr('stroke-opacity', l => l === d ? 0.9 : 0.12);
-    })
-    .on('mousemove', (e, d) => VQ.tooltipShow(
-      `<b>${VQ.esc(d.name)}</b><br>${_connCount(d.name, neighborType === 'cluster') } ` +
-      `${neighborType === 'cluster' ? 'sample' : 'cluster'} connection(s)`, e))
-    .on('mouseleave', () => {
-      lineSel.attr('stroke', '#cbd5e1').attr('stroke-opacity', 0.3);
-      VQ.tooltipHide();
-    })
-    .on('click', (e, d) => _pivot(d.name, neighborType));
-
-  // Centre (focus) node + label.
-  const center = svg.append('g').attr('transform', `translate(${cx},${cy})`)
-    .style('cursor', isCluster ? 'pointer' : 'default');
-  _egoNode(center, { type: isCluster ? 'cluster' : 'sample', center: true });
-  const species = isCluster ? (_clusters.find(c => c.gid === focus) || {}).species : null;
-
-  // Cluster code (title); for clusters, the viral species it represents sits
-  // just below it in a smaller italic line.
-  center.append('text').attr('x', 0).attr('y', isCluster ? (species ? -27 : -14) : 19)
-    .attr('text-anchor', 'middle').attr('font-size', 10).attr('font-weight', 600)
-    .attr('font-family', isCluster ? 'var(--vq-font-mono)' : 'var(--vq-font)')
-    .attr('fill', 'var(--vq-text-1)').text(focus);
-  if (species)
-    center.append('text').attr('x', 0).attr('y', -14)
-      .attr('text-anchor', 'middle').attr('font-size', 8.5)
-      .attr('font-style', 'italic').attr('fill', 'var(--vq-text-3)')
-      .text(species.length > 42 ? species.slice(0, 41) + '…' : species);
-
-  center.on('mousemove', e => VQ.tooltipShow(
-      `<b>${VQ.esc(focus)}</b><br>${neighbors.length} ${neighborType}${neighbors.length !== 1 ? 's' : ''}`, e))
-    .on('mouseleave', VQ.tooltipHide)
-    .on('click', () => {
-      if (!isCluster) return;   // only clusters have an alignment card to jump to
-      const cluCard = document.getElementById('clu-card-' + VQ.safeId(focus));
-      cluCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      cluCard?.classList.add('vq-seq-card--highlight');
-      setTimeout(() => cluCard?.classList.remove('vq-seq-card--highlight'), 1600);
-    });
-}
-
-// ── Cluster cards (alignment view + homogeneity) ────────────────────────────
-
-function _renderCards(host, active) {
-  if (!host) return;
-  host.innerHTML = '';
-  if (!active.length) return;
-  active.forEach(({ cluster, members }) => host.appendChild(_renderCluster(cluster, members)));
-}
-
-function _renderCluster(cluster, members) {
-  const esc  = VQ.esc;
-  const safe = VQ.safeId(cluster.gid);
-  const card = document.createElement('div');
-  card.className = 'vq-card';
-  card.id = 'clu-card-' + safe;
-  card.style.marginBottom = 'var(--vq-space-4)';
-
-  // Filtered view of the cluster (representative always present).
-  const view = Object.assign({}, cluster, { members });
-  const rep    = members.find(m => m.is_representative) || members[0];
-  const repLen = rep?.length || 1;
-  const samples = [...new Set(members.map(m => m.sample))];
-
-  card.innerHTML = `
-    <div class="vq-card__header">
-      <div class="vq-card__title">
-        <span class="vq-badge vq-badge--cluster">${esc(cluster.gid)}</span>
-        <span class="clu-species">${esc(cluster.species)}</span>
+  host.innerHTML = `
+    <div class="vq-chart-card__head">
+      <div>
+        <div class="clu-detail__title">
+          <span class="vq-badge vq-badge--cluster">${esc(r.gid)}</span>
+          <span class="clu-species">${esc(r.species || 'no species label')}</span>
+        </div>
+        <div class="clu-detail__pills">
+          ${r.family ? `<span class="vq-wf-opt"><span class="vq-wf-opt__k">Family</span>${esc(r.family)}</span>` : ''}
+          ${_novPill(r.novelty)}
+          ${_agreePill(r)}
+        </div>
       </div>
       <div class="vq-section-actions">
-        <span style="font-size:var(--vq-text-xs);color:var(--vq-text-3)">
-          ${members.length} member${members.length > 1 ? 's' : ''} · ${samples.length} samples
-        </span>
+        <button class="vq-btn vq-btn--sm vq-btn--ghost" type="button" id="clu-prev"
+                ${idx <= 0 ? 'disabled' : ''} title="Previous cluster in the table">‹</button>
+        <span class="clu-detail__pos">${idx + 1} / ${_view.length}</span>
+        <button class="vq-btn vq-btn--sm vq-btn--ghost" type="button" id="clu-next"
+                ${idx >= _view.length - 1 ? 'disabled' : ''} title="Next cluster in the table">›</button>
         ${_exportMenu('clu-menu-' + safe)}
       </div>
     </div>
-    <div class="vq-card__body">
-      ${_homogeneityBanner(cluster, members)}
+
+    <div class="clu-stats">
+      ${stat('Members', r.size)}
+      ${stat('Samples', `${r.nSamples}/${_samples.length}`)}
+      ${stat('Identity', r.minId == null ? '—' : `${_fmt1(r.minId)}–${_fmt1(d3.max(r.members.filter(m => !m.is_representative), m => m.identity))}%`)}
+      ${stat('Min coverage', r.minCov == null ? '—' : _fmt1(r.minCov) + '%')}
+      ${stat('Representative', `${r.repLen.toLocaleString()} nt`)}
+      ${_hasTpm ? stat('Total TPM', _fmtTpm(r.tpm)) : ''}
+    </div>
+
+    <div class="clu-block">
+      <div class="clu-block__title">Presence across samples</div>
+      <div class="clu-presence-row">${chips}</div>
+    </div>
+
+    <div class="clu-block">${_homogeneityBanner(r.c, r.members)}</div>
+
+    <div class="clu-block">
+      <div class="clu-block__title">Members <span>click a contig to open it in the Sequence Viewer</span></div>
+      <div class="vq-vt-wrap clu-members-wrap">
+        <table class="vq-table vq-vt">
+          <thead><tr>
+            <th>Sample</th><th>Contig</th><th class="vq-vt-num">Length (bp)</th>
+            <th class="vq-vt-num">Identity %</th><th class="vq-vt-num">Coverage %</th>
+            <th>Species (own best hit)</th>${_hasTpm ? '<th class="vq-vt-num">TPM</th>' : ''}
+          </tr></thead>
+          <tbody>
+            ${r.members.map(m => `
+              <tr data-gid="${esc(m.gid)}"${m.is_representative ? ' class="clu-rep"' : ''}>
+                <td>${esc(m.sample)}</td>
+                <td class="vq-td--mono">${esc(m.seq_id)}${m.is_representative ? ' <span class="clu-rep-tag">rep.</span>' : ''}</td>
+                <td class="vq-vt-num">${(m.length || 0).toLocaleString()}</td>
+                ${m.is_representative ? '<td class="vq-vt-num"><span class="vq-vt-na">ref</span></td><td class="vq-vt-num"><span class="vq-vt-na">ref</span></td>'
+                                      : _idCell(m.identity) + _covCell(m.coverage)}
+                <td class="vq-vt-species${m.species && r.species && m.species !== r.species && (m.species_db === 'nr' || m.species_db === 'refseq') ? ' clu-species--off' : ''}">
+                  ${m.species ? esc(m.species) : '<span class="vq-vt-na">—</span>'}
+                  ${m.species_db ? `<span class="clu-db">${esc(m.species_db)}</span>` : ''}</td>
+                ${_hasTpm ? `<td class="vq-vt-num">${_fmtTpm(m.tpm)}</td>` : ''}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="clu-block">
+      <div class="clu-block__title">Alignment against the representative
+        <span>bar = aligned region, coloured by identity · outline = full contig</span></div>
       <div class="vq-genome-wrap" id="clu-wrap-${safe}"></div>
+      ${_identityLegend()}
     </div>`;
 
-  const wrapEl = card.querySelector('#clu-wrap-' + safe);
-  _wireExportMenu(card, 'clu-menu-' + safe,
-    () => card.querySelector('.vq-genome-wrap svg'),
-    `cluster_${cluster.gid}`, () => _clusterFasta(view));
+  host.querySelector('#clu-prev')?.addEventListener('click', () => _select(_view[idx - 1]?.gid));
+  host.querySelector('#clu-next')?.addEventListener('click', () => _select(_view[idx + 1]?.gid));
+  host.querySelectorAll('.clu-members-wrap tr[data-gid]').forEach(tr =>
+    tr.addEventListener('click', () => VQ.jumpToViewer(tr.dataset.gid)));
 
-  let lastW = 0, rzTimer = null;
-  const render = () => {
-    const w = wrapEl.clientWidth;
-    if (!w || w === lastW) return;
-    lastW = w;
+  const view = Object.assign({}, r.c, { members: r.members });
+  _wireExportMenu(host, 'clu-menu-' + safe,
+    () => host.querySelector('.vq-genome-wrap svg'),
+    `cluster_${r.gid}`, () => _clusterFasta(view), () => _membersCsv(r));
+
+  const wrapEl = host.querySelector('#clu-wrap-' + safe);
+  const draw = () => {
+    if (!wrapEl.clientWidth) return;
     wrapEl.innerHTML = '';
-    wrapEl.appendChild(_clusterSVG(view, repLen, w));
+    wrapEl.appendChild(_clusterSVG(view, r.repLen || 1, wrapEl.clientWidth));
   };
-  new ResizeObserver(() => { clearTimeout(rzTimer); rzTimer = setTimeout(render, 60); }).observe(wrapEl);
-  requestAnimationFrame(render);
-
-  return card;
+  requestAnimationFrame(draw);
+  VQ.redrawOnResize(wrapEl, draw);
 }
+
+// ── Across samples: presence matrix + sample similarity ─────────────────────
+
+/* Per-sample value of every filtered cluster (members or summed TPM). */
+function _sampleVectors() {
+  const vec = new Map(_samples.map(s => [s, new Map()]));
+  _view.forEach(r => r.bySample.forEach((b, s) => vec.get(s)?.set(r.gid, b)));
+  return vec;
+}
+
+function _similarity(vec) {
+  const n = _samples.length;
+  const M = Array.from({ length: n }, () => new Array(n).fill(0));
+  const shared = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (let i = 0; i < n; i++) for (let j = i; j < n; j++) {
+    const a = vec.get(_samples[i]), b = vec.get(_samples[j]);
+    const inter = [...a.keys()].filter(k => b.has(k)).length;
+    let s;
+    if (_state.simMetric === 'bray') {
+      const keys = new Set([...a.keys(), ...b.keys()]);
+      let num = 0, den = 0;
+      keys.forEach(k => {
+        const x = a.get(k)?.tpm || 0, y = b.get(k)?.tpm || 0;
+        num += Math.min(x, y); den += x + y;
+      });
+      s = den ? 2 * num / den : (i === j ? 1 : 0);
+    } else {
+      const uni = new Set([...a.keys(), ...b.keys()]).size;
+      s = uni ? inter / uni : (i === j ? 1 : 0);
+    }
+    M[i][j] = M[j][i] = s;
+    shared[i][j] = shared[j][i] = inter;
+  }
+  return { M, shared };
+}
+
+/* Average-linkage (UPGMA) on 1 − similarity: leaf order + merge heights. */
+function _upgma(M) {
+  const n = M.length;
+  let nodes = M.map((_, i) => ({ leaves: [i], h: 0, x: null, kids: null }));
+  const dist = (A, B) => d3.mean(A.leaves.flatMap(i => B.leaves.map(j => 1 - M[i][j])));
+  while (nodes.length > 1) {
+    let best = null;
+    for (let a = 0; a < nodes.length; a++) for (let b = a + 1; b < nodes.length; b++) {
+      const d = dist(nodes[a], nodes[b]);
+      if (!best || d < best.d) best = { a, b, d };
+    }
+    const A = nodes[best.a], B = nodes[best.b];
+    const merged = { leaves: A.leaves.concat(B.leaves), h: best.d, kids: [A, B] };
+    nodes = nodes.filter((_, k) => k !== best.a && k !== best.b).concat([merged]);
+  }
+  return nodes[0];
+}
+
+function _drawAcross() {
+  _drawMatrix();
+  _drawSimilarity();
+}
+
+function _drawMatrix() {
+  const host = document.getElementById('clu-matrix');
+  if (!host) return;
+  const esc = VQ.esc;
+  if (!_view.length) { host.innerHTML = '<div class="vq-empty">No cluster passes the filters.</div>'; return; }
+
+  const order = _simOrder();
+  const cols = order.map(i => _samples[i]);
+  // Rows: shared core first (prevalence), then size.
+  const rows = _view.slice().sort((a, b) => b.nSamples - a.nSamples || b.size - a.size || a.gid.localeCompare(b.gid));
+  const mode = _state.matrixMode;
+
+  const avail = host.clientWidth || 600;
+  const padL = 250, padR = 54, rowH = 18;
+  const longest = d3.max(cols, s => s.length) || 4;
+  const cell = Math.max(14, Math.min(30, (avail - padL - padR) / cols.length));
+  const rotate = cell < longest * 6.5;
+  const headH = rotate ? Math.min(110, longest * 5 + 18) : 24;
+  const W = Math.max(avail, padL + padR + cell * cols.length);
+  const H = headH + rows.length * rowH + 6;
+
+  const maxN   = d3.max(rows, r => d3.max([...r.bySample.values()], b => b.n)) || 1;
+  const maxTpm = d3.max(rows, r => d3.max([...r.bySample.values()], b => b.tpm)) || 1;
+  const shade = b => {
+    if (mode === 'presence') return 0.75;
+    if (mode === 'members')  return 0.3 + 0.65 * Math.sqrt(b.n / maxN);
+    return b.tpm > 0 ? 0.2 + 0.75 * Math.log10(b.tpm + 1) / Math.log10(maxTpm + 1) : 0.12;
+  };
+
+  host.innerHTML = '';
+  const svg = d3.select(host).append('svg')
+    .attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`).style('display', 'block');
+
+  cols.forEach((s, i) => {
+    const x = padL + i * cell + cell / 2;
+    const t = svg.append('text').attr('class', 'clu-axis' + (_selSamples().has(s) ? ' is-on' : '')).text(s);
+    if (rotate) t.attr('transform', `translate(${x + 3},${headH - 6}) rotate(-45)`);
+    else t.attr('x', x).attr('y', headH - 8).attr('text-anchor', 'middle');
+  });
+
+  rows.forEach((r, j) => {
+    const y = headH + j * rowH;
+    const sel = r.gid === _state.sel;
+    const g = svg.append('g').attr('class', 'clu-mrow' + (sel ? ' is-selected' : '')).style('cursor', 'pointer')
+      .on('click', () => { _select(r.gid); document.getElementById('clu-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    g.append('rect').attr('class', 'clu-mrow__bg').attr('x', 0).attr('y', y).attr('width', W).attr('height', rowH);
+    g.append('text').attr('class', 'clu-mrow__id').attr('x', 6).attr('y', y + rowH / 2)
+      .attr('dominant-baseline', 'central').text(r.gid);
+    g.append('text').attr('class', 'clu-mrow__sp').attr('x', 92).attr('y', y + rowH / 2)
+      .attr('dominant-baseline', 'central').text(_trunc(r.species, 24)).append('title').text(r.species);
+    cols.forEach((s, i) => {
+      const b = r.bySample.get(s);
+      const x = padL + i * cell;
+      if (!b) {
+        g.append('rect').attr('class', 'clu-cell--off')
+          .attr('x', x + cell / 2 - 1.5).attr('y', y + rowH / 2 - 1.5).attr('width', 3).attr('height', 3).attr('rx', 1.5);
+        return;
+      }
+      g.append('rect').attr('class', 'clu-cell')
+        .attr('x', x + 1.5).attr('y', y + 2).attr('width', cell - 3).attr('height', rowH - 4).attr('rx', 3)
+        .attr('fill-opacity', shade(b))
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${esc(r.gid)} · ${esc(s)}</div>
+          <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">Species</span><span>${esc(r.species || '—')}</span>
+            <span class="vq-tooltip__key">Members</span><span>${b.n}</span>
+            ${b.hasTpm ? `<span class="vq-tooltip__key">TPM</span><span>${_fmtTpm(b.tpm)}</span>` : ''}
+          </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+    });
+    g.append('text').attr('class', 'clu-mrow__prev').attr('x', padL + cols.length * cell + 8).attr('y', y + rowH / 2)
+      .attr('dominant-baseline', 'central').text(`${r.nSamples}/${_samples.length}`);
+  });
+}
+
+function _selSamples() {
+  const r = _view.find(x => x.gid === _state.sel);
+  return new Set(r ? r.bySample.keys() : []);
+}
+
+let _simCache = null;
+function _simOrder() {
+  return _simData().tree.leaves;
+}
+
+function _simData() {
+  const key = _state.simMetric + '|' + _view.map(r => r.gid).join(',') + '|' + _state.id + '|' + _state.cov;
+  if (_simCache && _simCache.key === key) return _simCache;
+  const sim = _similarity(_sampleVectors());
+  _simCache = { key, ...sim, tree: _upgma(sim.M) };
+  return _simCache;
+}
+
+function _drawSimilarity() {
+  const host = document.getElementById('clu-sim');
+  if (!host) return;
+  const esc = VQ.esc;
+  const sub = document.getElementById('clu-sim-sub');
+  if (sub) sub.textContent = _state.simMetric === 'bray'
+    ? 'Bray-Curtis similarity on cluster TPM · UPGMA order · faded = pair without the selected cluster'
+    : 'Jaccard index on shared clusters · UPGMA order · faded = pair without the selected cluster';
+  if (_samples.length < 2 || !_view.length) { host.innerHTML = '<div class="vq-empty">Not enough data.</div>'; return; }
+
+  const { M, shared, tree } = _simData();
+  const order = tree.leaves;
+  const n = order.length;
+  const selS = _selSamples();
+
+  const avail = host.clientWidth || 500;
+  const longest = d3.max(_samples, s => s.length) || 4;
+  const dendW = 56, labW = Math.min(150, longest * 6.6 + 10);
+  const padR = Math.min(90, longest * 4.8 + 8);    // room for the last rotated header
+  const cell = Math.max(16, Math.min(46, (avail - dendW - labW - padR) / n));
+  const headH = Math.min(110, longest * 5 + 18);
+  const W = Math.max(avail, dendW + labW + n * cell + padR);
+  const H = headH + n * cell + 34;
+  const x0 = dendW + labW;
+
+  host.innerHTML = '';
+  const svg = d3.select(host).append('svg')
+    .attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`).style('display', 'block');
+
+  // Dendrogram (left), leaves aligned to rows.
+  const yLeaf = new Map(order.map((idx, k) => [idx, headH + k * cell + cell / 2]));
+  const maxH = tree.h || 1;
+  const xOf = h => dendW - 4 - (h / maxH) * (dendW - 10);
+  const walk = node => {
+    if (!node.kids) return { y: yLeaf.get(node.leaves[0]), x: xOf(0) };
+    const [a, b] = node.kids.map(walk);
+    const x = xOf(node.h);
+    svg.append('path').attr('class', 'clu-dendro')
+      .attr('d', `M${a.x},${a.y} H${x} V${b.y} H${b.x}`);
+    return { y: (a.y + b.y) / 2, x };
+  };
+  if (n > 1) walk(tree);
+
+  const color = s => d3.interpolateBlues(0.06 + 0.86 * Math.max(0, Math.min(1, s)));
+  order.forEach((i, r) => {
+    const yy = headH + r * cell;
+    svg.append('text').attr('class', 'clu-axis' + (selS.has(_samples[i]) ? ' is-on' : ' is-off'))
+      .attr('x', x0 - 6).attr('y', yy + cell / 2).attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(_trunc(_samples[i], 22));
+    const xx = x0 + r * cell + cell / 2;
+    svg.append('text').attr('class', 'clu-axis' + (selS.has(_samples[i]) ? ' is-on' : ' is-off'))
+      .attr('transform', `translate(${xx + 3},${headH - 6}) rotate(-45)`).text(_trunc(_samples[i], 22));
+    order.forEach((j, c) => {
+      const s = M[i][j];
+      const both = selS.has(_samples[i]) && selS.has(_samples[j]);
+      svg.append('rect').attr('class', 'clu-sim' + (selS.size && !both ? ' is-dim' : ''))
+        .attr('x', x0 + c * cell + 1).attr('y', yy + 1).attr('width', cell - 2).attr('height', cell - 2).attr('rx', 3)
+        .attr('fill', color(s))
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${esc(_samples[i])} × ${esc(_samples[j])}</div>
+          <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">${_state.simMetric === 'bray' ? 'Bray-Curtis sim.' : 'Jaccard'}</span><span>${s.toFixed(2)}</span>
+            <span class="vq-tooltip__key">Shared clusters</span><span>${shared[i][j]}</span>
+          </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+      if (cell >= 30) svg.append('text').attr('class', 'clu-sim__val')
+        .attr('x', x0 + c * cell + cell / 2).attr('y', yy + cell / 2)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+        .attr('fill', s > 0.55 ? '#fff' : 'var(--vq-text-2)')
+        .text(i === j ? '' : s.toFixed(2).replace(/^0/, ''));
+    });
+  });
+
+  // Colour scale legend
+  const ly = headH + n * cell + 14, lw = Math.min(180, n * cell);
+  const grad = svg.append('defs').append('linearGradient').attr('id', 'clu-sim-grad');
+  [0, 0.5, 1].forEach(t => grad.append('stop').attr('offset', t).attr('stop-color', color(t)));
+  svg.append('rect').attr('x', x0).attr('y', ly).attr('width', lw).attr('height', 7).attr('rx', 3.5)
+    .attr('fill', 'url(#clu-sim-grad)');
+  svg.append('text').attr('class', 'clu-axis').attr('x', x0).attr('y', ly + 19).text('0');
+  svg.append('text').attr('class', 'clu-axis').attr('x', x0 + lw).attr('y', ly + 19).attr('text-anchor', 'end').text('1');
+}
+
+function _trunc(s, n) {
+  s = String(s ?? '');
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+// ── Species agreement banner ───────────────────────────────────────────────
 
 function _homogeneityBanner(cluster, members) {
   const esc = VQ.esc;
@@ -405,11 +883,12 @@ function _exportMenu(id) {
         <button class="vq-menu__item" data-fmt="svg"   role="menuitem" type="button">SVG vector</button>
         <button class="vq-menu__item" data-fmt="pdf"   role="menuitem" type="button">PDF (print)</button>
         <button class="vq-menu__item" data-fmt="fasta" role="menuitem" type="button">FASTA sequences</button>
+        <button class="vq-menu__item" data-fmt="csv"   role="menuitem" type="button">Members CSV</button>
       </div>
     </div>`;
 }
 
-function _wireExportMenu(root, menuId, getSvg, baseName, getFasta) {
+function _wireExportMenu(root, menuId, getSvg, baseName, getFasta, getCsv) {
   const menu = root.querySelector('#' + menuId);
   if (!menu) return;
   const toggle = menu.querySelector('[data-menu-toggle]');
@@ -424,6 +903,7 @@ function _wireExportMenu(root, menuId, getSvg, baseName, getFasta) {
       menu.classList.remove('open');
       const fmt = item.dataset.fmt;
       if (fmt === 'fasta') { if (getFasta) VQ.downloadText(getFasta(), baseName + '.fasta'); return; }
+      if (fmt === 'csv')   { if (getCsv) VQ.downloadText(getCsv(), baseName + '_members.csv'); return; }
       const svg = getSvg();
       if (!svg) return;
       if (fmt === 'png') VQ.exportPNG(svg, baseName + '.png');

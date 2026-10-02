@@ -2588,18 +2588,61 @@ button.ov-wf-cell:hover .ov-wf-dot { filter: brightness(1.08); transform: scale(
    viralquest-report — General Clusters (Section 2) specific styles
    ════════════════════════════════════════════════════════════════════ */
 
-.ov-filter-row    { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; }
-.ov-filter-row label { display: inline-flex; align-items: center; gap: 8px;
-                       font-size: 12px; color: var(--vq-text-2); }
-.ov-filter-row input[type="range"] { width: 160px; accent-color: var(--vq-accent); }
-.ov-filter-row output { font-variant-numeric: tabular-nums; font-weight: 600;
-                        color: var(--vq-text); min-width: 34px; }
-.ov-filter-readout { font-size: 12px; color: var(--vq-text-3); }
+/* Filters bar */
+.clu-filters { padding: 12px 18px; }
+.clu-filters__row { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
+.clu-filters__row label { display: inline-flex; align-items: center; gap: 8px;
+                          font-size: 12px; color: var(--vq-text-2); font-weight: 600; }
+.clu-filters__row input[type="range"] { width: 130px; accent-color: var(--vq-accent); }
+.clu-filters__row output { font-variant-numeric: tabular-nums; font-weight: 700;
+                           color: var(--vq-text); min-width: 34px; }
+.clu-filters__readout { margin-left: auto; font-size: 12px; color: var(--vq-text-3); }
 
-.clu-species { color: var(--vq-text-2); font-weight: 500; }
+.clu-stack  { display: flex; flex-direction: column; gap: var(--vq-space-3); }
+.clu-stack > .vq-chart-card { min-width: 0; }
+.clu-across { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+              gap: var(--vq-space-3); align-items: start; }
+.clu-across > .vq-chart-card { min-width: 0; }
+.clu-scroll { overflow-x: auto; overflow-y: hidden; justify-content: flex-start; }
+
+/* Cluster table (selector) */
+.clu-table-wrap { max-height: 360px; }
+.vq-vt tbody tr.is-selected td { background: var(--vq-accent-subtle); }
+.vq-vt tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--vq-accent); }
+
+/* Selected-cluster detail */
+.clu-detail { border-color: var(--vq-accent); box-shadow: 0 0 0 1px var(--vq-accent-subtle), var(--vq-shadow-sm); }
+.clu-detail__title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; font-weight: 700; }
+.clu-detail__pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.clu-detail__pos   { font-size: 11.5px; color: var(--vq-text-3); font-variant-numeric: tabular-nums; }
+.clu-species { color: var(--vq-text-2); font-weight: 500; font-style: italic; }
+
+.clu-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+             gap: 8px; margin: 4px 0 14px; }
+.clu-stat  { padding: 8px 12px; border-radius: var(--vq-radius-sm); background: var(--vq-surface-2);
+             border: 1px solid var(--vq-border); display: flex; flex-direction: column; gap: 2px; }
+.clu-stat span   { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+                   color: var(--vq-text-3); }
+.clu-stat strong { font-size: 15px; color: var(--vq-text); font-variant-numeric: tabular-nums; }
+
+.clu-block { margin-top: 12px; }
+.clu-block__title { font-size: 12px; font-weight: 700; color: var(--vq-text); margin-bottom: 6px; }
+.clu-block__title span { font-weight: 400; color: var(--vq-text-3); margin-left: 6px; }
+
+.clu-presence-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.clu-presence {
+  display: inline-flex; flex-direction: column; gap: 3px; min-width: 96px;
+  padding: 6px 10px; border-radius: var(--vq-radius-sm);
+  border: 1px solid var(--vq-accent); background: var(--vq-accent-subtle);
+}
+.clu-presence--off { border: 1px dashed var(--vq-border-dark); background: transparent; opacity: .7; }
+.clu-presence__name { font-size: 11.5px; font-weight: 600; color: var(--vq-text); }
+.clu-presence__val  { font-size: 10.5px; font-family: var(--vq-font-mono); color: var(--vq-text-2); }
+.clu-presence__bar  { display: block; height: 4px; border-radius: 2px; background: var(--vq-surface); overflow: hidden; }
+.clu-presence__bar > span { display: block; height: 100%; background: var(--vq-accent); }
 
 .clu-banner  { padding: 8px 12px; border-radius: var(--vq-radius, 8px);
-               font-size: 12px; margin-bottom: 12px; line-height: 1.5; }
+               font-size: 12px; line-height: 1.5; }
 .clu-banner--ok   { background: color-mix(in srgb, var(--vq-success) 12%, transparent);
                     color: var(--vq-success); }
 .clu-banner--warn { background: color-mix(in srgb, var(--vq-warning) 14%, transparent);
@@ -2607,19 +2650,31 @@ button.ov-wf-cell:hover .ov-wf-dot { filter: brightness(1.08); transform: scale(
 .clu-divergent    { margin: 6px 0 0; padding-left: 18px; }
 .clu-divergent li { margin: 2px 0; }
 
-/* Ego-network controls (radio direction + focus dropdown) */
-.clu-net-controls { display: flex; flex-wrap: wrap; align-items: center;
-                    gap: var(--vq-space-3, 12px); margin-bottom: var(--vq-space-3, 12px); }
-.clu-mode  { display: inline-flex; gap: var(--vq-space-3, 12px);
-             font-size: var(--vq-text-sm); color: var(--vq-text-2); }
-.clu-radio { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.clu-radio input { accent-color: var(--vq-accent); cursor: pointer; margin: 0; }
-.clu-select { font: inherit; font-size: var(--vq-text-sm); padding: 4px 10px;
-              border: 1px solid var(--vq-border); border-radius: var(--vq-radius-sm);
-              background: var(--vq-surface); color: var(--vq-text-1);
-              max-width: 360px; cursor: pointer; }
-.clu-select:disabled { opacity: .55; cursor: not-allowed; }
-.clu-graph { min-height: 120px; }
+.clu-members-wrap { max-height: 300px; }
+.clu-members-wrap tr.clu-rep td { background: var(--vq-surface-2); font-weight: 600; }
+.clu-rep-tag { font-size: 9.5px; font-weight: 700; color: var(--vq-accent-dark); background: var(--vq-accent-subtle);
+               padding: 0 5px; border-radius: 4px; margin-left: 4px; font-family: var(--vq-font); }
+.clu-db { margin-left: 6px; font-size: 10px; font-style: normal; color: var(--vq-text-3);
+          font-family: var(--vq-font-mono); }
+.clu-species--off { color: #9b6a09 !important; }
+
+/* Presence matrix + similarity heatmap */
+.clu-axis       { font-size: 11px; fill: var(--vq-text-2); font-family: var(--vq-font); }
+.clu-axis.is-on { fill: var(--vq-accent-dark); font-weight: 700; }
+.clu-mrow__bg   { fill: transparent; }
+.clu-mrow:hover .clu-mrow__bg { fill: var(--vq-surface-2); }
+.clu-mrow.is-selected .clu-mrow__bg { fill: var(--vq-accent-subtle); }
+.clu-mrow__id   { font-size: 10.5px; font-family: var(--vq-font-mono); fill: var(--vq-text); }
+.clu-mrow__sp   { font-size: 11px; font-style: italic; fill: var(--vq-text-2); }
+.clu-mrow.is-selected .clu-mrow__id { font-weight: 700; fill: var(--vq-accent-dark); }
+.clu-mrow__prev { font-size: 10.5px; font-family: var(--vq-font-mono); fill: var(--vq-text-3); }
+.clu-cell       { fill: var(--vq-accent); }
+.clu-cell--off  { fill: var(--vq-border-dark); opacity: .6; }
+.clu-dendro     { fill: none; stroke: var(--vq-text-3); stroke-width: 1.2; }
+.clu-sim        { transition: opacity var(--vq-dur) var(--vq-ease); }
+.clu-sim.is-dim { opacity: .28; }
+.clu-axis.is-off { fill: var(--vq-text-3); }
+.clu-sim__val   { font-size: 10px; font-family: var(--vq-font-mono); pointer-events: none; }
 
 /* ════════════════════════════════════════════════════════════════════
    viralquest-report — Sequence Viewer (Section 3) sample filter bar
