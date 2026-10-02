@@ -21,8 +21,9 @@ const _VW = {
   selected:  new Set(),
   domainMap: {},
   colourIdx: 0,
-  // Multi-select taxonomy filter state (checkbox dropdowns)
-  tax: { family: new Set(), phylum: new Set(), genus: new Set() },
+  // Multi-select filter state (checkbox dropdowns): taxonomy, plus the
+  // classification and novelty tier of the primary score.
+  tax: { family: new Set(), phylum: new Set(), genus: new Set(), cls: new Set(), nov: new Set() },
   // Low-complexity highlighting (genome-map bands + FASTA highlight) is per
   // sequence and on by default, so this holds only the ids the user switched
   // OFF. Deliberately NOT reset by vqInitViewer so the choices survive a
@@ -249,11 +250,14 @@ function _bindOverflowResize() {
    so checking several boxes doesn't dismiss the dropdown. */
 function _msField(id, label, allLabel, values) {
   const esc = VQ.esc;
+  // Items are plain strings (value = label) or { value, label } pairs.
   const items = values.length
-    ? values.map(v =>
-        `<label class="vq-ms__item">
-           <input type="checkbox" value="${esc(v)}">${esc(v)}
-         </label>`).join('')
+    ? values.map(v => {
+        const { value, label: text } = typeof v === 'object' ? v : { value: v, label: v };
+        return `<label class="vq-ms__item">
+           <input type="checkbox" value="${esc(value)}" data-label="${esc(text)}">${esc(text)}
+         </label>`;
+      }).join('')
     : '<div class="vq-ms__empty">None available</div>';
   return `
     <div class="vq-filter-field">
@@ -285,12 +289,15 @@ function vqInitViewer(sequences) {
 
   _VW.sequences = sequences;
   _VW.filtered  = [...sequences];
-  _VW.tax = { family: new Set(), phylum: new Set(), genus: new Set() };
+  _VW.tax = { family: new Set(), phylum: new Set(), genus: new Set(), cls: new Set(), nov: new Set() };
 
   const phyla    = [...new Set(sequences.map(s => s.taxonomy?.phylum).filter(Boolean))].sort();
   const families = [...new Set(sequences.map(s => s.taxonomy?.family).filter(Boolean))].sort();
   const genera   = [...new Set(sequences.map(s => s.taxonomy?.genus).filter(Boolean))].sort();
   const hasHeur  = sequences.some(s => s.heuristic_output != null);
+  const clsItems = _countedItems(sequences, _seqFilterClass,
+                                 Object.keys(_CLASS_FILTER_LABEL), _CLASS_FILTER_LABEL);
+  const novItems = _countedItems(sequences, _seqFilterNovelty, _NOVELTY_ORDER, _NOVELTY_LABEL);
   const hasLlm   = sequences.some(s => s.llm_output != null);
 
   el.innerHTML = `
@@ -424,6 +431,8 @@ function vqInitViewer(sequences) {
         ${_msField('viewer-ms-family', 'Family', 'All families', families)}
         ${_msField('viewer-ms-phylum', 'Phylum', 'All phyla',    phyla)}
         ${_msField('viewer-ms-genus',  'Genus',  'All genera',   genera)}
+        ${clsItems.length ? _msField('viewer-ms-cls', 'Classification', 'All classes', clsItems) : ''}
+        ${novItems.length ? _msField('viewer-ms-nov', 'Novelty', 'All novelty tiers', novItems) : ''}
 
         ${hasHeur ? `
         <div class="vq-filter-field">
@@ -471,6 +480,8 @@ function vqInitViewer(sequences) {
   _wireMultiSelect('viewer-ms-family', _VW.tax.family);
   _wireMultiSelect('viewer-ms-phylum', _VW.tax.phylum);
   _wireMultiSelect('viewer-ms-genus',  _VW.tax.genus);
+  _wireMultiSelect('viewer-ms-cls',    _VW.tax.cls);
+  _wireMultiSelect('viewer-ms-nov',    _VW.tax.nov);
 
   // Retractable filter panel
   const filterToggle = document.getElementById('viewer-filter-toggle');
@@ -547,6 +558,28 @@ function _primaryScore(seq) {
   if (h) return { score: h.vq_score, cls: h.classification, src: 'heur' };
   if (l && !_llmFailed(l)) return { score: l.vq_score, cls: l.classification, src: 'llm' };
   return null;
+}
+
+/* Classification / novelty used by the filters — those of the primary score
+   (heuristic, else a successful LLM output), so they match the header chip. */
+const _CLASS_FILTER_LABEL = {
+  'viral-known': 'Viral known', 'viral-unknown': 'Viral unknown', 'non-viral': 'Non-viral',
+};
+const _NOVELTY_ORDER = ['known', 'variant', 'novel-species', 'divergent', 'highly-divergent', 'non-viral'];
+function _seqFilterClass(seq) {
+  return _primaryScore(seq)?.cls || null;
+}
+function _seqFilterNovelty(seq) {
+  const h = seq.heuristic_output, l = seq.llm_output;
+  if (h && h.novelty) return h.novelty;
+  if (l && !_llmFailed(l) && l.novelty) return l.novelty;
+  return null;
+}
+/* Multi-select items with counts, in a fixed order, for values present. */
+function _countedItems(sequences, keyOf, order, labels) {
+  const n = new Map();
+  sequences.forEach(s => { const k = keyOf(s); if (k) n.set(k, (n.get(k) || 0) + 1); });
+  return order.filter(k => n.has(k)).map(k => ({ value: k, label: `${labels[k]} (${n.get(k)})` }));
 }
 
 /* Compact header chip: number + a meter whose WIDTH encodes magnitude (0–100)
@@ -769,8 +802,11 @@ function _wireMultiSelect(rootId, set) {
     cb.addEventListener('change', () => {
       if (cb.checked) set.add(cb.value); else set.delete(cb.value);
       const n = set.size;
+      const only = n === 1
+        ? root.querySelector(`input[type="checkbox"][value="${CSS.escape([...set][0])}"]`)
+        : null;
       label.textContent = n === 0 ? label.dataset.allLabel
-                        : n === 1 ? [...set][0]
+                        : n === 1 ? (only?.dataset.label || [...set][0])
                         : `${n} selected`;
       root.classList.toggle('vq-ms--active', n > 0);
       _applyFilters();
@@ -795,6 +831,8 @@ function _updateFilterBadge() {
   if (_VW.tax.family.size) n++;
   if (_VW.tax.phylum.size) n++;
   if (_VW.tax.genus.size)  n++;
+  if (_VW.tax.cls.size)    n++;
+  if (_VW.tax.nov.size)    n++;
   if (has('viewer-heur-min') || has('viewer-heur-max')) n++;
   if (has('viewer-llm-min')  || has('viewer-llm-max'))  n++;
   badge.textContent = String(n);
@@ -806,6 +844,8 @@ function _applyFilters() {
   const famSet  = _VW.tax.family;
   const phySet  = _VW.tax.phylum;
   const genSet  = _VW.tax.genus;
+  const clsSet  = _VW.tax.cls;
+  const novSet  = _VW.tax.nov;
   const heurMin = _numVal('viewer-heur-min');
   const heurMax = _numVal('viewer-heur-max');
   const llmMin  = _numVal('viewer-llm-min');
@@ -836,6 +876,8 @@ function _applyFilters() {
     if (phySet.size && !phySet.has(t.phylum)) return false;
     if (famSet.size && !famSet.has(t.family)) return false;
     if (genSet.size && !genSet.has(t.genus))  return false;
+    if (clsSet.size && !clsSet.has(_seqFilterClass(s)))   return false;
+    if (novSet.size && !novSet.has(_seqFilterNovelty(s))) return false;
     // Score ranges: a bound is set but the score is absent → exclude.
     if (heurMin !== null || heurMax !== null) {
       const hs = s.heuristic_output?.vq_score;

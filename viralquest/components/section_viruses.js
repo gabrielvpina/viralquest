@@ -1258,17 +1258,28 @@ function _renderIdentityHistogram(sequences, mode = 'identity') {
 //  Chart 6 — Sequence length histogram, viral only (blue card)
 // ────────────────────────────────────────────────────────────────────────
 
-/* Bin width for the length histogram, scaled to the longest sequence so short
-   assemblies are not squeezed into a couple of 500 bp bars. */
-function _lengthBinStep(maxLen) {
-  if (maxLen <= 2000) return 100;
-  if (maxLen <= 4000) return 300;
-  return 500;
+// Length histogram on a log10 axis: contig lengths span orders of magnitude
+// (a few hundred bp to >100 kb for large DNA viruses), which a linear axis
+// squeezes into one bar. Bins are equal-width in log space.
+const _LEN_BINS_PER_DECADE = 8;
+const _LEN_MIN_BINS = 8, _LEN_MAX_BINS = 32;
+
+/* 1–2–5 tick values (100, 200, 500, 1k, 2k, …) inside [lo, hi]. */
+function _logTicks(lo, hi) {
+  const ticks = [];
+  for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) {
+    [1, 2, 5].forEach(m => {
+      const v = m * 10 ** e;
+      if (v >= lo && v <= hi) ticks.push(v);
+    });
+  }
+  return ticks;
 }
 
 function _renderLengthHistogram(sequences) {
   const wrap = document.getElementById('stats-length-svg');
   if (!wrap) return;
+  VQ.tooltipHide();
   wrap.innerHTML = '';
 
   const lengths = sequences
@@ -1281,16 +1292,24 @@ function _renderLengthHistogram(sequences) {
   }
 
   function _fmtLen(v) {
+    if (v >= 1e6) return (v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 1) + 'M';
     return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v));
   }
 
-  const minL = d3.min(lengths);
-  const maxL = d3.max(lengths);
-  const STEP = _lengthBinStep(maxL);
+  // x axis from the shortest to the longest sequence (widened when they are
+  // all the same length, so the single bar has width).
+  let lo = d3.min(lengths), hi = d3.max(lengths);
+  if (hi / lo < 1.5) { lo = lo / 1.25; hi = hi * 1.25; }
+  const logLo = Math.log10(lo), logHi = Math.log10(hi);
+  const nBins = Math.max(_LEN_MIN_BINS,
+                Math.min(_LEN_MAX_BINS, Math.ceil((logHi - logLo) * _LEN_BINS_PER_DECADE)));
+  const thresholds = d3.range(1, nBins).map(i => 10 ** (logLo + (logHi - logLo) * i / nBins));
+  const bins = d3.bin().domain([lo, hi]).thresholds(thresholds)(lengths);
 
   const sub = document.getElementById('stats-length-sub');
   if (sub) sub.textContent =
-    `${lengths.length.toLocaleString()} viral sequences · median ${_fmtLen(d3.median(lengths))} bp · ${STEP} bp bins`;
+    `${lengths.length.toLocaleString()} viral sequences · median ${_fmtLen(d3.median(lengths))} bp · ` +
+    `log scale, ${nBins} bins`;
 
   // Same frame as the BLASTx / BLASTn histograms; height fills the card
   const W     = Math.max(wrap.clientWidth || 0, 200);
@@ -1300,14 +1319,8 @@ function _renderLengthHistogram(sequences) {
   const drawW = W - PAD_L - PAD_R;
   const drawH = H - PAD_T - PAD_B;
 
-  // x axis from the shortest to the longest sequence; fixed-width bins
-  // (width from _lengthBinStep) starting exactly at the shortest one.
-  const [lo, hi]   = _dataDomain(minL, maxL, STEP);
-  const thresholds = d3.range(lo + STEP, hi, STEP);
-  const bins       = d3.bin().domain([lo, hi]).thresholds(thresholds)(lengths);
-
   const yMax   = d3.max(bins, b => b.length) || 1;
-  const xScale = d3.scaleLinear([lo, hi], [0, drawW]);
+  const xScale = d3.scaleLog([lo, hi], [0, drawW]);
   const yScale = d3.scaleLinear([0, yMax], [drawH, 0]).nice();
 
   const svg = d3.create('svg')
@@ -1349,10 +1362,17 @@ function _renderLengthHistogram(sequences) {
       .on('mouseleave', VQ.tooltipHide);
   });
 
-  // Baseline + x ticks
+  // Baseline + x ticks: both ends, plus 1–2–5 values not too close to them
   g.append('line').attr('x1', 0).attr('y1', drawH).attr('x2', drawW).attr('y2', drawH)
     .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
-  _edgeTicks(xScale, lo, hi, Math.min(5, bins.length)).forEach(tick => {
+  const minGap = 26;                                     // px between labels
+  const ticks = [lo];
+  _logTicks(lo, hi).forEach(t => {
+    if (xScale(t) - xScale(ticks[ticks.length - 1]) >= minGap && xScale(hi) - xScale(t) >= minGap)
+      ticks.push(t);
+  });
+  ticks.push(hi);
+  ticks.forEach(tick => {
     const tx = xScale(tick);
     g.append('line').attr('x1', tx).attr('y1', drawH).attr('x2', tx).attr('y2', drawH + 3)
       .attr('stroke', 'var(--vq-c-baseline)').attr('stroke-width', 1);
@@ -1365,7 +1385,7 @@ function _renderLengthHistogram(sequences) {
   svg.append('text')
     .attr('x', PAD_L + drawW / 2).attr('y', H - 2)
     .attr('text-anchor', 'middle').attr('font-size', 9)
-    .attr('fill', 'var(--vq-c-tick)').text('length (bp)');
+    .attr('fill', 'var(--vq-c-tick)').text('length (bp, log scale)');
 
   wrap.appendChild(svg.node());
 }
