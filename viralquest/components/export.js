@@ -399,13 +399,21 @@ function vqCardGroup(title, hint, cardsHtml, slots = 3) {
 /** Re-render a panel's charts when it is first shown or resized: a hidden tab
     has zero width, so its charts are drawn at a fallback size until revealed. */
 function vqRedrawOnResize(el, redraw) {
+  // One observer per element: a tab re-mounted with new data (e.g. the
+  // multi-sample report's sample filter) replaces the previous observer, whose
+  // closure would otherwise redraw the old data on the next resize.
+  if (el.__vqResizeObserver) el.__vqResizeObserver.disconnect();
+  // Starts at 0 so the observer's first callback (right after mounting) redraws
+  // at the settled width — e.g. once a scrollbar has appeared.
   let lastW = 0;
-  new ResizeObserver(() => {
+  const ro = new ResizeObserver(() => {
     const w = el.clientWidth;
     if (!w || w === lastW) return;
     lastW = w;
     redraw();
-  }).observe(el);
+  });
+  ro.observe(el);
+  el.__vqResizeObserver = ro;
 }
 
 // ── Expose on window.VQ ─────────────────────────────────────────────────────

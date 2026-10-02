@@ -872,6 +872,8 @@ body {
                  color      var(--vq-dur) var(--vq-ease);
 }
 
+.vq-toggle__btn[hidden] { display: none; }
+
 .vq-toggle__btn.active {
   background: var(--vq-primary);
   color:      #fff;
@@ -1527,6 +1529,173 @@ body {
   flex-direction: column;
   justify-content: flex-end;
   min-height: 0;
+}
+
+/* ── Overview tabs (Run / Virome): titled groups on a 3-column grid ────── */
+.vq-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vq-space-2);
+}
+.vq-group__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: var(--vq-space-2) 2px 0;
+  border-top: 1px solid var(--vq-border);
+}
+.vq-group__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--vq-primary);
+}
+.vq-group__hint {
+  font-size: 11.5px;
+  color: var(--vq-text-3);
+}
+
+.vq-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--vq-space-3);
+  align-items: stretch;
+}
+.vq-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vq-grid > .vq-chart-card { min-height: auto; }
+.vq-span-2 { grid-column: span 2; }
+.vq-span-3 { grid-column: 1 / -1; }
+
+/* Several cards stacked in one grid column */
+.vq-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vq-space-3);
+  min-width: 0;
+}
+/* flex-basis auto + no shrink: a card is never shorter than its content.
+   (flex: 1 split the height equally, and .vq-chart-card's overflow:hidden turns
+   off the automatic min-height, so a tall chart — e.g. Novelty Profile with six
+   tiers next to two BLAST cards — overflowed upwards over its subtitle.) */
+.vq-stack > .vq-chart-card { flex: 1 0 auto; min-height: auto; }
+
+@media (max-width: 1100px) {
+  .vq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vq-span-2,
+  .vq-wide-narrow { grid-column: 1 / -1; }
+  /* A stack would sit alone next to an empty column: lay it out as a row */
+  .vq-stack { grid-column: 1 / -1; flex-direction: row; }
+  .vq-stack > .vq-chart-card { flex: 1 1 0; min-width: 0; }
+}
+@media (max-width: 680px) {
+  .vq-grid { grid-template-columns: minmax(0, 1fr); }
+  .vq-span-2, .vq-span-3, .vq-wide-narrow { grid-column: auto; }
+  .vq-stack { flex-direction: column; }
+}
+
+/* ── Detected viruses table (Virome) ───────────────────────────────────── */
+.vq-vt-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.vq-vt-tools .vq-input { width: 200px; max-width: 100%; }
+.vq-vt-tools .vq-toggle__btn { white-space: nowrap; }
+
+.vq-vt-wrap {
+  width: 100%;
+  max-height: 440px;
+  overflow: auto;
+  border: 1px solid var(--vq-border);
+  border-radius: var(--vq-radius-sm);
+}
+.vq-vt { font-size: 12px; }
+.vq-vt th {
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  background: var(--vq-surface-2);
+}
+.vq-vt th:hover { color: var(--vq-text); }
+.vq-vt th.vq-vt-sorted { color: var(--vq-primary); }
+.vq-vt-arrow { display: inline-block; width: 10px; margin-left: 3px; font-size: 8px; }
+.vq-vt tbody tr { cursor: pointer; }
+.vq-vt td { vertical-align: middle; white-space: nowrap; }
+.vq-vt-species {
+  font-style: italic;
+  color: var(--vq-text) !important;
+  font-weight: 500;
+  white-space: normal !important;
+  min-width: 180px;
+}
+.vq-vt-num { text-align: right; font-variant-numeric: tabular-nums; }
+.vq-vt-na  { color: var(--vq-text-3); }
+
+/* Contigs of a row split by novelty tier */
+.vq-vt-classes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.vq-vt-classes__bar {
+  display: inline-flex;
+  width: 46px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--vq-bg);
+  flex: 0 0 auto;
+  margin-right: 2px;
+}
+.vq-vt-classes__bar > span { display: block; height: 100%; }
+.vq-vt-cls { font-weight: 600; font-variant-numeric: tabular-nums; }
+.vq-vt-cls--known            { color: #1f7a3c; }
+.vq-vt-cls--variant          { color: #3f7f4c; }
+.vq-vt-cls--novel-species    { color: var(--vq-accent-dark); }
+.vq-vt-cls--divergent        { color: #5b3f8a; }
+.vq-vt-cls--highly-divergent { color: #3d2a66; }
+.vq-vt-cls--non-viral        { color: #a8302b; }
+.vq-vt-dot { color: var(--vq-text-3); }
+
+/* Contigs with no BLASTx hit (HMM / BLASTn evidence only) */
+.vq-vt-nohit td { background: var(--vq-surface-2); }
+.vq-vt-nohit .vq-vt-species { font-style: normal; }
+.vq-vt-note {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--vq-text-3);
+}
+
+.vq-vt-pct {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.vq-vt-pct__bar {
+  width: 54px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--vq-bg);
+  overflow: hidden;
+}
+.vq-vt-pct__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--vq-accent);
+  opacity: .8;
+}
+.vq-vt-pct__val {
+  font-variant-numeric: tabular-nums;
+  color: var(--vq-text);
+  min-width: 34px;
+  text-align: right;
 }
 
 /* Inline legend rows for charts */

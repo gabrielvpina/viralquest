@@ -17,6 +17,9 @@ from .d3_asset import load_d3
 
 _HERE       = Path(__file__).parent
 _COMPONENTS = _HERE / "components-report"
+# Tabs shared with the per-sample report are read from its components so there
+# is a single source (the Sequence Viewer is still kept as a synced copy).
+_SAMPLE_COMPONENTS = _HERE / "components"
 
 
 # ── Public entry point ─────────────────────────────────────────────────────
@@ -67,6 +70,8 @@ def _render_template(report_data: dict, d3_js: str) -> str:
         "{{VQ_CLUSTERS}}":  _read("section_clusters.js"),
         "{{VQ_VIEWER}}":         _read("section_viewer.js"),
         "{{VQ_VIEWER_REPORT}}":  _read("section_viewer_report.js"),
+        "{{VQ_VIRUSES}}":        (_SAMPLE_COMPONENTS / "section_viruses.js").read_text(encoding="utf-8"),
+        "{{VQ_VIRUSES_REPORT}}": _read("section_viruses_report.js"),
         "{{VQ_QUANT}}":          _read("section_quant.js"),
     }
 

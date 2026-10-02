@@ -29,6 +29,8 @@
       </button>
       <button class="vq-nav__tab active" data-section="overview" role="tab"
               id="tab-overview" aria-controls="section-overview" aria-selected="true" tabindex="0">Overview</button>
+      <button class="vq-nav__tab" data-section="virome" role="tab"
+              id="tab-virome" aria-controls="section-virome" aria-selected="false" tabindex="-1">Virome</button>
       <button class="vq-nav__tab" data-section="clusters" role="tab"
               id="tab-clusters" aria-controls="section-clusters" aria-selected="false" tabindex="-1">General Clusters</button>
       <button class="vq-nav__tab" data-section="viewer" role="tab"
@@ -48,6 +50,7 @@
   <main class="vq-main">
     <section class="vq-section"        id="section-about"    role="tabpanel" aria-labelledby="tab-about"    hidden></section>
     <section class="vq-section active" id="section-overview" role="tabpanel" aria-labelledby="tab-overview"></section>
+    <section class="vq-section"        id="section-virome"   role="tabpanel" aria-labelledby="tab-virome"   hidden></section>
     <section class="vq-section"        id="section-clusters" role="tabpanel" aria-labelledby="tab-clusters" hidden></section>
     <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-labelledby="tab-viewer"   hidden></section>
     <section class="vq-section"        id="section-quant"    role="tabpanel" aria-labelledby="tab-quant"    hidden></section>
@@ -78,6 +81,8 @@
   <script>{{VQ_CLUSTERS}}</script>
   <script>{{VQ_VIEWER}}</script>
   <script>{{VQ_VIEWER_REPORT}}</script>
+  <script>{{VQ_VIRUSES}}</script>
+  <script>{{VQ_VIRUSES_REPORT}}</script>
   <script>{{VQ_QUANT}}</script>
 
   <!-- ── Shell controller ───────────────────────────────────── -->
@@ -150,6 +155,7 @@
     vqInitOverview(VQ_REPORT);
     vqInitClusters(VQ_REPORT.clusters || [], VQ_REPORT.samples || []);
     vqInitViewerReport(VQ_REPORT.sequences || []);
+    vqInitVirusesReport(VQ_REPORT.sequences || []);
     vqInitQuant(VQ_REPORT.clusters || [], VQ_REPORT.samples || []);
 
   })();

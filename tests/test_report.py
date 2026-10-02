@@ -231,3 +231,36 @@ def test_render_template_no_unresolved_placeholders(results_root):
     assert "{{TITLE}}" not in html
     assert "vqInitOverview" in html
     assert STUB_D3 in html
+
+
+def test_virome_tab_in_consolidated_report(results_root):
+    data = build_report_data(load_samples(results_root))
+    html = _render_template(data, d3_js=STUB_D3)
+    assert 'data-section="virome"' in html and 'id="section-virome"' in html
+    assert "window.vqInitVirusesReport = vqInitVirusesReport" in html   # sample-filter wrapper
+    assert "window.vqInitViruses = vqInitViruses" in html               # shared Virome tab
+    assert "vqInitVirusesReport(VQ_REPORT.sequences" in html
+    # overview helpers the Virome tab needs are exposed by the report's export.js
+    for name in ("statChip:", "fmtNum:", "pct:", "cardGroup:", "redrawOnResize:"):
+        assert name in html, name
+
+
+def test_virome_tab_has_a_single_source():
+    """The consolidated report inlines the per-sample report's section_viruses.js."""
+    from pathlib import Path
+    import viralquest.report_builder as rb
+    assert (rb._SAMPLE_COMPONENTS / "section_viruses.js").is_file()
+    assert not (Path(rb._COMPONENTS) / "section_viruses.js").exists()
+
+
+def test_export_helpers_identical_in_both_reports():
+    """Overview helpers are copied into components-report/export.js — keep them in sync."""
+    from pathlib import Path
+    import re
+    import viralquest.report_builder as rb
+
+    def block(path):
+        text = Path(path).read_text(encoding="utf-8")
+        return text[text.index("// ── Overview tabs (Run · Virome)"):text.index("// ── Expose on window.VQ")]
+
+    assert block(rb._SAMPLE_COMPONENTS / "export.js") == block(rb._COMPONENTS / "export.js")

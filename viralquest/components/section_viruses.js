@@ -10,8 +10,10 @@
    The Run tab (pipeline / technical) lives in section_stats.js.
    ============================================================ */
 
-function vqInitViruses(report) {
-  _initViromeTab(report);
+/* `mountId` lets viralquest-report mount the tab inside its own wrapper
+   (sample filter bar + host div); the per-sample report uses #section-virome. */
+function vqInitViruses(report, mountId) {
+  _initViromeTab(report, mountId);
 }
 
 // Overview helpers shared with the other overview tab (defined in export.js).
@@ -35,8 +37,8 @@ function _fillHeight(wrap, minH) {
 //  VIROME — what was found: viruses, taxonomy, similarity, sequences
 // ════════════════════════════════════════════════════════════════════════
 
-function _initViromeTab(report) {
-  const el = document.getElementById('section-virome');
+function _initViromeTab(report, mountId) {
+  const el = document.getElementById(mountId || 'section-virome');
   if (!el) return;
 
   const esc       = VQ.esc;
@@ -453,6 +455,8 @@ function _virusRows(viral) {
       || items.slice().sort((a, b) => score(b) - score(a))[0];
     return {
       species, noHit, counts, nov,
+      samples:  [...new Set(items.map(i => i.seq.sample).filter(Boolean))].sort(),
+      get nSamples() { return this.samples.length; },
       known:    counts['viral-known'],
       closest:  _NOV_ORDER.findIndex(t => nov[t] > 0),   // sort key: closest tier first
       family:   _mostCommon(items.map(i => i.seq.taxonomy?.family)) || '',
@@ -534,6 +538,8 @@ function _renderVirusTable(rows, st) {
       ${label}<span class="vq-vt-arrow">${on ? (st.dir > 0 ? '▲' : '▼') : ''}</span></th>`;
   };
   const hasBn = rows.some(r => r.blastn != null);
+  // Multi-sample report: in how many (and which) samples each species occurs.
+  const multi = new Set(rows.flatMap(r => r.samples)).size > 1;
 
   wrap.innerHTML = view.length ? `
     <table class="vq-table vq-vt">
@@ -542,6 +548,7 @@ function _renderVirusTable(rows, st) {
         ${th('closest',  'Contigs by novelty')}
         ${th('family',   'Family')}
         ${th('genome',   'Genome')}
+        ${multi ? th('nSamples', 'Samples', 'vq-vt-num') : ''}
         ${th('contigs',  'Contigs',  'vq-vt-num')}
         ${th('length',   'Total bp', 'vq-vt-num')}
         ${th('identity', 'BLASTx id %')}
@@ -561,6 +568,7 @@ function _renderVirusTable(rows, st) {
             <td>${_noveltyCell(r.nov, r.contigs)}</td>
             <td>${r.family ? esc(r.family) : '<span class="vq-vt-na">—</span>'}</td>
             <td>${r.genome ? esc(r.genome) : '<span class="vq-vt-na">—</span>'}</td>
+            ${multi ? `<td class="vq-vt-num" title="${esc(r.samples.join(', '))}">${r.samples.length}</td>` : ''}
             <td class="vq-vt-num">${r.contigs.toLocaleString()}</td>
             <td class="vq-vt-num">${r.length.toLocaleString()}</td>
             <td>${_pctCell(r.identity)}</td>
