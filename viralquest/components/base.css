@@ -1711,7 +1711,11 @@ body {
   gap: var(--vq-space-3);
   min-width: 0;
 }
-.vq-stack > .vq-chart-card { flex: 1; min-height: auto; }
+/* flex-basis auto + no shrink: a card is never shorter than its content.
+   (flex: 1 split the height equally, and .vq-chart-card's overflow:hidden turns
+   off the automatic min-height, so a tall chart — e.g. Novelty Profile with six
+   tiers next to two BLAST cards — overflowed upwards over its subtitle.) */
+.vq-stack > .vq-chart-card { flex: 1 0 auto; min-height: auto; }
 
 @media (max-width: 1100px) {
   .vq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
