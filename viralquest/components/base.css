@@ -1771,36 +1771,7 @@ body {
 .vq-vt-num { text-align: right; font-variant-numeric: tabular-nums; }
 .vq-vt-na  { color: var(--vq-text-3); }
 
-/* Contigs of a row split by novelty tier */
-.vq-vt-classes {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-}
-.vq-vt-classes__bar {
-  display: inline-flex;
-  width: 46px;
-  height: 6px;
-  border-radius: 3px;
-  overflow: hidden;
-  background: var(--vq-bg);
-  flex: 0 0 auto;
-  margin-right: 2px;
-}
-.vq-vt-classes__bar > span { display: block; height: 100%; }
-.vq-vt-cls { font-weight: 600; font-variant-numeric: tabular-nums; }
-.vq-vt-cls--known            { color: #1f7a3c; }
-.vq-vt-cls--variant          { color: #3f7f4c; }
-.vq-vt-cls--novel-species    { color: var(--vq-accent-dark); }
-.vq-vt-cls--divergent        { color: #5b3f8a; }
-.vq-vt-cls--highly-divergent { color: #3d2a66; }
-.vq-vt-cls--non-viral        { color: #a8302b; }
-.vq-vt-dot { color: var(--vq-text-3); }
-
 /* Contigs with no BLASTx hit (HMM / BLASTn evidence only) */
-.vq-vt-nohit td { background: var(--vq-surface-2); }
-.vq-vt-nohit .vq-vt-species { font-style: normal; }
 .vq-vt-note {
   display: block;
   font-size: 10.5px;
@@ -1808,30 +1779,29 @@ body {
   color: var(--vq-text-3);
 }
 
-.vq-vt-pct {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.vq-vt-pct__bar {
-  width: 54px;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--vq-bg);
-  overflow: hidden;
-}
-.vq-vt-pct__bar > span {
+/* Match quality of an identity / coverage value (Detected Viruses table) */
+.vq-q        { font-variant-numeric: tabular-nums; }
+.vq-q--hi    { color: #1f7a3c; font-weight: 700; }
+.vq-q--ok    { color: var(--vq-text); font-weight: 600; }
+.vq-q--mid   { color: #b26b00; font-weight: 600; }
+.vq-q--lo    { color: #a8302b; font-weight: 700; background: #fbe3e6;
+               padding: 1px 5px; border-radius: 4px; }
+.vq-vt-contig { color: var(--vq-text); font-size: 11.5px; }
+.vq-vt-flags {
   display: block;
-  height: 100%;
-  background: var(--vq-accent);
-  opacity: .8;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--vq-text-3);
 }
-.vq-vt-pct__val {
-  font-variant-numeric: tabular-nums;
-  color: var(--vq-text);
-  min-width: 34px;
-  text-align: right;
+.vq-vt-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 8px 2px 0;
+  font-size: 11px;
+  color: var(--vq-text-3);
 }
+.vq-vt-legend .vq-q { margin-right: 3px; }
 
 /* Inline legend rows for charts */
 .vq-chart-legend {

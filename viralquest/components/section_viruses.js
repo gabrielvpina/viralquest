@@ -62,12 +62,21 @@ function _initViromeTab(report, mountId) {
         </div>
         <div class="vq-vt-tools">
           <input class="vq-input vq-input--sm" type="search" id="stats-viruses-search"
-                 placeholder="Filter species, family…" aria-label="Filter detected viruses">
+                 placeholder="Filter contig, species, family…" aria-label="Filter detected viruses">
           <select class="vq-select" id="stats-viruses-novelty" aria-label="Filter by novelty tier"></select>
+          <button class="vq-btn vq-btn--sm" type="button" id="stats-viruses-csv"
+                  title="Download the rows shown (filter and sort applied) as CSV">Export CSV</button>
         </div>
       </div>
       <div class="vq-chart-card__body" style="justify-content:flex-start">
         <div class="vq-vt-wrap" id="stats-viruses-table"></div>
+        <div class="vq-vt-legend">
+          <span>match quality:</span>
+          <span><span class="vq-q vq-q--hi">high</span> aa ≥90 · nt ≥95 · cov ≥70</span>
+          <span><span class="vq-q vq-q--ok">good</span> aa 70–90 · nt 85–95</span>
+          <span><span class="vq-q vq-q--mid">partial</span> aa 40–70 · nt 70–85 · cov 40–70</span>
+          <span><span class="vq-q vq-q--lo">weak</span> aa &lt;40 · nt &lt;70 · cov &lt;40</span>
+        </div>
       </div>
     </div>`;
 
@@ -219,8 +228,9 @@ function _initViromeTab(report, mountId) {
     </div>`;
 
   // ── Detected viruses table (search + class filter + sorting) ──
-  const tableState = { q: '', status: 'all', sort: 'contigs', dir: -1 };
-  const drawTable = () => _renderVirusTable(viruses, tableState);
+  const contigs    = _contigRows(viral);
+  const tableState = { q: '', status: 'all', sort: 'novRank', dir: 1 };
+  const drawTable = () => _renderVirusTable(contigs, tableState);
   document.getElementById('stats-viruses-search')?.addEventListener('input', e => {
     tableState.q = e.target.value.trim().toLowerCase(); drawTable();
   });
@@ -231,7 +241,8 @@ function _initViromeTab(report, mountId) {
     const th = e.target.closest('th[data-sort]');
     if (th) {
       const key = th.dataset.sort;
-      tableState.dir = tableState.sort === key ? -tableState.dir : (key === 'species' || key === 'family' ? 1 : -1);
+      const ascFirst = ['contig', 'sample', 'species', 'novRank', 'family', 'genome', 'bxAcc', 'bnAcc'];
+      tableState.dir = tableState.sort === key ? -tableState.dir : (ascFirst.includes(key) ? 1 : -1);
       tableState.sort = key;
       drawTable();
       return;
@@ -239,6 +250,12 @@ function _initViromeTab(report, mountId) {
     if (e.target.closest('a')) return;                      // accession link
     const row = e.target.closest('tr[data-seq]');
     if (row) VQ.jumpToViewer(row.dataset.seq);
+  });
+  document.getElementById('stats-viruses-csv')?.addEventListener('click', () => {
+    const samples = [...new Set(contigs.map(r => r.sample).filter(Boolean))];
+    const base = samples.length > 1 ? 'viralquest_multisample'
+      : (samples[0] || (report.meta?.input_file?.name || 'viralquest').replace(/\.[^.]+$/, ''));
+    VQ.downloadText(_virusTableCsv(contigs, tableState), `${base}_viral_contigs.csv`);
   });
   drawTable();
 
@@ -424,73 +441,108 @@ function _proteinUrl(acc) {
 
 const _NO_BLASTX = 'No BLASTx hit';
 
-/* One row per best-hit species, plus one row for contigs with no BLASTx hit
-   (viral evidence from HMM / BLASTn only — often the most novel candidates). */
+/* Species-level summary for the KPI chips: one entry per best-hit species
+   (plus one for contigs with no BLASTx hit). */
 function _virusRows(viral) {
   const groups = new Map();
   viral.forEach(s => {
     const hit = _bestBlastx(s);
     const key = hit ? _hitSpecies(hit) : _NO_BLASTX;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({ seq: s, hit, bn: _bestBlastn(s), cls: _seqClass(s), nov: _seqNovelty(s).tier });
+    if (!groups.has(key)) groups.set(key, { species: key, noHit: !hit, known: 0 });
+    if (_seqClass(s) === 'viral-known') groups.get(key).known++;
   });
+  return [...groups.values()];
+}
 
-  return [...groups.entries()].map(([species, items]) => {
-    const noHit  = species === _NO_BLASTX;
-    const counts = { 'viral-known': 0, 'viral-unknown': 0, 'non-viral': 0 };
-    items.forEach(i => { counts[i.cls]++; });
-    const nov = Object.fromEntries(_NOV_ORDER.map(t => [t, 0]));
-    items.forEach(i => { nov[i.nov]++; });
-    const withHit = items.filter(i => i.hit);
-    const best = withHit.length
-      ? withHit.reduce((a, b) => (b.hit.pct_identity > a.hit.pct_identity ? b : a)) : null;
-    const bnBest = items.map(i => i.bn).filter(Boolean)
-      .reduce((a, b) => (!a || b.pident > a.pident ? b : a), null);
-    // Row click opens a known contig when there is one, else the closest match,
-    // else (no BLASTx) the highest-scoring contig.
-    const score = i => i.seq.heuristic_output?.vq_score ?? 0;
-    const open = items.find(i => i.cls === 'viral-known' && i === best)
-      || items.filter(i => i.cls === 'viral-known').sort((a, b) => score(b) - score(a))[0]
-      || best
-      || items.slice().sort((a, b) => score(b) - score(a))[0];
+const _NUC_ACC = /^[A-Za-z0-9_]+(\.[0-9]+)?$/;
+function _nucleotideUrl(acc) {
+  return acc && _NUC_ACC.test(acc)
+    ? `https://www.ncbi.nlm.nih.gov/nuccore/${encodeURIComponent(acc)}` : null;
+}
+
+/* One row per viral contig: best BLASTx (NR first, RefSeq fallback) and best
+   BLASTn hit by bit score, novelty tier and taxonomy. */
+function _contigRows(viral) {
+  return viral.map(s => {
+    const bx  = _bestBlastx(s);
+    const bn  = _bestBlastn(s);
+    const nov = _seqNovelty(s);
     return {
-      species, noHit, counts, nov,
-      samples:  [...new Set(items.map(i => i.seq.sample).filter(Boolean))].sort(),
-      get nSamples() { return this.samples.length; },
-      known:    counts['viral-known'],
-      closest:  _NOV_ORDER.findIndex(t => nov[t] > 0),   // sort key: closest tier first
-      family:   _mostCommon(items.map(i => i.seq.taxonomy?.family)) || '',
-      genome:   _mostCommon(items.map(i => i.seq.taxonomy?.genome)) || '',
-      contigs:  items.length,
-      length:   items.reduce((a, i) => a + (i.seq.length || 0), 0),
-      identity: best ? best.hit.pct_identity : null,
-      coverage: best ? (best.hit.query_coverage ?? 0) : null,
-      blastn:   bnBest ? bnBest.pident : null,
-      accession: best ? best.hit.subject_id : null,
-      seqId:    open.seq.id,
+      seqId:    s.id,                              // multi-sample report: the gid
+      contig:   s._orig_id || s.id,
+      sample:   s.sample || '',
+      species:  bx ? _hitSpecies(bx) : '',
+      noHit:    !bx,
+      nov:      nov.tier,
+      flags:    nov.flags,
+      novRank:  _NOV_ORDER.indexOf(nov.tier),
+      family:   s.taxonomy?.family || '',
+      genome:   s.taxonomy?.genome || '',
+      length:   s.length || 0,
+      bxId:     bx ? bx.pct_identity : null,
+      bxCov:    bx ? (bx.query_coverage ?? null) : null,
+      bxAcc:    bx ? bx.subject_id : '',
+      bxTitle:  bx ? bx.subject_title || '' : '',
+      bnId:     bn ? bn.pident : null,
+      bnCov:    bn ? (bn.qcovhsp ?? null) : null,
+      bnAcc:    bn ? (bn.accession || '') : '',
+      bnTitle:  bn ? bn.stitle || '' : '',
     };
   });
 }
 
-function _pctCell(v) {
-  if (v == null) return '<span class="vq-vt-na">—</span>';
-  const w = Math.max(0, Math.min(100, v));
-  return `
-    <span class="vq-vt-pct">
-      <span class="vq-vt-pct__bar"><span style="width:${w}%"></span></span>
-      <span class="vq-vt-pct__val">${v.toFixed(1)}</span>
-    </span>`;
+/* Quality of a similarity value, by the same cut-offs as the novelty tiers:
+   aa ≥90 species-level · 70–90 novel species · 40–70 divergent · <40 remote;
+   nt ≥95 species (ANI) · 85–95 variant · 70–85 distant · <70 remote;
+   coverage ≥70 well covered · 40–70 partial · <40 short alignment. */
+const _QUALITY = {
+  bxId:  [[90, 'hi', '≥90% aa · species level'], [70, 'ok', '70–90% aa · putative novel species'],
+          [40, 'mid', '40–70% aa · divergent'], [-1, 'lo', '<40% aa · remote homology']],
+  bnId:  [[95, 'hi', '≥95% nt · same species (ANI)'], [85, 'ok', '85–95% nt · variant'],
+          [70, 'mid', '70–85% nt · distant'], [-1, 'lo', '<70% nt · remote']],
+  cov:   [[70, 'hi', '≥70% of the contig aligned'], [40, 'mid', '40–70% aligned · partial'],
+          [-1, 'lo', '<40% aligned · short alignment']],
+};
+
+function _qualityCell(v, scale) {
+  if (v == null || isNaN(v)) return '<td class="vq-vt-num"><span class="vq-vt-na">—</span></td>';
+  const [, q, why] = _QUALITY[scale].find(([t]) => v >= t);
+  return `<td class="vq-vt-num"><span class="vq-q vq-q--${q}" title="${VQ.esc(why)}">${v.toFixed(1)}</span></td>`;
 }
 
-/* Contigs of a row split by novelty tier: stacked bar + "2 variant · 5 novel species". */
-function _noveltyCell(nov, total) {
-  const parts = _NOV_ORDER.filter(t => nov[t]);
-  const bar = parts.map(t =>
-    `<span class="vq-nfill--${t}" style="width:${(nov[t] / total * 100).toFixed(1)}%"></span>`).join('');
-  const text = parts.map(t =>
-    `<span class="vq-vt-cls vq-vt-cls--${t}" title="${VQ.esc(_NOV_LONG[t])}">${nov[t]} ${_NOV_LABEL[t].toLowerCase()}</span>`)
-    .join('<span class="vq-vt-dot">·</span>');
-  return `<span class="vq-vt-classes"><span class="vq-vt-classes__bar">${bar}</span>${text}</span>`;
+function _accCell(acc, url, title) {
+  const esc = VQ.esc;
+  if (!acc) return '<td class="vq-td--mono"><span class="vq-vt-na">—</span></td>';
+  const t = title ? ` title="${esc(title)}"` : '';
+  return `<td class="vq-td--mono">${url
+    ? `<a class="vq-acc-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer"${t}>${esc(acc)}</a>`
+    : `<span${t}>${esc(acc)}</span>`}</td>`;
+}
+
+function _noveltyPill(r) {
+  return `<span class="vq-nov vq-nov--${r.nov}" title="${VQ.esc(_NOV_LONG[r.nov])}">${_NOV_LABEL[r.nov]}</span>` +
+    (r.flags.length ? `<span class="vq-vt-flags">${r.flags.map(VQ.esc).join(' · ')}</span>` : '');
+}
+
+function _filteredContigs(rows, st) {
+  let view = rows.filter(r =>
+    (st.status === 'all' || r.nov === st.status) &&
+    (!st.q || `${r.contig} ${r.sample} ${r.species} ${r.family} ${r.genome} ${r.bxAcc} ${r.bnAcc}`
+      .toLowerCase().includes(st.q)));
+  const key = st.sort;
+  return view.sort((a, b) => {
+    const x = a[key], y = b[key];
+    let d;
+    if (typeof x === 'string' || typeof y === 'string') {
+      // Empty strings (no hit / no taxonomy) always last.
+      if (!x !== !y) return !x ? 1 : -1;
+      d = st.dir * String(x).localeCompare(String(y));
+    } else {
+      if ((x == null) !== (y == null)) return x == null ? 1 : -1;
+      d = st.dir * ((x ?? 0) - (y ?? 0));
+    }
+    return d || (b.bxId ?? -1) - (a.bxId ?? -1) || a.contig.localeCompare(b.contig);
+  });
 }
 
 function _renderVirusTable(rows, st) {
@@ -498,34 +550,21 @@ function _renderVirusTable(rows, st) {
   if (!wrap) return;
   const esc = VQ.esc;
 
-  // Filter counts = species (rows) having at least one contig in that tier.
   const sel = document.getElementById('stats-viruses-novelty');
   if (sel && !sel.dataset.built) {
-    const n = t => rows.filter(r => r.nov[t] > 0).length;
+    const n = t => rows.filter(r => r.nov === t).length;
     sel.innerHTML = `<option value="all">All novelty tiers · ${rows.length}</option>` +
       _NOV_ORDER.filter(t => n(t)).map(t =>
         `<option value="${t}">${_NOV_LABEL[t]} · ${n(t)}</option>`).join('');
     sel.dataset.built = '1';
   }
 
-  let view = rows.filter(r =>
-    (st.status === 'all' || r.nov[st.status] > 0) &&
-    (!st.q || `${r.species} ${r.family} ${r.genome}`.toLowerCase().includes(st.q)));
-  const key = st.sort;
-  view = view.sort((a, b) => {
-    if (a.noHit !== b.noHit) return a.noHit ? 1 : -1;          // HMM-only row last
-    const x = a[key], y = b[key];
-    if (typeof x === 'string' || typeof y === 'string')
-      return st.dir * String(x || '').localeCompare(String(y || ''));
-    return st.dir * ((x ?? -1) - (y ?? -1)) || a.species.localeCompare(b.species);
-  });
-
-  const nSpecies = rows.filter(r => !r.noHit).length;
-  const noHit = rows.find(r => r.noHit);
+  const view = _filteredContigs(rows, st);
   const sub = document.getElementById('stats-viruses-sub');
   if (sub) sub.textContent =
-    `${nSpecies} species${noHit ? ` + ${noHit.contigs} contigs without a BLASTx hit` : ''} · ` +
-    `contigs by novelty tier (heuristic score; hover a tier for its criterion) · click a row to open its best contig`;
+    `${view.length === rows.length ? rows.length : `${view.length} of ${rows.length}`} viral contigs · ` +
+    `best BLASTx and BLASTn hit per contig · colour = quality of the match (hover for the criterion) · ` +
+    `click a row to open the contig`;
 
   if (!rows.length) {
     wrap.innerHTML = '<div class="vq-empty" style="padding:24px;font-size:12px">No viral sequences.</div>';
@@ -537,50 +576,79 @@ function _renderVirusTable(rows, st) {
     return `<th data-sort="${k}" class="${cls}${on ? ' vq-vt-sorted' : ''}" scope="col">
       ${label}<span class="vq-vt-arrow">${on ? (st.dir > 0 ? '▲' : '▼') : ''}</span></th>`;
   };
-  const hasBn = rows.some(r => r.blastn != null);
-  // Multi-sample report: in how many (and which) samples each species occurs.
-  const multi = new Set(rows.flatMap(r => r.samples)).size > 1;
+  const hasBn = rows.some(r => r.bnId != null);
+  const multi = new Set(rows.map(r => r.sample).filter(Boolean)).size > 1;
 
   wrap.innerHTML = view.length ? `
     <table class="vq-table vq-vt">
       <thead><tr>
-        ${th('species',  'Species')}
-        ${th('closest',  'Contigs by novelty')}
-        ${th('family',   'Family')}
-        ${th('genome',   'Genome')}
-        ${multi ? th('nSamples', 'Samples', 'vq-vt-num') : ''}
-        ${th('contigs',  'Contigs',  'vq-vt-num')}
-        ${th('length',   'Total bp', 'vq-vt-num')}
-        ${th('identity', 'BLASTx id %')}
-        ${th('coverage', 'Coverage %')}
-        ${hasBn ? th('blastn', 'BLASTn id %') : ''}
-        <th scope="col">Best hit</th>
+        ${th('contig',  'Contig')}
+        ${multi ? th('sample', 'Sample') : ''}
+        ${th('species', 'Species')}
+        ${th('novRank', 'Novelty')}
+        ${th('family',  'Family')}
+        ${th('genome',  'Genome')}
+        ${th('length',  'Length (bp)', 'vq-vt-num')}
+        ${th('bxId',    'BLASTx id %', 'vq-vt-num')}
+        ${th('bxCov',   'BLASTx cov %', 'vq-vt-num')}
+        ${th('bxAcc',   'BLASTx best hit')}
+        ${hasBn ? th('bnId',  'BLASTn id %', 'vq-vt-num') : ''}
+        ${hasBn ? th('bnCov', 'BLASTn cov %', 'vq-vt-num') : ''}
+        ${hasBn ? th('bnAcc', 'BLASTn best hit') : ''}
       </tr></thead>
       <tbody>
-        ${view.map(r => {
-          const url = _proteinUrl(r.accession);
-          return `
-          <tr data-seq="${esc(r.seqId)}"${r.noHit ? ' class="vq-vt-nohit"' : ''}
-              title="Open ${esc(r.seqId)} in the Sequence Viewer">
+        ${view.map(r => `
+          <tr data-seq="${esc(r.seqId)}" title="Open ${esc(r.contig)} in the Sequence Viewer">
+            <td class="vq-td--mono vq-vt-contig">${esc(r.contig)}</td>
+            ${multi ? `<td>${esc(r.sample)}</td>` : ''}
             <td class="vq-vt-species">${r.noHit
-              ? `${esc(r.species)}<span class="vq-vt-note">viral evidence from HMM / BLASTn only</span>`
+              ? `<span class="vq-vt-na">${_NO_BLASTX}</span><span class="vq-vt-note">viral evidence from HMM / BLASTn only</span>`
               : esc(r.species)}</td>
-            <td>${_noveltyCell(r.nov, r.contigs)}</td>
+            <td>${_noveltyPill(r)}</td>
             <td>${r.family ? esc(r.family) : '<span class="vq-vt-na">—</span>'}</td>
             <td>${r.genome ? esc(r.genome) : '<span class="vq-vt-na">—</span>'}</td>
-            ${multi ? `<td class="vq-vt-num" title="${esc(r.samples.join(', '))}">${r.samples.length}</td>` : ''}
-            <td class="vq-vt-num">${r.contigs.toLocaleString()}</td>
             <td class="vq-vt-num">${r.length.toLocaleString()}</td>
-            <td>${_pctCell(r.identity)}</td>
-            <td>${_pctCell(r.coverage)}</td>
-            ${hasBn ? `<td>${_pctCell(r.blastn)}</td>` : ''}
-            <td class="vq-td--mono">${url
-              ? `<a class="vq-acc-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(r.accession)}</a>`
-              : `<span class="vq-vt-na">${esc(r.accession || '—')}</span>`}</td>
-          </tr>`;
-        }).join('')}
+            ${_qualityCell(r.bxId, 'bxId')}
+            ${_qualityCell(r.bxCov, 'cov')}
+            ${_accCell(r.bxAcc, _proteinUrl(r.bxAcc), r.bxTitle)}
+            ${hasBn ? _qualityCell(r.bnId, 'bnId') : ''}
+            ${hasBn ? _qualityCell(r.bnCov, 'cov') : ''}
+            ${hasBn ? _accCell(r.bnAcc, _nucleotideUrl(r.bnAcc), r.bnTitle) : ''}
+          </tr>`).join('')}
       </tbody>
-    </table>` : '<div class="vq-empty" style="padding:24px;font-size:12px">No species match the filter.</div>';
+    </table>` : '<div class="vq-empty" style="padding:24px;font-size:12px">No contigs match the filter.</div>';
+}
+
+/* CSV of the rows currently shown (filter + sort): plain numbers (no %, no
+   thousands separators), RFC 4180 quoting, novelty flags joined with ";". */
+function _virusTableCsv(rows, st) {
+  const multi = new Set(rows.map(r => r.sample).filter(Boolean)).size > 1;
+  const cols = [
+    ['contig_id',          r => r.contig],
+    ...(multi ? [['sample', r => r.sample]] : []),
+    ['species',            r => r.species],
+    ['novelty',            r => r.nov],
+    ['novelty_flags',      r => r.flags.join(';')],
+    ['family',             r => r.family],
+    ['genome',             r => r.genome],
+    ['length_bp',          r => r.length],
+    ['blastx_identity',    r => r.bxId],
+    ['blastx_coverage',    r => r.bxCov],
+    ['blastx_accession',   r => r.bxAcc],
+    ['blastx_subject',     r => r.bxTitle],
+    ['blastn_identity',    r => r.bnId],
+    ['blastn_coverage',    r => r.bnCov],
+    ['blastn_accession',   r => r.bnAcc],
+    ['blastn_subject',     r => r.bnTitle],
+  ];
+  const cell = v => {
+    if (v == null || (typeof v === 'number' && isNaN(v))) return '';
+    const s = String(v);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [cols.map(([h]) => h).join(',')];
+  _filteredContigs(rows, st).forEach(r => lines.push(cols.map(([, f]) => cell(f(r))).join(',')));
+  return lines.join('\r\n') + '\r\n';
 }
 
 /* Contigs per novelty tier, closest → farthest, with the qualifier flags. */
