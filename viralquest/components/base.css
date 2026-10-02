@@ -872,6 +872,8 @@ body {
                  color      var(--vq-dur) var(--vq-ease);
 }
 
+.vq-toggle__btn[hidden] { display: none; }
+
 .vq-toggle__btn.active {
   background: var(--vq-primary);
   color:      #fff;
@@ -1695,6 +1697,7 @@ body {
   justify-content: flex-end;
 }
 .vq-vt-tools .vq-input { width: 200px; max-width: 100%; }
+.vq-vt-tools .vq-toggle__btn { white-space: nowrap; }
 
 .vq-vt-wrap {
   width: 100%;
@@ -1725,16 +1728,39 @@ body {
 .vq-vt-num { text-align: right; font-variant-numeric: tabular-nums; }
 .vq-vt-na  { color: var(--vq-text-3); }
 
-.vq-vt-status {
+/* Contigs of a row split by heuristic class (palette of the Viewer badges) */
+.vq-vt-classes {
   display: inline-flex;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 600;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
 }
-.vq-vt-status--known     { background: #e6f4ea; color: #1f7a3c; }
-.vq-vt-status--related   { background: var(--vq-accent-subtle); color: var(--vq-accent-dark); }
-.vq-vt-status--divergent { background: #fef3d7; color: #9b6a09; }
+.vq-vt-classes__bar {
+  display: inline-flex;
+  width: 46px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--vq-bg);
+  flex: 0 0 auto;
+  margin-right: 2px;
+}
+.vq-vt-classes__bar > span { display: block; height: 100%; }
+.vq-vt-cls { font-weight: 600; font-variant-numeric: tabular-nums; }
+.vq-vt-cls--viral-known   { color: #1f7a3c; }
+.vq-vt-cls--viral-unknown { color: #9b6a09; }
+.vq-vt-cls--non-viral     { color: #a8302b; }
+.vq-vt-dot { color: var(--vq-text-3); }
+
+/* Contigs with no BLASTx hit (HMM / BLASTn evidence only) */
+.vq-vt-nohit td { background: var(--vq-surface-2); }
+.vq-vt-nohit .vq-vt-species { font-style: normal; }
+.vq-vt-note {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--vq-text-3);
+}
 
 .vq-vt-pct {
   display: inline-flex;
