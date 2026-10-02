@@ -47,6 +47,31 @@ def _detect_steps(s: SampleReport) -> dict[str, bool]:
     return {"nr": nr, "blastn": blastn, "salmon": salmon, "llm": llm, "cap3": cap3}
 
 
+def _summarize_workflow(s: SampleReport) -> dict | None:
+    """Pipeline workflow record (steps, times, options) — ``None`` for runs older than v3.0.2."""
+    wf = s.pipeline_stats.get("workflow")
+    if not isinstance(wf, dict) or not wf.get("steps"):
+        return None
+    return {
+        "started_at":    wf.get("started_at"),
+        "finished_at":   wf.get("finished_at"),
+        "total_seconds": wf.get("total_seconds"),
+        "options":       wf.get("options") or {},
+        "version":       (s.report.get("meta") or {}).get("viralquest_version"),
+        "steps": [
+            {
+                "key":     st.get("key"),
+                "label":   st.get("label") or st.get("key"),
+                "status":  st.get("status") or "done",
+                "seconds": st.get("seconds"),
+                "details": st.get("details") or {},
+                "message": st.get("message"),
+            }
+            for st in wf["steps"] if st.get("key")
+        ],
+    }
+
+
 def _best_species(seq: dict) -> str | None:
     """Best BLASTx species: NR first hit, fallback RefSeq first hit."""
     for key in ("blastx_nr_hits", "blastx_hits"):
@@ -155,6 +180,7 @@ def _summarize_sample(s: SampleReport) -> dict:
         "llm_scores":   llm_scores,
         "n_clusters":   0,   # filled in stage 2 (cross-sample clusters per sample)
         "steps":        _detect_steps(s),
+        "workflow":     _summarize_workflow(s),
         "salmon":       _summarize_salmon(s),
     }
 

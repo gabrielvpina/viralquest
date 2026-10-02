@@ -10,14 +10,6 @@
    samples to many, and degrades gracefully when data is absent.
    ============================================================ */
 
-const STEP_LABELS = [
-  ['nr',     'NR'],
-  ['blastn', 'BLASTn'],
-  ['salmon', 'Salmon'],
-  ['llm',    'LLM'],
-  ['cap3',   'CAP3'],
-];
-
 const PALETTE = [
   '#2563eb', '#16a34a', '#db2777', '#d97706', '#7c3aed',
   '#0891b2', '#dc2626', '#65a30d', '#c026d3', '#0d9488',
@@ -77,16 +69,8 @@ function vqInitOverview(report) {
                 report.has_clusters ? 'shared between samples' : 'none detected')}
       </div>
 
-      <!-- Pipeline uniformity matrix — always full width -->
-      <div class="vq-chart-card" id="ov-steps-card" style="min-height:auto">
-        <div class="vq-chart-card__head">
-          <div>
-            <div class="vq-chart-card__title">Pipeline Steps per Sample</div>
-            <div class="vq-chart-card__sub">which optional stages ran — analysis uniformity</div>
-          </div>
-        </div>
-        <div class="vq-chart-card__body" id="ov-steps-body"></div>
-      </div>
+      <!-- Pipeline workflow per sample — always full width -->
+      ${_workflowCardHtml(samples)}
 
       ${anyConserved ? `
       <!-- Host attribution — full width, one column per sample -->
@@ -116,7 +100,7 @@ function vqInitOverview(report) {
   `;
 
   // ── Render charts ───────────────────────────────────────────────────────
-  _renderStepsMatrix(document.getElementById('ov-steps-body'), samples);
+  _renderWorkflowMatrix(samples);
   if (anyConserved) _renderKingdomMatrix(_body('ov-kingdoms'), salmonSamples);
   if (anySalmon)
     _barChart(_body('ov-maprate'),
@@ -160,32 +144,368 @@ function _card(id, title, sub, cls) {
 
 const _body = id => document.getElementById(id + '-body');
 
-// ── Pipeline steps matrix ───────────────────────────────────────────────────
+// ── Pipeline workflow per sample ────────────────────────────────────────────
+// Same data as the per-sample "Pipeline Workflow" card (pipeline_stats.workflow):
+// one lane per sample, one column per step, success path between executed
+// steps, per-step time, run options and a click-through detail panel.
+// Samples from runs older than v3.0.2 carry no workflow record; their lane
+// falls back to the detected optional stages (NR, BLASTn, Salmon, LLM).
 
-function _renderStepsMatrix(host, samples) {
-  if (!host) return;
+const _WF_ORDER = [
+  'parse', 'orfs', 'refseq', 'hmm', 'nr', 'blastn', 'pfam', 'taxonomy',
+  'clusters', 'salmon', 'seq_quality', 'coverage', 'heuristic', 'llm', 'export',
+];
+const _WF_SHORT = {
+  parse: 'Parse FASTA', orfs: 'ORFs', refseq: 'RefSeq', hmm: 'HMM filter',
+  nr: 'Diamond NR', blastn: 'BLASTn', pfam: 'Pfam', taxonomy: 'Taxonomy',
+  clusters: 'Clusters', salmon: 'Salmon', seq_quality: 'Seq quality',
+  coverage: 'Coverage', heuristic: 'Heuristic', llm: 'LLM', export: 'Export',
+};
+const _WF_STATUS = {
+  done:    { label: 'Completed', color: 'var(--vq-success)', glyph: '✓' },
+  partial: { label: 'Partial',   color: 'var(--vq-warning)', glyph: '!' },
+  error:   { label: 'Error',     color: 'var(--vq-danger)',  glyph: '✕' },
+  skipped: { label: 'Skipped',   color: 'var(--vq-text-3)',  glyph: ''  },
+};
+const _WF_OVERALL_TEXT = { done: 'Completed', partial: 'Warnings', error: 'Errors', legacy: 'No record' };
+
+function _fmtDur(sec) {
+  if (sec == null || isNaN(sec)) return '—';
+  if (sec < 1)    return (sec * 1000).toFixed(0) + ' ms';
+  if (sec < 60)   return sec.toFixed(1) + ' s';
+  const r = Math.round(sec), m = Math.floor(r / 60), s = r % 60;
+  if (r < 3600) return `${m}m ${String(s).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+const _wfStatus = s => _WF_STATUS[s] || _WF_STATUS.done;
+
+function _wfPill(status, text) {
+  const cls = _WF_STATUS[status] ? status : 'skipped';
+  return `<span class="vq-wf-pill vq-wf-pill--${cls}">${VQ.esc(text ?? _wfStatus(status).label)}</span>`;
+}
+
+function _wfMiniRow(label, value, wide = false) {
+  return `
+    <div class="ov-wf-kv${wide ? ' ov-wf-kv--wide' : ''}">
+      <span class="ov-wf-kv__k">${VQ.esc(label)}</span>
+      <span class="ov-wf-kv__v">${value}</span>
+    </div>`;
+}
+
+/** One lane per sample: {sample, legacy, steps: {key: step}, total, overall, options, ...}. */
+function _wfLanes(samples) {
+  return samples.map(s => {
+    const wf = s.workflow;
+    if (wf && (wf.steps || []).length) {
+      const steps = {};
+      wf.steps.forEach(st => { steps[st.key] = st; });
+      const list  = wf.steps;
+      const total = wf.total_seconds || list.reduce((a, st) => a + (st.seconds || 0), 0);
+      const overall = list.some(st => st.status === 'error')   ? 'error'
+                    : list.some(st => st.status === 'partial') ? 'partial' : 'done';
+      return { sample: s.sample, legacy: false, steps, list, total, overall,
+               options: wf.options || {}, started: wf.started_at, version: wf.version };
+    }
+    // Legacy run: only the optional stages detected from the results are known.
+    const flags = s.steps || {};
+    const steps = {};
+    ['nr', 'blastn', 'salmon', 'llm'].forEach(k => {
+      if (!(k in flags)) return;
+      steps[k] = { key: k, label: _WF_SHORT[k], status: flags[k] ? 'done' : 'skipped',
+                   seconds: null, details: {},
+                   message: 'detected from results — no workflow record (run before v3.0.2)' };
+    });
+    return { sample: s.sample, legacy: true, steps, list: Object.values(steps), total: null,
+             overall: 'legacy', options: { cap3: !!flags.cap3 }, started: null, version: null };
+  });
+}
+
+function _wfColumns(lanes) {
+  const present = new Set();
+  lanes.forEach(l => Object.keys(l.steps).forEach(k => present.add(k)));
+  const cols = _WF_ORDER.filter(k => present.has(k));
+  present.forEach(k => { if (!cols.includes(k)) cols.push(k); });
+  return cols;
+}
+
+/** Option chips for one sample — same set as the per-sample workflow card. */
+function _wfOptionChips(o, legacy) {
   const esc = VQ.esc;
-  const yes = `<span class="ov-step ov-step--yes" title="ran">✓</span>`;
-  const no  = `<span class="ov-step ov-step--no"  title="not run">·</span>`;
+  const opt = (label, value, on = true) =>
+    `<span class="vq-wf-opt${on ? '' : ' vq-wf-opt--off'}">
+       <span class="vq-wf-opt__k">${esc(label)}</span>${esc(value)}</span>`;
+  if (legacy) return opt('CAP3', o.cap3 ? 'on' : 'off', !!o.cap3);
+  const reads = (o.reads || []).length
+    ? `${o.reads.length} file${o.reads.length > 1 ? 's' : ''}${o.read_type ? ' · ' + o.read_type : ''}`
+    : 'off';
+  return [
+    o.input ? opt('Input', o.input) : '',
+    o.threads != null ? opt('Threads', o.threads) : '',
+    opt('CAP3', o.cap3 ? 'on' : 'off', !!o.cap3),
+    opt('NR', o.nr_db || 'off', !!o.nr_db),
+    opt('BLASTn', o.blastn || 'off', !!o.blastn),
+    opt('Reads', reads, !!(o.reads || []).length),
+    o.transcriptome ? opt('Transcriptome', o.transcriptome) : '',
+    opt('LLM', o.llm || 'off', !!o.llm),
+    o.force ? opt('Force', 'on') : '',
+  ].join('');
+}
 
-  const rows = samples.map(s => `
-    <tr>
-      <td class="ov-matrix__sample" title="${esc(s.sample)}">${esc(s.sample)}</td>
-      ${STEP_LABELS.map(([k]) => `<td>${(s.steps || {})[k] ? yes : no}</td>`).join('')}
-    </tr>`).join('');
+/** Cross-sample option uniformity: one chip per option, "mixed" when samples differ. */
+function _wfSharedOptions(lanes) {
+  const esc = VQ.esc;
+  const recs = lanes.filter(l => !l.legacy);
+  if (!recs.length) return '';
+  const fields = [
+    ['Threads', o => o.threads != null ? String(o.threads) : '—'],
+    ['CAP3',    o => o.cap3 ? 'on' : 'off'],
+    ['NR',      o => o.nr_db || 'off'],
+    ['BLASTn',  o => o.blastn || 'off'],
+    ['Reads',   o => (o.reads || []).length ? (o.read_type || 'on') : 'off'],
+    ['LLM',     o => o.llm || 'off'],
+  ];
+  return fields.map(([label, get]) => {
+    const byVal = new Map();
+    recs.forEach(l => {
+      const v = get(l.options);
+      if (!byVal.has(v)) byVal.set(v, []);
+      byVal.get(v).push(l.sample);
+    });
+    if (byVal.size === 1) {
+      const v = [...byVal.keys()][0];
+      const off = v === 'off' || v === '—';
+      return `<span class="vq-wf-opt${off ? ' vq-wf-opt--off' : ''}">
+                <span class="vq-wf-opt__k">${esc(label)}</span>${esc(v)}</span>`;
+    }
+    const tip = [...byVal.entries()]
+      .map(([v, ss]) => `${v}: ${ss.length} sample${ss.length > 1 ? 's' : ''}`).join(' · ');
+    return `<span class="vq-wf-opt vq-wf-opt--mixed" title="${esc(tip)}">
+              <span class="vq-wf-opt__k">${esc(label)}</span>mixed (${byVal.size})</span>`;
+  }).join('');
+}
+
+function _workflowCardHtml(samples) {
+  const esc    = VQ.esc;
+  const lanes  = _wfLanes(samples);
+  const nRec   = lanes.filter(l => !l.legacy).length;
+  const counts = { done: 0, partial: 0, error: 0, legacy: 0 };
+  lanes.forEach(l => { counts[l.overall]++; });
+  const issues = [];
+  lanes.forEach((l, i) => l.list.forEach(st => {
+    if (st.status === 'error' || st.status === 'partial') issues.push({ i, l, st });
+  }));
+  const shared = _wfSharedOptions(lanes);
+
+  return `
+    <div class="vq-chart-card vq-wf-card" id="ov-steps-card" style="min-height:auto">
+      <div class="vq-chart-card__head">
+        <div>
+          <div class="vq-chart-card__title">Pipeline Workflow per Sample</div>
+          <div class="vq-chart-card__sub">
+            ${nRec} of ${lanes.length} sample${lanes.length === 1 ? '' : 's'} with a workflow record
+            &nbsp;·&nbsp; step status, time and options per run
+            &nbsp;·&nbsp; click a step or a sample for details
+          </div>
+        </div>
+        <div class="vq-wf-head-right ov-wf-head-pills">
+          ${counts.done    ? _wfPill('done',    `${counts.done} completed`) : ''}
+          ${counts.partial ? _wfPill('partial', `${counts.partial} with warnings`) : ''}
+          ${counts.error   ? _wfPill('error',   `${counts.error} with errors`) : ''}
+          ${counts.legacy  ? _wfPill('skipped', `${counts.legacy} without record`) : ''}
+        </div>
+      </div>
+
+      ${shared ? `
+      <div class="vq-wf-opts">
+        <span class="ov-wf-opts__label">Run options</span>${shared}
+      </div>` : ''}
+
+      ${issues.length ? `
+      <div class="vq-wf-issues">
+        ${issues.map(({ i, l, st }) => `
+          <button type="button" class="vq-wf-issue vq-wf-issue--${st.status}"
+                  data-wf-lane="${i}" data-wf-key="${esc(st.key)}">
+            <strong>${esc(l.sample)} · ${esc(_WF_SHORT[st.key] || st.label)}</strong>
+            <span>${esc(st.message || _wfStatus(st.status).label)}</span>
+          </button>`).join('')}
+      </div>` : ''}
+
+      <div class="ov-wf-matrix-wrap" id="ov-wf-matrix"></div>
+      <div class="vq-wf-detail" id="ov-wf-detail"></div>
+    </div>`;
+}
+
+function _renderWorkflowMatrix(samples) {
+  const host = document.getElementById('ov-wf-matrix');
+  if (!host) return;
+  const esc   = VQ.esc;
+  const lanes = _wfLanes(samples);
+  const cols  = _wfColumns(lanes);
+  const maxTotal = Math.max(0, ...lanes.map(l => l.total || 0));
+
+  const ran = st => st && st.status !== 'skipped';
+
+  const laneCells = (l, li) => {
+    const idx = cols.map((k, c) => (ran(l.steps[k]) ? c : -1)).filter(c => c >= 0);
+    const nextRan = c => idx.find(x => x >= c);
+    return cols.map((k, c) => {
+      const st = l.steps[k];
+      // Success path: a segment between consecutive executed steps takes the
+      // colour of the step it leads into (as in the per-sample flowchart).
+      const seg = (from, to) => {
+        const n = nextRan(to);
+        if (n == null || !idx.some(x => x <= from)) return '';
+        const s2 = l.steps[cols[n]].status;
+        return `style="--ov-wf-c:${_wfStatus(s2).color};opacity:${s2 === 'done' ? 0.55 : 0.85}"`;
+      };
+      const left  = idx.some(x => x < c) && idx.some(x => x >= c) ? seg(c - 1, c) : '';
+      const right = idx.some(x => x <= c) && idx.some(x => x > c) ? seg(c, c + 1) : '';
+      const lines = `${left ? `<span class="ov-wf-line ov-wf-line--l" ${left}></span>` : ''}
+                     ${right ? `<span class="ov-wf-line ov-wf-line--r" ${right}></span>` : ''}`;
+      if (!st) return `<div class="ov-wf-cell ov-wf-cell--none">${lines}<span class="ov-wf-dot"></span></div>`;
+      const time = st.status === 'skipped' ? 'skipped' : (l.legacy ? 'ran' : _fmtDur(st.seconds));
+      return `
+        <button type="button" class="ov-wf-cell ov-wf-cell--${st.status}${l.legacy ? ' ov-wf-cell--legacy' : ''}"
+                data-wf-lane="${li}" data-wf-key="${esc(k)}">
+          ${lines}
+          <span class="ov-wf-dot" style="--ov-wf-c:${_wfStatus(st.status).color}">${_wfStatus(st.status).glyph}</span>
+          <span class="ov-wf-time">${esc(time)}</span>
+        </button>`;
+    }).join('');
+  };
 
   host.innerHTML = `
-    <div class="ov-matrix-wrap">
-      <table class="ov-matrix">
-        <thead>
-          <tr>
-            <th class="ov-matrix__sample">Sample</th>
-            ${STEP_LABELS.map(([, lbl]) => `<th>${esc(lbl)}</th>`).join('')}
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+    <div class="ov-wf-matrix" style="grid-template-columns:minmax(120px,max-content) repeat(${cols.length},minmax(62px,1fr)) minmax(96px,max-content)">
+      <div class="ov-wf-hd ov-wf-hd--sample">Sample</div>
+      ${cols.map(k => `<div class="ov-wf-hd">${esc(_WF_SHORT[k] || k)}</div>`).join('')}
+      <div class="ov-wf-hd ov-wf-hd--total">Total</div>
+      ${lanes.map((l, li) => `
+        <button type="button" class="ov-wf-sample" data-wf-lane="${li}" title="${esc(l.sample)}">
+          <span class="ov-wf-sample__name">${esc(l.sample)}</span>
+          ${_wfPill(l.overall === 'legacy' ? 'skipped' : l.overall, _WF_OVERALL_TEXT[l.overall])}
+        </button>
+        ${laneCells(l, li)}
+        <div class="ov-wf-total" data-wf-lane="${li}">
+          <span>${l.total != null ? _fmtDur(l.total) : '—'}</span>
+          ${l.total != null && maxTotal > 0
+            ? `<span class="ov-wf-total__bar"><span style="width:${(100 * l.total / maxTotal).toFixed(1)}%"></span></span>`
+            : ''}
+        </div>`).join('')}
     </div>`;
+
+  // ── Hover tooltip ────────────────────────────────────────────────────────
+  host.querySelectorAll('button.ov-wf-cell').forEach(btn => {
+    const l  = lanes[+btn.dataset.wfLane];
+    const st = l.steps[btn.dataset.wfKey];
+    btn.addEventListener('mousemove', evt => VQ.tooltipShow(`
+      <div class="vq-tooltip__title">${esc(l.sample)} · ${esc(st.label)}</div>
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Status</span><span>${_wfStatus(st.status).label}</span>
+        ${st.seconds != null ? `<span class="vq-tooltip__key">Time</span><span>${_fmtDur(st.seconds)}</span>` : ''}
+        ${st.message ? `<span class="vq-tooltip__key">Note</span><span>${esc(st.message)}</span>` : ''}
+      </div>`, evt));
+    btn.addEventListener('mouseleave', VQ.tooltipHide);
+  });
+
+  // ── Detail panel: sample run (options, time per step) + selected step ────
+  const detail = document.getElementById('ov-wf-detail');
+  const card   = document.getElementById('ov-steps-card');
+
+  function select(li, key) {
+    const l = lanes[li];
+    if (!l || !detail) return;
+    card.querySelectorAll('.ov-wf-cell, .ov-wf-sample').forEach(el =>
+      el.classList.toggle('is-active',
+        +el.dataset.wfLane === li && (el.classList.contains('ov-wf-sample') ? !key : el.dataset.wfKey === key)));
+    card.querySelectorAll('.ov-wf-sample').forEach(el =>
+      el.classList.toggle('is-lane', +el.dataset.wfLane === li));
+
+    const st = key ? l.steps[key] : null;
+    const timed = l.list.filter(x => x.seconds != null && x.seconds > 0);
+    const longest = timed.length ? timed.reduce((a, x) => (x.seconds > a.seconds ? x : a)) : null;
+    const runN  = l.list.filter(ran).length;
+
+    // Same step across the other samples (time spread).
+    const across = key
+      ? lanes.map(x => x.steps[key]).filter(x => x && x.seconds != null && x.status !== 'skipped')
+             .map(x => x.seconds).sort((a, b) => a - b)
+      : [];
+    const med = across.length ? across[Math.floor((across.length - 1) / 2)] : null;
+
+    detail.innerHTML = `
+      <div class="vq-wf-detail__head">
+        <div class="vq-wf-detail__title">${esc(l.sample)}</div>
+        ${_wfPill(l.overall === 'legacy' ? 'skipped' : l.overall,
+                  l.legacy ? 'No workflow record' : _WF_OVERALL_TEXT[l.overall])}
+        <span class="vq-wf-detail__time">
+          ${l.legacy ? 'run before v3.0.2' : `
+            ${l.started ? 'started ' + esc(new Date(l.started).toLocaleString()) + ' · ' : ''}
+            ${runN} step${runN === 1 ? '' : 's'} run · ${_fmtDur(l.total)}
+            ${l.version ? ' · ViralQuest v' + esc(l.version) : ''}`}
+        </span>
+      </div>
+      <div class="vq-wf-opts">${_wfOptionChips(l.options, l.legacy)}</div>
+      ${timed.length && l.total > 0 ? `
+      <div class="vq-wf-timebar">
+        <div class="vq-wf-timebar__track">
+          ${timed.map((x, i) => `
+            <div class="vq-wf-timebar__seg${x.key === key ? ' is-active' : ''}" data-wf-key="${esc(x.key)}"
+                 style="flex:${x.seconds} 1 0;opacity:${x.key === key ? 1 : (i % 2 ? 0.55 : 0.9)}"></div>`).join('')}
+        </div>
+        <div class="vq-wf-timebar__legend">
+          <span>time per step</span>
+          <span>longest: <strong>${esc(_WF_SHORT[longest.key] || longest.label)}</strong>
+            · ${_fmtDur(longest.seconds)} (${VQ.pct(longest.seconds, l.total)})</span>
+        </div>
+      </div>` : ''}
+      ${st ? `
+      <div class="ov-wf-step">
+        <div class="vq-wf-detail__head">
+          <div class="vq-wf-detail__title">${esc(st.label)}</div>
+          ${_wfPill(st.status)}
+          ${st.seconds != null
+            ? `<span class="vq-wf-detail__time">${_fmtDur(st.seconds)}${l.total ? ' · ' + VQ.pct(st.seconds, l.total) + ' of total' : ''}</span>`
+            : ''}
+        </div>
+        ${st.message ? `<div class="vq-wf-detail__msg vq-wf-detail__msg--${st.status}">${esc(st.message)}</div>` : ''}
+        <div class="vq-wf-detail__grid">
+          ${Object.entries(st.details || {}).map(([k, v]) => _wfMiniRow(k,
+              esc(typeof v === 'number' ? v.toLocaleString() : String(v ?? '—')))).join('')}
+          ${across.length > 1 ? _wfMiniRow(`Time across ${across.length} samples`,
+              `min ${_fmtDur(across[0])} · median ${_fmtDur(med)} · max ${_fmtDur(across[across.length - 1])}`, true) : ''}
+        </div>
+      </div>` : ''}`;
+
+    detail.querySelectorAll('.vq-wf-timebar__seg').forEach(seg => {
+      const x = l.steps[seg.dataset.wfKey];
+      seg.addEventListener('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${esc(x.label)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Time</span><span>${_fmtDur(x.seconds)}</span>
+          <span class="vq-tooltip__key">of total</span><span>${VQ.pct(x.seconds, l.total)}</span>
+        </div>`, evt));
+      seg.addEventListener('mouseleave', VQ.tooltipHide);
+      seg.addEventListener('click', () => { VQ.tooltipHide(); select(li, x.key); });
+    });
+  }
+
+  card.querySelectorAll('.ov-wf-cell[data-wf-key], .vq-wf-issue').forEach(el =>
+    el.addEventListener('click', () => select(+el.dataset.wfLane, el.dataset.wfKey)));
+  card.querySelectorAll('.ov-wf-sample').forEach(el =>
+    el.addEventListener('click', () => select(+el.dataset.wfLane, null)));
+
+  // Open on the first problem, otherwise on the slowest sample's run.
+  let li0 = lanes.findIndex(l => l.overall === 'error');
+  if (li0 < 0) li0 = lanes.findIndex(l => l.overall === 'partial');
+  if (li0 >= 0) {
+    const st = lanes[li0].list.find(x => x.status === 'error')
+            || lanes[li0].list.find(x => x.status === 'partial');
+    select(li0, st.key);
+  } else {
+    const slowest = lanes.reduce((a, l, i) => ((l.total || 0) > (lanes[a].total || 0) ? i : a), 0);
+    select(slowest, null);
+  }
 }
 
 // ── Generic SVG sizing ──────────────────────────────────────────────────────

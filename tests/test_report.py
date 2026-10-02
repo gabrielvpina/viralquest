@@ -264,3 +264,51 @@ def test_export_helpers_identical_in_both_reports():
         return text[text.index("// ── Overview tabs (Run · Virome)"):text.index("// ── Expose on window.VQ")]
 
     assert block(rb._SAMPLE_COMPONENTS / "export.js") == block(rb._COMPONENTS / "export.js")
+
+
+# ── Pipeline workflow per sample ────────────────────────────────────────────
+
+_WORKFLOW = {
+    "started_at": "2026-10-02T17:46:51+00:00",
+    "finished_at": "2026-10-02T18:28:51+00:00",
+    "total_seconds": 2519.6,
+    "options": {"input": "contigs.fasta", "threads": 4, "cap3": False, "nr_db": None,
+                "blastn": "online · nt", "reads": [], "llm": None, "force": False},
+    "steps": [
+        {"key": "parse", "label": "Parse FASTA", "status": "done", "seconds": 0.1,
+         "details": {"Input sequences": 12}, "message": None},
+        {"key": "nr", "label": "Diamond BLASTx NR", "status": "skipped", "seconds": None,
+         "details": {}, "message": "--nr-db not set"},
+        {"key": "blastn", "label": "BLASTn online", "status": "partial", "seconds": 90.5,
+         "details": {"Failed": 3}, "message": "3 sequences failed"},
+    ],
+}
+
+
+def test_workflow_summarized_per_sample(tmp_path):
+    rep = _report([_seq("k141_1")])
+    rep["pipeline_stats"]["workflow"] = _WORKFLOW
+    _write_sample(tmp_path, "withWf", rep)
+    _write_sample(tmp_path, "legacy", _report([_seq("k141_1")]))
+
+    data = build_report_data(load_samples(tmp_path))
+    by = {s["sample"]: s for s in data["samples"]}
+
+    wf = by["withWf"]["workflow"]
+    assert wf["version"] == "3.0.0"
+    assert wf["total_seconds"] == 2519.6
+    assert wf["options"]["blastn"] == "online · nt"
+    assert [s["key"] for s in wf["steps"]] == ["parse", "nr", "blastn"]
+    assert wf["steps"][2] == {"key": "blastn", "label": "BLASTn online", "status": "partial",
+                              "seconds": 90.5, "details": {"Failed": 3},
+                              "message": "3 sequences failed"}
+    # Runs older than the workflow record keep the detected-steps fallback.
+    assert by["legacy"]["workflow"] is None
+    assert by["legacy"]["steps"]["blastn"] is True
+
+
+def test_overview_renders_workflow_card(results_root):
+    html = _render_template(build_report_data(load_samples(results_root)), d3_js=STUB_D3)
+    assert "Pipeline Workflow per Sample" in html
+    assert "_renderWorkflowMatrix(samples)" in html
+    assert ".ov-wf-matrix" in html and ".vq-wf-pill--error" in html   # card CSS shipped
