@@ -156,6 +156,15 @@ def _build_parser():
     bln.add_argument("--blastn-online-db", dest="blastn_online_db", type=str,
         default="nt", metavar="DB",
         help="NCBI nucleotide database for web BLASTn (default: nt).")
+    bln.add_argument("--blastn-online-batch", dest="blastn_online_batch", type=int,
+        default=20, metavar="N",
+        help="Sequences per NCBI search for --blastn-online (default: 20).")
+    bln.add_argument("--blastn-online-timeout", dest="blastn_online_timeout", type=float,
+        default=15.0, metavar="MIN",
+        help="Minutes one NCBI search may take before it is resubmitted (default: 15).")
+    bln.add_argument("--blastn-online-retries", dest="blastn_online_retries", type=int,
+        default=2, metavar="N",
+        help="Resubmissions of a timed-out NCBI search before the batch is split (default: 2).")
 
     # Pipeline tuning ──────────────────────────────────────────────────────────
     tun = parser.add_argument_group("pipeline tuning")
@@ -321,6 +330,12 @@ def _show_rich_help() -> None:
         "  NCBI e-mail for web BLASTn — no local database required.\n\n"
         "[bold cyan]--blastn-online-db[/]    [dim]DB[/]  (default: nt)\n"
         "  NCBI database to query when using --blastn-online.\n\n"
+        "[bold cyan]--blastn-online-batch[/] [dim]N[/]   (default: 20)\n"
+        "  Sequences sent per NCBI search (one multi-FASTA search per batch).\n\n"
+        "[bold cyan]--blastn-online-timeout[/] [dim]MIN[/] (default: 15)\n"
+        "  Minutes a search may take before it is resubmitted.\n\n"
+        "[bold cyan]--blastn-online-retries[/] [dim]N[/] (default: 2)\n"
+        "  Resubmissions of a timed-out search before the batch is split in half.\n\n"
         "[bold]Note:[/] --blastn-local and --blastn-online are mutually exclusive.",
         title="[bold yellow]BLASTN (choose one)[/bold yellow]",
         border_style="yellow", width=85, box=box.ROUNDED,
@@ -995,6 +1010,9 @@ def _run_pipeline(args):
             blastn = BlastnRunner(mode=BlastnMode.ONLINE,
                                   outdir=str(organizer.blastn_dir),
                                   online_db=args.blastn_online_db,
+                                  online_batch_size=args.blastn_online_batch,
+                                  online_timeout=args.blastn_online_timeout * 60,
+                                  online_retries=args.blastn_online_retries,
                                   email=args.blastn_online)
         # NR run → only NR-confirmed sequences; no NR → all viral sequences
         blastn_seqs = (

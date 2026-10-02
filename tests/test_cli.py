@@ -302,3 +302,20 @@ class TestReload:
         with pytest.raises(SystemExit) as exit_:
             cli.main()
         assert exit_.value.code == 1
+
+
+class TestBlastnOnlineBatchOption:
+    def test_default_and_custom_batch(self):
+        assert _args("--blastn-online", "me@x.org").blastn_online_batch == 20
+        assert _args("--blastn-online", "me@x.org", "--blastn-online-batch", "5").blastn_online_batch == 5
+
+
+class TestBlastnOnlineTimeoutOptions:
+    def test_defaults(self):
+        a = _args("--blastn-online", "me@x.org")
+        assert (a.blastn_online_timeout, a.blastn_online_retries) == (15.0, 2)
+
+    def test_custom_values(self):
+        a = _args("--blastn-online", "me@x.org",
+                  "--blastn-online-timeout", "5", "--blastn-online-retries", "0")
+        assert (a.blastn_online_timeout, a.blastn_online_retries) == (5.0, 0)

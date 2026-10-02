@@ -7,6 +7,8 @@ import pytest
 
 from viralquest.biodata import BlastnResult, BlastxResult, NucSequence
 from viralquest.blastn import (
+    NcbiBlastClient,
+    OnlineSearchTimeout,
     BlastnMode,
     BlastnOutputParser,
     BlastnResultAttacher,
@@ -96,7 +98,7 @@ class TestBlastnRunnerInit:
         assert runner.e_value         == 1e-5
         assert runner.max_target_seqs == 5
         assert runner.batch_size      == 200
-        assert runner.request_delay   == 0.4
+        assert runner.online_batch_size == 20
 
     def test_outdir_created(self, tmp_path):
         outdir = tmp_path / "blast_out"
@@ -181,39 +183,266 @@ class TestBlastnFailedIds:
         assert runner.failed_ids == ["b"]
 
     def test_online_failed_query_records_its_id(self, tmp_path):
-        from Bio.Blast import NCBIWWW
-        runner = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path),
-                              request_delay=0)
-        with patch.object(NCBIWWW, "qblast", side_effect=RuntimeError("timeout")):
-            runner.run([make_seq("a"), make_seq("b")])
+        runner = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path))
+
+        def boom(timeout, **put):
+            raise RuntimeError("server error")
+
+        runner.ncbi.search = boom
+        runner.run([make_seq("a"), make_seq("b")])
         assert runner.failed_ids == ["a", "b"]
 
 
 # ---------------------------------------------------------------------------
-# BlastnRunner — online database and e-mail
+# NCBI BLAST URL API — fake server + client tests
+# ---------------------------------------------------------------------------
+
+class _FakeRecord:
+    """Stand-in for a Biopython NCBIXML record: just the query defline."""
+    def __init__(self, query):
+        self.query = query
+
+
+class FakeNcbi:
+    """
+    Scripted NCBI server for NcbiBlastClient. `polls` is the list of pages the
+    Get requests return, in order (e.g. ["Status=WAITING", "<xml>"]). A virtual
+    clock advances on every sleep, so timeouts are tested without waiting.
+    """
+    def __init__(self, polls=("<BlastOutput/>",), put_page="    RID = RID123\n    RTOE = 30\n"):
+        self.polls = list(polls)
+        self.put_page = put_page
+        self.requests = []          # (time, params)
+        self.now = 0.0
+
+    def http(self, params):
+        self.requests.append((self.now, dict(params)))
+        if params["CMD"] == "Put":
+            return self.put_page
+        return self.polls.pop(0) if self.polls else "<BlastOutput/>"
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+    def client(self, **kw):
+        return NcbiBlastClient(http=self.http, clock=self.clock, sleep=self.sleep, **kw)
+
+
+class TestNcbiBlastClient:
+    def test_submit_sends_put_with_email_and_tool(self):
+        ncbi = FakeNcbi()
+        rid = ncbi.client(email="me@x.org").submit(program="blastn", database="nt", query=">a\nACGT\n")
+        put = ncbi.requests[0][1]
+        assert rid == "RID123"
+        assert put["CMD"] == "Put" and put["DATABASE"] == "nt" and put["PROGRAM"] == "blastn"
+        assert put["QUERY"] == ">a\nACGT\n" and put["email"] == "me@x.org" and put["tool"] == "viralquest"
+
+    def test_rejected_submission_raises_with_ncbi_message(self):
+        ncbi = FakeNcbi(put_page="<p>Message ID#24 Error: Failed to read the Blast query</p>")
+        with pytest.raises(RuntimeError, match="Failed to read the Blast query"):
+            ncbi.client().submit(program="blastn", database="nt", query="x")
+
+    def test_waits_until_results_ready(self):
+        ncbi = FakeNcbi(polls=["Status=WAITING", "Status=WAITING", "<BlastOutput>done</BlastOutput>"])
+        xml = ncbi.client().search(900, program="blastn", database="nt", query="x")
+        assert xml == "<BlastOutput>done</BlastOutput>"
+        gets = [r for r in ncbi.requests if r[1]["CMD"] == "Get"]
+        assert len(gets) == 3 and gets[0][1]["RID"] == "RID123" and gets[0][1]["FORMAT_TYPE"] == "XML"
+
+    def test_respects_ncbi_polling_rules(self):
+        ncbi = FakeNcbi(polls=["Status=WAITING", "Status=WAITING", "<BlastOutput/>"])
+        ncbi.client().search(900, program="blastn", database="nt", query="x")
+        times = [t for t, _ in ncbi.requests]
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        assert gaps[0] >= 20                      # first poll after 20 s
+        assert all(g >= 60 for g in gaps[1:])     # then once a minute per search
+        assert all(g >= 10 for g in gaps)         # never < 10 s between contacts
+
+    def test_empty_page_means_still_running(self):
+        ncbi = FakeNcbi(polls=["\n\n", "<BlastOutput/>"])
+        assert ncbi.client().search(900, program="blastn", database="nt", query="x") == "<BlastOutput/>"
+
+    def test_ready_status_fetches_the_xml(self):
+        ncbi = FakeNcbi(polls=["Status=READY", "<BlastOutput/>"])
+        assert ncbi.client().search(900, program="blastn", database="nt", query="x") == "<BlastOutput/>"
+
+    @pytest.mark.parametrize("status", ["FAILED", "UNKNOWN"])
+    def test_failed_status_raises_immediately(self, status):
+        ncbi = FakeNcbi(polls=[f"Status={status}"])
+        with pytest.raises(RuntimeError, match=status):
+            ncbi.client().search(900, program="blastn", database="nt", query="x")
+
+    def test_timeout_raised_when_next_poll_would_pass_the_limit(self):
+        ncbi = FakeNcbi(polls=["Status=WAITING"] * 100)
+        with pytest.raises(OnlineSearchTimeout, match="RID123"):
+            ncbi.client().search(300, program="blastn", database="nt", query="x")
+        # 20 s + 4 x 60 s = 260 s of polling; the next poll (320 s) would pass 300 s
+        assert ncbi.now - ncbi.requests[0][0] <= 300
+
+
+# ---------------------------------------------------------------------------
+# BlastnRunner — online database, e-mail and resubmission on timeout
 # ---------------------------------------------------------------------------
 
 class TestBlastnOnlineOptions:
-    def _qblast_kwargs(self, tmp_path, **runner_kw) -> dict:
-        from Bio.Blast import NCBIWWW
-        runner = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path),
-                              request_delay=0, **runner_kw)
-        with patch.object(NCBIWWW, "qblast", side_effect=RuntimeError("stop")) as mock:
-            runner.run([make_seq("a")])
-        return mock.call_args.kwargs
+    def _put(self, tmp_path, **runner_kw) -> dict:
+        ncbi = FakeNcbi()
+        runner = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path), **runner_kw)
+        runner.ncbi = ncbi.client(email=runner_kw.get("email"))
+        runner.run([make_seq("a")])
+        return ncbi.requests[0][1]
 
     def test_default_database_is_nt(self, tmp_path):
-        assert self._qblast_kwargs(tmp_path)["database"] == "nt"
+        assert self._put(tmp_path)["DATABASE"] == "nt"
 
     def test_chosen_database_is_used(self, tmp_path):
-        kw = self._qblast_kwargs(tmp_path, online_db="refseq_viruses_rep_genomes")
-        assert kw["database"] == "refseq_viruses_rep_genomes"
+        assert self._put(tmp_path, online_db="refseq_viruses_rep_genomes")["DATABASE"] == "refseq_viruses_rep_genomes"
 
-    def test_email_is_set_on_ncbiwww(self, tmp_path):
-        from Bio.Blast import NCBIWWW
-        with patch.object(NCBIWWW, "email", None):
-            self._qblast_kwargs(tmp_path, email="me@example.org")
-            assert NCBIWWW.email == "me@example.org"
+    def test_email_sent_to_ncbi(self, tmp_path):
+        assert self._put(tmp_path, email="me@example.org")["email"] == "me@example.org"
+
+    def test_runner_builds_client_with_email(self, tmp_path):
+        r = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path), email="me@x.org")
+        assert isinstance(r.ncbi, NcbiBlastClient) and r.ncbi.email == "me@x.org"
+
+    def test_defaults(self, tmp_path):
+        r = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path))
+        assert (r.online_batch_size, r.online_timeout, r.online_retries) == (20, 900.0, 2)
+
+
+class TestBlastnOnlineResubmission:
+    def _runner(self, tmp_path, outcomes, **kw):
+        """outcomes: per search() call, an exception to raise or an XML string."""
+        runner = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path), **kw)
+        calls = []
+
+        def search(timeout, **put):
+            calls.append((timeout, put["query"].count(">")))
+            out = outcomes.pop(0)
+            if isinstance(out, Exception):
+                raise out
+            return out
+
+        runner.ncbi.search = search
+        return runner, calls
+
+    def test_timed_out_search_is_resubmitted(self, tmp_path):
+        runner, calls = self._runner(tmp_path, [OnlineSearchTimeout("slow"), "<x/>"], online_timeout=600)
+        with patch("Bio.Blast.NCBIXML.parse", return_value=[_FakeRecord("a")]), \
+             patch.object(BlastnOutputParser, "parse_xml_record", return_value=["hit"]):
+            hits = runner.run([make_seq("a")])
+        assert hits == ["hit"] and runner.failed_ids == []
+        assert calls == [(600.0, 1), (600.0, 1)]           # same batch, sent twice
+
+    def test_retries_exhausted_then_batch_is_split(self, tmp_path):
+        timeouts = [OnlineSearchTimeout("slow")] * 3        # 1 try + 2 retries for the full batch
+        runner, calls = self._runner(tmp_path, timeouts + ["<x/>", "<x/>"], online_retries=2)
+        with patch("Bio.Blast.NCBIXML.parse", side_effect=[[_FakeRecord("a")], [_FakeRecord("b")]]), \
+             patch.object(BlastnOutputParser, "parse_xml_record", side_effect=lambda r, q: [q]):
+            hits = runner.run([make_seq("a"), make_seq("b")])
+        assert [n for _, n in calls] == [2, 2, 2, 1, 1]
+        assert sorted(hits) == ["a", "b"] and runner.failed_ids == []
+
+    def test_zero_retries_splits_at_once(self, tmp_path):
+        runner, calls = self._runner(tmp_path, [OnlineSearchTimeout("slow"), "<x/>", "<x/>"], online_retries=0)
+        with patch("Bio.Blast.NCBIXML.parse", side_effect=[[_FakeRecord("a")], [_FakeRecord("b")]]), \
+             patch.object(BlastnOutputParser, "parse_xml_record", side_effect=lambda r, q: [q]):
+            runner.run([make_seq("a"), make_seq("b")])
+        assert [n for _, n in calls] == [2, 1, 1]
+
+    def test_single_sequence_timing_out_every_time_is_failed(self, tmp_path):
+        runner, calls = self._runner(tmp_path, [OnlineSearchTimeout("slow")] * 3, online_retries=2)
+        assert runner.run([make_seq("a")]) == []
+        assert runner.failed_ids == ["a"] and len(calls) == 3
+
+
+# ---------------------------------------------------------------------------
+# BlastnRunner — online batching (one multi-FASTA NCBI search per batch)
+# ---------------------------------------------------------------------------
+
+class TestBlastnOnlineBatching:
+    """NCBI is simulated: the client's search() records the FASTA it receives, NCBIXML.parse
+    returns one fake record per query, parse_xml_record tags the hit with the
+    query id it was given — so the tests see exactly how records map back."""
+
+    def _run(self, tmp_path, seqs, qblast_effect=None, records_for=None, **kw):
+        from Bio.Blast import NCBIXML
+        sent = []
+        runner = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path), **kw)
+
+        def search(timeout, **put):
+            fasta = put["query"]
+            sent.append(fasta)
+            if qblast_effect:
+                qblast_effect(fasta)
+            return fasta                                   # the "XML"
+
+        def parse(handle):
+            ids = [l[1:] for l in handle.getvalue().splitlines() if l.startswith(">")]
+            return [_FakeRecord(q) for q in (records_for(ids) if records_for else ids)]
+
+        def parse_record(rec, query_id):
+            return [f"hit:{query_id}<-{rec.query}"]
+
+        runner.ncbi.search = search
+        with patch.object(NCBIXML, "parse", side_effect=parse), \
+             patch.object(BlastnOutputParser, "parse_xml_record", side_effect=parse_record):
+            hits = runner.run(seqs)
+        return runner, hits, sent
+
+    def _seqs(self, n):
+        return [make_seq(f"s{i}", "ACGT" * 25) for i in range(n)]
+
+    def test_sequences_sent_in_batches_of_20(self, tmp_path):
+        _, hits, sent = self._run(tmp_path, self._seqs(45))
+        assert [f.count(">") for f in sent] == [20, 20, 5]
+        assert len(hits) == 45
+
+    def test_batch_size_is_configurable(self, tmp_path):
+        _, _, sent = self._run(tmp_path, self._seqs(10), online_batch_size=4)
+        assert [f.count(">") for f in sent] == [4, 4, 2]
+
+    def test_one_search_is_a_multi_fasta(self, tmp_path):
+        _, _, sent = self._run(tmp_path, self._seqs(2))
+        assert sent == [">s0\n" + "ACGT" * 25 + "\n>s1\n" + "ACGT" * 25 + "\n"]
+
+    def test_records_mapped_by_query_id_even_out_of_order(self, tmp_path):
+        _, hits, _ = self._run(tmp_path, self._seqs(3), records_for=lambda ids: ids[::-1])
+        assert sorted(hits) == ["hit:s0<-s0", "hit:s1<-s1", "hit:s2<-s2"]
+
+    def test_defline_with_description_still_maps(self, tmp_path):
+        _, hits, _ = self._run(tmp_path, self._seqs(2),
+                               records_for=lambda ids: [f"{i} len=100 some text" for i in ids])
+        assert sorted(h.split("<-")[0] for h in hits) == ["hit:s0", "hit:s1"]
+
+    def test_query_without_record_is_failed(self, tmp_path):
+        runner, hits, _ = self._run(tmp_path, self._seqs(3), records_for=lambda ids: ids[:2])
+        assert runner.failed_ids == ["s2"]
+        assert len(hits) == 2
+
+    def test_failed_batch_is_split_and_retried(self, tmp_path):
+        calls = {"n": 0}
+
+        def flaky(fasta):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("CPU usage limit was exceeded")
+
+        runner, hits, sent = self._run(tmp_path, self._seqs(6), qblast_effect=flaky)
+        assert [f.count(">") for f in sent] == [6, 3, 3]
+        assert runner.failed_ids == [] and len(hits) == 6
+
+    def test_one_bad_query_is_isolated(self, tmp_path):
+        def reject_bad(fasta):
+            if ">s5\n" in fasta:
+                raise RuntimeError("bad query")
+
+        runner, hits, _ = self._run(tmp_path, self._seqs(8), qblast_effect=reject_bad)
+        assert runner.failed_ids == ["s5"]
+        assert len(hits) == 7
 
 
 # ---------------------------------------------------------------------------
