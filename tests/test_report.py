@@ -347,3 +347,13 @@ def test_detected_viruses_table_is_per_contig_with_csv(results_root):
                 "'BLASTx best hit'", "'BLASTn best hit'", "'Novelty'"):
         assert col in html, col
     assert "Contigs by novelty" not in html
+
+
+def test_clusters_tab_is_cluster_centred(results_root):
+    """General Clusters: selector table, single-cluster detail, presence matrix, sample similarity."""
+    html = _render_template(build_report_data(load_samples(results_root)), d3_js=STUB_D3)
+    for marker in ('id="clu-table"', 'id="clu-detail"', 'id="clu-matrix"', 'id="clu-sim"',
+                   'id="clu-csv"', "function _upgma(M)", "function _clustersCsv()"):
+        assert marker in html, marker
+    # The old one-card-per-cluster list and ego network are gone.
+    assert "function _drawEgo" not in html and 'id="clu-cards"' not in html
