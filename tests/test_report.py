@@ -336,3 +336,14 @@ def test_overview_cards(results_root):
         assert gone not in html, gone
     # The overview reuses the Virome tab's novelty rule rather than a copy.
     assert "window.vqNovelty = {" in html
+
+
+def test_detected_viruses_table_is_per_contig_with_csv(results_root):
+    """Both reports inline the same section_viruses.js: per-contig table + CSV export."""
+    html = _render_template(build_report_data(load_samples(results_root)), d3_js=STUB_D3)
+    assert "function _contigRows(viral)" in html
+    assert 'id="stats-viruses-csv"' in html and "_virusTableCsv(contigs, tableState)" in html
+    for col in ("'BLASTx id %'", "'BLASTx cov %'", "'BLASTn id %'", "'BLASTn cov %'",
+                "'BLASTx best hit'", "'BLASTn best hit'", "'Novelty'"):
+        assert col in html, col
+    assert "Contigs by novelty" not in html
