@@ -10,9 +10,6 @@
    samples to many, and degrades gracefully when data is absent.
    ============================================================ */
 
-// Single accent colour for the quantitative-per-sample charts.
-const QUANT = 'var(--vq-accent)';
-
 function vqInitOverview(report) {
   const el = document.getElementById('section-overview');
   if (!el) return;
@@ -122,11 +119,16 @@ function vqInitOverview(report) {
           <div class="vq-chart-card__body" id="ov-kingdoms-body"></div>
         </div>` : ''}`) : ''}
 
-      ${VQ.cardGroup('Sequence properties', 'length and score distributions per sample', `
-        ${_card('ov-lengths', 'Sequence Length per Sample', 'min · median · max (nt)')}
-        ${anyHeur ? _card('ov-heur', 'Heuristic Score per Sample', 'VQ score distribution') : ''}
-        ${anyLLM  ? _card('ov-llm',  'LLM Score per Sample', 'VQ score distribution') : ''}`,
-        1 + anyHeur + anyLLM)}
+      ${group('Sequence properties', 'length and score distributions per sample', `
+        ${_card('ov-lengths', 'Sequence Length per Sample',
+                 'density of confirmed contig lengths (log scale) · solid = median · dashed = mean')}
+        ${anyHeur || anyLLM ? `
+        <div class="vq-grid${anyHeur && anyLLM ? ' vq-grid--2' : ' ov-grid--1'}">
+          ${anyHeur ? _card('ov-heur', 'Heuristic Score per Sample',
+                             'VQ score · box = Q1–Q3, whiskers 1.5 × IQR, ◆ mean, dots = every contig') : ''}
+          ${anyLLM  ? _card('ov-llm',  'LLM Score per Sample',
+                             'VQ score · box = Q1–Q3, whiskers 1.5 × IQR, ◆ mean, dots = every contig') : ''}
+        </div>` : ''}`)}
     </div>
   `;
 
@@ -136,9 +138,9 @@ function vqInitOverview(report) {
   _renderBubbleMatrix(samples, bySample, NOV);
   if (anySalmon) _renderSalmon(salmonSamples);
   if (anyConserved) _renderKingdomMatrix(_body('ov-kingdoms'), salmonSamples);
-  _lengthRanges(_body('ov-lengths'), samples);
-  if (anyHeur) _scoreBoxes(_body('ov-heur'), samples, 'heuristic_scores');
-  if (anyLLM)  _scoreBoxes(_body('ov-llm'),  samples, 'llm_scores');
+  _renderLengthDensity(samples);
+  if (anyHeur) _renderScoreBoxes('ov-heur', samples, 'heuristic_scores');
+  if (anyLLM)  _renderScoreBoxes('ov-llm',  samples, 'llm_scores');
 }
 
 // ── Card scaffolding ────────────────────────────────────────────────────────
@@ -532,22 +534,6 @@ function _renderWorkflowMatrix(samples) {
     select(slowest, null);
   }
 }
-
-// ── Generic SVG sizing ──────────────────────────────────────────────────────
-
-function _svg(host, width, height) {
-  host.innerHTML = '';
-  const svg = d3.select(host).append('svg')
-    .attr('viewBox', `0 0 ${width} ${height}`)
-    .attr('preserveAspectRatio', 'xMinYMin meet')
-    .style('width', '100%')
-    .style('height', 'auto')
-    .style('display', 'block');
-  return svg;
-}
-
-// Row height scales with sample count so few/many both look right.
-const _rowH = n => Math.max(16, Math.min(34, Math.round(360 / Math.max(n, 1))));
 
 // ── Detection funnel per sample ─────────────────────────────────────────────
 // One horizontal funnel per sample: input contigs → viral-flagged (RefSeq +
@@ -961,89 +947,273 @@ function _renderSalmon(salmonSamples) {
   });
 }
 
-// ── Length ranges per sample (min · median · max) ───────────────────────────
+// ── Shared helpers for the per-sample distribution cards ────────────────────
+// Both cards draw at the card's real pixel width (no viewBox scaling), so their
+// text matches the other cards whatever the column width.
 
-function _lengthRanges(host, samples) {
+function _quantiles(vals) {
+  const v = vals.slice().sort((a, b) => a - b);
+  return {
+    v, n: v.length,
+    min: v[0], max: v[v.length - 1],
+    q1: d3.quantileSorted(v, 0.25), med: d3.quantileSorted(v, 0.5), q3: d3.quantileSorted(v, 0.75),
+    mean: d3.mean(v),
+  };
+}
+
+/** Pixel-sized SVG that fills its host; redrawn by VQ.redrawOnResize. */
+function _pxSvg(host, minW, H) {
+  const W = Math.max(host.clientWidth || 0, minW);
+  host.innerHTML = '';
+  const svg = d3.select(host).append('svg')
+    .attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`)
+    .style('display', 'block');
+  return { svg, W };
+}
+
+function _fmtLen(v) {
+  if (v == null || isNaN(v)) return '—';
+  return Math.round(v).toLocaleString();
+}
+
+function _lenTick(v) {
+  return v >= 1e6 ? (v / 1e6) + 'M' : v >= 1000 ? (v / 1000) + 'k' : String(v);
+}
+
+// ── Sequence length: one log-scale density ridge per sample ─────────────────
+
+function _renderLengthDensity(samples) {
+  const host = _body('ov-lengths');
   if (!host) return;
   const rows = samples.map(s => {
-    const L = (s.lengths || []).slice().sort((a, b) => a - b);
-    if (!L.length) return { label: s.sample, min: null };
-    return {
-      label: s.sample,
-      min: L[0], max: L[L.length - 1],
-      med: L[Math.floor(L.length / 2)],
-    };
+    const L = (s.lengths || []).filter(x => x > 0);
+    if (!L.length) return { s, q: null };
+    const q = _quantiles(L);
+    // N50: length at which half the assembled bases are in contigs this long or longer.
+    let acc = 0, n50 = q.max;
+    const half = d3.sum(q.v) / 2;
+    for (let i = q.v.length - 1; i >= 0; i--) { acc += q.v[i]; if (acc >= half) { n50 = q.v[i]; break; } }
+    return { s, q, n50 };
   });
-  const valid = rows.filter(r => r.min != null);
-  if (!valid.length) { host.innerHTML = `<div class="vq-empty">No length data.</div>`; return; }
+  if (!rows.some(r => r.q)) { host.innerHTML = `<div class="vq-empty">No length data.</div>`; return; }
+  const draw = () => _drawLengthDensity(host, rows);
+  draw();
+  VQ.redrawOnResize(host, draw);
+}
 
-  const W = 440, padL = 110, padR = 56, padT = 8;
-  const rh = _rowH(rows.length), gap = 6;
-  const H  = padT + rows.length * (rh + gap);
-  const max = d3.max(valid, r => r.max) || 1;
-  const x = d3.scaleLinear().domain([0, max]).nice().range([padL, W - padR]);
-  const svg = _svg(host, W, H);
+function _drawLengthDensity(host, rows) {
+  const esc  = VQ.esc;
+  const padL = 140, statW = 76, padR = statW * 3 + 8, rowH = 36, headH = 22, axisH = 24;
+  const H = headH + rows.length * rowH + axisH;
+  const { svg, W } = _pxSvg(host, 620, H);
 
-  rows.forEach((r, i) => {
-    const y = padT + i * (rh + gap), cy = y + rh / 2;
-    svg.append('text').attr('x', padL - 8).attr('y', cy)
-      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
-      .attr('class', 'ov-axis-label').text(_trunc(r.label, 16));
-    if (r.min == null) return;
-    svg.append('line').attr('x1', x(r.min)).attr('x2', x(r.max))
-      .attr('y1', cy).attr('y2', cy).attr('stroke', QUANT).attr('stroke-width', 2);
-    [['min', r.min], ['max', r.max]].forEach(([, v]) =>
-      svg.append('circle').attr('cx', x(v)).attr('cy', cy).attr('r', 2.5).attr('fill', QUANT));
-    svg.append('circle').attr('cx', x(r.med)).attr('cy', cy).attr('r', 4)
-      .attr('fill', '#fff').attr('stroke', QUANT).attr('stroke-width', 2)
-      .on('mousemove', e => VQ.tooltipShow(
-        `<b>${VQ.esc(r.label)}</b><br>min ${r.min} · median ${r.med} · max ${r.max} nt`, e))
-      .on('mouseleave', () => VQ.tooltipHide());
-    svg.append('text').attr('x', x(r.max) + 6).attr('y', cy)
-      .attr('dominant-baseline', 'central').attr('class', 'ov-value-label')
-      .text(r.max.toLocaleString());
+  const all  = rows.filter(r => r.q);
+  const lo   = d3.min(all, r => r.q.min), hi = d3.max(all, r => r.q.max);
+  const dLo  = lo / 1.15, dHi = hi * 1.15;        // data range + a little air
+  const x    = d3.scaleLog().domain([dLo, dHi]).range([padL, W - padR - 12]);
+  const ticks = [];
+  for (let p = Math.floor(Math.log10(dLo)); p <= Math.ceil(Math.log10(dHi)); p++)
+    [1, 2, 5].forEach(m => { const t = m * Math.pow(10, p); if (t >= dLo && t <= dHi) ticks.push(t); });
+
+  // Grid + axis
+  ticks.forEach(t => {
+    const major = Math.log10(t) % 1 === 0;
+    svg.append('line').attr('class', major ? 'ov-grid' : 'ov-grid ov-grid--minor')
+      .attr('x1', x(t)).attr('x2', x(t)).attr('y1', headH).attr('y2', H - axisH + 2);
+    svg.append('text').attr('class', 'ov-axis-label')
+      .attr('x', x(t)).attr('y', H - axisH + 15).attr('text-anchor', 'middle').text(_lenTick(t));
+  });
+
+  // Stat column headers
+  const statX = k => W - padR + 8 + statW * (k + 1) - 6;
+  ['Median', 'Mean', 'N50'].forEach((h, k) =>
+    svg.append('text').attr('class', 'ov-dist__hd').attr('x', statX(k)).attr('y', 13)
+      .attr('text-anchor', 'end').text(h));
+
+  const grid = d3.range(0, 121).map(i =>
+    Math.log10(dLo) + (Math.log10(dHi) - Math.log10(dLo)) * i / 120);
+
+  rows.forEach((r, j) => {
+    const top = headH + j * rowH, base = top + rowH - 5, amp = rowH - 9;
+    const g = svg.append('g').attr('class', 'ov-funnel__row');
+    g.append('rect').attr('class', 'ov-funnel__hover')
+      .attr('x', 0).attr('y', top).attr('width', W).attr('height', rowH);
+    g.append('line').attr('class', 'ov-dist__base')
+      .attr('x1', padL).attr('x2', W - padR - 12).attr('y1', base).attr('y2', base);
+    g.append('text').attr('class', 'ov-funnel__sample')
+      .attr('x', 8).attr('y', top + rowH / 2).attr('dominant-baseline', 'central')
+      .text(_trunc(r.s.sample, 20)).append('title').text(r.s.sample);
+
+    if (!r.q) {
+      g.append('text').attr('class', 'ov-axis-label').attr('x', padL + 6).attr('y', top + rowH / 2)
+        .attr('dominant-baseline', 'central').text('no sequences');
+      return;
+    }
+    const q = r.q;
+    const logs = q.v.map(Math.log10);
+    // Gaussian KDE on log10(length).  Silverman's robust rule (min of SD and
+    // IQR/1.34) at 0.9× — the plain rule oversmooths the long right tail of
+    // contig lengths into a flat hump; the floor keeps tiny samples readable.
+    const sd  = d3.deviation(logs) || 0.1;
+    const iqr = (d3.quantile(logs.slice().sort((a, b) => a - b), 0.75)
+               - d3.quantile(logs.slice().sort((a, b) => a - b), 0.25)) / 1.34;
+    const bw  = Math.max(0.035, 0.9 * Math.min(sd, iqr || sd) * Math.pow(logs.length, -0.2));
+    const dens = grid.map(gx => [gx, d3.sum(logs, l => Math.exp(-0.5 * ((gx - l) / bw) ** 2))]);
+    const dMax = d3.max(dens, d => d[1]) || 1;
+    const pts = dens.map(([gx, d]) => [x(Math.pow(10, gx)), base - (d / dMax) * amp]);
+
+    const clipId = `ov-len-clip-${j}`;
+    g.append('clipPath').attr('id', clipId).append('rect')
+      .attr('x', padL).attr('y', top).attr('width', W - padR - 12 - padL).attr('height', rowH);
+    const area = d3.area().x(d => d[0]).y0(base).y1(d => d[1]).curve(d3.curveBasis);
+    const line = d3.line().x(d => d[0]).y(d => d[1]).curve(d3.curveBasis);
+    const cg = g.append('g').attr('clip-path', `url(#${clipId})`);
+    cg.append('path').attr('class', 'ov-dist__area').attr('d', area(pts));
+    cg.append('path').attr('class', 'ov-dist__line').attr('d', line(pts));
+
+    // Rug: every contig as a tick under the curve.
+    if (q.n <= 400) q.v.forEach(v => cg.append('line').attr('class', 'ov-dist__rug')
+      .attr('x1', x(v)).attr('x2', x(v)).attr('y1', base).attr('y2', base + 3));
+
+    const yAt = v => {                       // curve height at a value (for marker lines)
+      const px = x(v);
+      const k = d3.bisector(d => d[0]).left(pts, px);
+      const p = pts[Math.min(k, pts.length - 1)];
+      return p ? p[1] : base - amp;
+    };
+    g.append('line').attr('class', 'ov-dist__mean')
+      .attr('x1', x(q.mean)).attr('x2', x(q.mean)).attr('y1', base).attr('y2', yAt(q.mean));
+    g.append('line').attr('class', 'ov-dist__median')
+      .attr('x1', x(q.med)).attr('x2', x(q.med)).attr('y1', base).attr('y2', yAt(q.med));
+
+    [_fmtLen(q.med), _fmtLen(q.mean), _fmtLen(r.n50)].forEach((t, k) =>
+      g.append('text').attr('class', 'ov-dist__stat' + (k ? '' : ' ov-dist__stat--key'))
+        .attr('x', statX(k)).attr('y', top + rowH / 2).attr('text-anchor', 'end')
+        .attr('dominant-baseline', 'central').text(t));
+
+    g.on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${esc(r.s.sample)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Sequences</span><span>${q.n.toLocaleString()}</span>
+          <span class="vq-tooltip__key">Min</span><span>${_fmtLen(q.min)} nt</span>
+          <span class="vq-tooltip__key">Q1</span><span>${_fmtLen(q.q1)} nt</span>
+          <span class="vq-tooltip__key">Median</span><span>${_fmtLen(q.med)} nt</span>
+          <span class="vq-tooltip__key">Mean</span><span>${_fmtLen(q.mean)} nt</span>
+          <span class="vq-tooltip__key">Q3</span><span>${_fmtLen(q.q3)} nt</span>
+          <span class="vq-tooltip__key">Max</span><span>${_fmtLen(q.max)} nt</span>
+          <span class="vq-tooltip__key">N50</span><span>${_fmtLen(r.n50)} nt</span>
+        </div>`, evt))
+     .on('mouseleave', VQ.tooltipHide);
   });
 }
 
-// ── Score "boxes" per sample (min–max range + mean dot) ─────────────────────
+// ── Score distribution: boxplot + every value per sample ────────────────────
 
-function _scoreBoxes(host, samples, key) {
+function _renderScoreBoxes(id, samples, key) {
+  const host = _body(id);
   if (!host) return;
   const rows = samples.map(s => {
-    const v = (s[key] || []).slice().sort((a, b) => a - b);
-    if (!v.length) return { label: s.sample, n: 0 };
-    return {
-      label: s.sample, n: v.length,
-      min: v[0], max: v[v.length - 1],
-      mean: v.reduce((a, b) => a + b, 0) / v.length,
-    };
+    const vals = (s[key] || []).filter(v => v != null && !isNaN(v));
+    if (!vals.length) return { s, q: null };
+    const q = _quantiles(vals);
+    const iqr = q.q3 - q.q1;
+    const loF = q.q1 - 1.5 * iqr, hiF = q.q3 + 1.5 * iqr;
+    q.wLo = d3.min(q.v.filter(v => v >= loF));
+    q.wHi = d3.max(q.v.filter(v => v <= hiF));
+    return { s, q };
   });
-  const valid = rows.filter(r => r.n);
-  if (!valid.length) { host.innerHTML = `<div class="vq-empty">No score data.</div>`; return; }
+  if (!rows.some(r => r.q)) { host.innerHTML = `<div class="vq-empty">No score data.</div>`; return; }
+  const draw = () => _drawScoreBoxes(host, rows);
+  draw();
+  VQ.redrawOnResize(host, draw);
+}
 
-  const W = 440, padL = 110, padR = 48, padT = 8;
-  const rh = _rowH(rows.length), gap = 6;
-  const H  = padT + rows.length * (rh + gap);
+function _drawScoreBoxes(host, rows) {
+  const esc  = VQ.esc;
+  const padL = 130, padR = 64, rowH = 34, headH = 8, axisH = 24, boxH = 16;
+  const H = headH + rows.length * rowH + axisH;
+  const { svg, W } = _pxSvg(host, 380, H);
   const x = d3.scaleLinear().domain([0, 100]).range([padL, W - padR]);
-  const svg = _svg(host, W, H);
 
-  [0, 25, 50, 75, 100].forEach(t =>
-    svg.append('line').attr('x1', x(t)).attr('x2', x(t))
-      .attr('y1', padT).attr('y2', H - 2).attr('class', 'ov-grid'));
+  // Score bands (low / mid / high) behind the grid, as in the Run tab gauge.
+  [[0, 40, 'ov-box__band--lo'], [40, 70, 'ov-box__band--mid'], [70, 100, 'ov-box__band--hi']].forEach(([a, b, c]) =>
+    svg.append('rect').attr('class', 'ov-box__band ' + c)
+      .attr('x', x(a)).attr('width', x(b) - x(a)).attr('y', headH).attr('height', rows.length * rowH));
+  [0, 20, 40, 60, 80, 100].forEach(t => {
+    svg.append('line').attr('class', 'ov-grid')
+      .attr('x1', x(t)).attr('x2', x(t)).attr('y1', headH).attr('y2', H - axisH + 2);
+    svg.append('text').attr('class', 'ov-axis-label').attr('x', x(t)).attr('y', H - axisH + 15)
+      .attr('text-anchor', 'middle').text(t);
+  });
+  svg.append('text').attr('class', 'ov-dist__hd').attr('x', W - 8).attr('y', H - axisH + 15)
+    .attr('text-anchor', 'end').text('median');
 
-  rows.forEach((r, i) => {
-    const y = padT + i * (rh + gap), cy = y + rh / 2;
-    svg.append('text').attr('x', padL - 8).attr('y', cy)
-      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
-      .attr('class', 'ov-axis-label').text(_trunc(r.label, 16));
-    if (!r.n) return;
-    svg.append('line').attr('x1', x(r.min)).attr('x2', x(r.max))
-      .attr('y1', cy).attr('y2', cy).attr('stroke', QUANT).attr('stroke-width', 2);
-    svg.append('circle').attr('cx', x(r.mean)).attr('cy', cy).attr('r', 4)
-      .attr('fill', QUANT).attr('stroke', '#fff').attr('stroke-width', 1.5)
-      .on('mousemove', e => VQ.tooltipShow(
-        `<b>${VQ.esc(r.label)}</b><br>n=${r.n} · mean ${r.mean.toFixed(1)}<br>range ${r.min.toFixed(0)}–${r.max.toFixed(0)}`, e))
-      .on('mouseleave', () => VQ.tooltipHide());
+  rows.forEach((r, j) => {
+    const top = headH + j * rowH, cy = top + rowH / 2;
+    const g = svg.append('g').attr('class', 'ov-funnel__row');
+    g.append('rect').attr('class', 'ov-funnel__hover')
+      .attr('x', 0).attr('y', top).attr('width', W).attr('height', rowH);
+    g.append('text').attr('class', 'ov-funnel__sample')
+      .attr('x', 8).attr('y', cy).attr('dominant-baseline', 'central')
+      .text(_trunc(r.s.sample, 18)).append('title').text(r.s.sample);
+    if (!r.q) {
+      g.append('text').attr('class', 'ov-axis-label').attr('x', padL + 6).attr('y', cy)
+        .attr('dominant-baseline', 'central').text('no scores');
+      return;
+    }
+    const q = r.q;
+
+    // Whiskers (1.5 × IQR) with caps
+    g.append('line').attr('class', 'ov-box__whisker')
+      .attr('x1', x(q.wLo)).attr('x2', x(q.q1)).attr('y1', cy).attr('y2', cy);
+    g.append('line').attr('class', 'ov-box__whisker')
+      .attr('x1', x(q.q3)).attr('x2', x(q.wHi)).attr('y1', cy).attr('y2', cy);
+    [q.wLo, q.wHi].forEach(v => g.append('line').attr('class', 'ov-box__whisker')
+      .attr('x1', x(v)).attr('x2', x(v)).attr('y1', cy - 5).attr('y2', cy + 5));
+
+    // Box
+    g.append('rect').attr('class', 'ov-box__box')
+      .attr('x', x(q.q1)).attr('width', Math.max(2, x(q.q3) - x(q.q1)))
+      .attr('y', cy - boxH / 2).attr('height', boxH).attr('rx', 4);
+
+    // Every value, jittered vertically (deterministic, so redraws don't shimmer);
+    // dots shrink and fade as n grows so the box stays readable.
+    const ptR = q.n > 150 ? 1.6 : q.n > 50 ? 1.9 : 2.2;
+    const ptA = q.n > 150 ? 0.28 : q.n > 50 ? 0.38 : 0.5;
+    q.v.forEach((v, i) => {
+      const jit = ((Math.sin(i * 12.9898 + v * 78.233) * 43758.5453) % 1 + 1) % 1 - 0.5;
+      const out = v < q.wLo || v > q.wHi;
+      g.append('circle').attr('class', 'ov-box__pt' + (out ? ' ov-box__pt--out' : ''))
+        .attr('cx', x(v)).attr('cy', cy + jit * (boxH + 4)).attr('r', out ? 2.6 : ptR)
+        .style('fill-opacity', out ? null : ptA);
+    });
+
+    // Median bar + mean diamond on top
+    g.append('line').attr('class', 'ov-box__median')
+      .attr('x1', x(q.med)).attr('x2', x(q.med)).attr('y1', cy - boxH / 2 - 2).attr('y2', cy + boxH / 2 + 2);
+    g.append('path').attr('class', 'ov-box__mean')
+      .attr('d', d3.symbol().type(d3.symbolDiamond).size(42)())
+      .attr('transform', `translate(${x(q.mean)},${cy})`);
+
+    g.append('text').attr('class', 'ov-dist__stat ov-dist__stat--key')
+      .attr('x', W - 8).attr('y', cy - 5).attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(q.med.toFixed(1));
+    g.append('text').attr('class', 'ov-axis-label')
+      .attr('x', W - 8).attr('y', cy + 8).attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(`n=${q.n}`);
+
+    g.on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${esc(r.s.sample)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Scored</span><span>${q.n.toLocaleString()}</span>
+          <span class="vq-tooltip__key">Min</span><span>${q.min.toFixed(1)}</span>
+          <span class="vq-tooltip__key">Q1</span><span>${q.q1.toFixed(1)}</span>
+          <span class="vq-tooltip__key">Median</span><span>${q.med.toFixed(1)}</span>
+          <span class="vq-tooltip__key">Mean</span><span>${q.mean.toFixed(1)}</span>
+          <span class="vq-tooltip__key">Q3</span><span>${q.q3.toFixed(1)}</span>
+          <span class="vq-tooltip__key">Max</span><span>${q.max.toFixed(1)}</span>
+        </div>`, evt))
+     .on('mouseleave', VQ.tooltipHide);
   });
 }
 

@@ -327,7 +327,8 @@ def test_salmon_summary_has_viral_reads(tmp_path):
 
 def test_overview_cards(results_root):
     html = _render_template(build_report_data(load_samples(results_root)), d3_js=STUB_D3)
-    for card in ("ov-funnel-card", "ov-bubbles-card", "ov-salmon-card", "Putative Novel"):
+    for card in ("ov-funnel-card", "ov-bubbles-card", "ov-salmon-card", "Putative Novel",
+                 "_renderLengthDensity(samples)", "_renderScoreBoxes('ov-heur'"):
         assert card in html, card
     # Removed from the overview.
     for gone in ("Viral Family Diversity per Sample", "Cross-sample Clusters per Sample",
