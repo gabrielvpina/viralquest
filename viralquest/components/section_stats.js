@@ -244,8 +244,8 @@ function _fmtDur(sec) {
   if (sec == null || isNaN(sec)) return '—';
   if (sec < 1)    return (sec * 1000).toFixed(0) + ' ms';
   if (sec < 60)   return sec.toFixed(1) + ' s';
-  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
-  if (sec < 3600) return `${m}m ${String(s).padStart(2, '0')}s`;
+  const r = Math.round(sec), m = Math.floor(r / 60), s = r % 60;
+  if (r < 3600) return `${m}m ${String(s).padStart(2, '0')}s`;
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
