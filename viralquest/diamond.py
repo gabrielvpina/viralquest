@@ -208,10 +208,13 @@ class DiamondResultAttacher:
     Coverage logic:
       - Each hit gets its own single-interval coverage via compute_coverage().
       - The best hit (highest bit_score) additionally receives the *merged*
-        coverage across all hits for that query, which is what the reporter
-        uses for the JSON output.  This avoids double-counting overlapping
-        aligned regions when the same query matches the subject in multiple
-        non-contiguous segments.
+        coverage of all HSPs against **its own subject**, which is what the
+        reporter, the RefSeq viral filter and the scorers use.  This counts a
+        query that matches the subject in several non-contiguous segments once
+        per aligned base, without borrowing coverage from other subjects: hits
+        to different proteins / organisms must not make the best hit look
+        longer than it is (a 35 %-covered best hit is not 95 % covered because
+        unrelated subjects align elsewhere on the contig).
     """
 
     @staticmethod
@@ -240,12 +243,13 @@ class DiamondResultAttacher:
             for hit in query_hits:
                 hit.compute_coverage(seq.length)
 
-            # merged coverage across all HSPs → assigned to the best hit
-            merged_bases    = merge_query_intervals(query_hits)
+            # merged coverage across the best subject's HSPs → assigned to the best hit
+            best_hit        = max(query_hits, key=lambda h: h.bit_score)
+            same_subject    = [h for h in query_hits if h.subject_id == best_hit.subject_id]
+            merged_bases    = merge_query_intervals(same_subject)
             merged_coverage = (
                 round((merged_bases / seq.length) * 100, 2) if seq.length > 0 else 0.0
             )
-            best_hit = max(query_hits, key=lambda h: h.bit_score)
             best_hit.query_coverage = merged_coverage
 
             if phase == DiamondPhase.REFSEQ_FILTER:

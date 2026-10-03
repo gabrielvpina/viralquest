@@ -13,22 +13,35 @@ from .biodata import NucSequence, InputFasta, Cap3
 
 class FastaParser:
 
+    IUPAC_AMBIGUITY: frozenset[str] = frozenset("RYKMSWBDHV")
+
     def __init__(self, file_path: str):
 
         self.file_path: Path = Path(file_path)
         self.sequences: list[NucSequence] = []
-        self.allowed_nucleotides: set[str] = set("ATCGUN-")
+        # ACGT/U, N, gap, and the IUPAC ambiguity codes consensus callers emit
+        # (iVar, bcftools consensus …); downstream tools translate them to X.
+        self.allowed_nucleotides: set[str] = set("ATCGUN-") | self.IUPAC_AMBIGUITY
         self.input_fasta: InputFasta | None = None
 
         logger.info("Starting fasta parser")
 
 
+    # A nucleotide sequence is mostly unambiguous bases; ambiguity codes are
+    # occasional.  Without this a protein made of letters that are also IUPAC
+    # codes (e.g. "MKWVT") would pass as DNA.
+    MIN_ACGT_FRACTION = 0.9
+
     def _is_nuc_only(self, record: SeqRecord) -> bool: # ensure that the sequences are composed by nucleotides
 
         seq_text = str(record.seq).upper()
-        seq_chars = set(seq_text)
-
-        return seq_chars.issubset(self.allowed_nucleotides)
+        if not set(seq_text).issubset(self.allowed_nucleotides):
+            return False
+        residues = len(seq_text) - seq_text.count("-")
+        if not residues:
+            return True
+        core = sum(seq_text.count(c) for c in "ACGTUN")
+        return core / residues >= self.MIN_ACGT_FRACTION
 
 
     def read_input_file(self): # raw processing of input files
@@ -43,21 +56,25 @@ class FastaParser:
             raise PermissionError("Permission denied.")
 
         try:
-            records_iterator = SeqIO.parse(handle=self.file_path, format="fasta")
-            
-            for record in records_iterator: # read each record and check if they're valid
-                if not self._is_nuc_only(record):
-                    logger.error(f"The sequence {record.id} contains invalid characters.")
-                    raise ValueError("The file contains sequences that are invalid to the analysis.")
-                
-                # save sequence info to NucSequence dataclass
-                sequence_string = str(record.seq).upper()
-                new_sequence = NucSequence(
-                    id=record.id,
-                    sequence=sequence_string,
-                )
+            ambiguous = 0
+            # Opened here (not by SeqIO) so the file is closed even when an
+            # invalid record stops the loop.
+            with open(self.file_path, encoding="utf-8") as handle:
+                for record in SeqIO.parse(handle, "fasta"):  # read each record and check if they're valid
+                    if not self._is_nuc_only(record):
+                        bad = sorted(set(str(record.seq).upper()) - self.allowed_nucleotides)
+                        logger.error(f"The sequence {record.id} contains invalid characters: {''.join(bad)}")
+                        raise ValueError("The file contains sequences that are invalid to the analysis.")
 
-                self.sequences.append(new_sequence) # sequences stores all information from fasta
+                    # save sequence info to NucSequence dataclass
+                    sequence_string = str(record.seq).upper()
+                    if self.IUPAC_AMBIGUITY.intersection(sequence_string):
+                        ambiguous += 1
+                    self.sequences.append(NucSequence(id=record.id, sequence=sequence_string))
+
+            if ambiguous:
+                logger.warning(f"{ambiguous} sequence(s) contain IUPAC ambiguity codes (RYKMSWBDHV) "
+                               "— kept as is; they translate to X in ORFs.")
 
             if not self.sequences:
                 logger.warning(f"No valid FASTA sequences found in {self.file_path}. Is the file empty or in the wrong format?")

@@ -73,3 +73,32 @@ def test_cap3_runner_reads_valid_fasta_successfully(tmp_path, monkeypatch):
     assert runner.working_fasta.exists() is True 
     assert runner.working_fasta.parent == mock_out
     assert resultado.is_successful is True
+
+
+def test_iupac_ambiguity_codes_accepted(tmp_path):
+    f = tmp_path / "consensus.fasta"
+    f.write_text(">c1\n" + "ACGT" * 50 + "RYKMSWBDHV" + "ACGT" * 50 + "\n")
+    parser = FastaParser(str(f))
+    parser.read_input_file()
+    assert len(parser.sequences) == 1 and "R" in parser.sequences[0].sequence
+
+
+def test_mostly_ambiguous_sequence_rejected(tmp_path):
+    # every character is a valid IUPAC code, but this is not a DNA sequence
+    f = tmp_path / "prot_like.fasta"
+    f.write_text(">p1\nMKWVSHRDYKM\n")
+    with pytest.raises(ValueError, match="invalid"):
+        FastaParser(str(f)).read_input_file()
+
+
+def test_file_closed_when_validation_fails(tmp_path):
+    import gc
+    import warnings
+    f = tmp_path / "bad.fasta"
+    f.write_text(">ok\nACGT\n>bad\nACGTXZ\n")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        with pytest.raises(ValueError):
+            FastaParser(str(f)).read_input_file()
+        gc.collect()
+    assert not [w for w in caught if issubclass(w.category, ResourceWarning)]

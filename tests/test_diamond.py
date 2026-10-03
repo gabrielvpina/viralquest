@@ -426,6 +426,32 @@ class TestMergedCoverage:
         assert best.query_coverage == pytest.approx(20.0, abs=0.1)
 
 
+    def test_other_subjects_do_not_inflate_best_hit_coverage(self):
+        """Hits to other proteins / organisms elsewhere on the contig must not
+        be added to the best hit's coverage (nor push it over the viral filter)."""
+        seq  = make_seq("seq1", length=1000)
+        hits = [
+            make_hit(query_id="seq1", subject_id="best", query_start=1,   query_end=300, bit_score=300),
+            make_hit(query_id="seq1", subject_id="other", query_start=301, query_end=900, bit_score=100),
+        ]
+        DiamondResultAttacher.attach(hits, [seq], DiamondPhase.REFSEQ_FILTER,
+                                     min_identity=50, min_coverage=40)
+        best = max(seq.blastx_hits, key=lambda h: h.bit_score)
+        assert best.query_coverage == pytest.approx(29.9, abs=0.1)   # not 89.9
+        assert seq.is_viral is False
+
+    def test_same_subject_hsps_still_merged(self):
+        seq  = make_seq("seq1", length=1000)
+        hits = [
+            make_hit(query_id="seq1", subject_id="best", query_start=1,   query_end=300, bit_score=300),
+            make_hit(query_id="seq1", subject_id="best", query_start=500, query_end=700, bit_score=90),
+            make_hit(query_id="seq1", subject_id="other", query_start=800, query_end=990, bit_score=80),
+        ]
+        DiamondResultAttacher.attach(hits, [seq], DiamondPhase.REFSEQ_FILTER)
+        best = max(seq.blastx_hits, key=lambda h: h.bit_score)
+        assert best.query_coverage == pytest.approx(49.9, abs=0.1)   # 299 + 200, other subject excluded
+
+
 # ===========================================================================
 # merge_query_intervals  (unit tests on the helper itself)
 # ===========================================================================
