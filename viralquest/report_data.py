@@ -5,7 +5,7 @@ consolidated HTML, from a list of loaded :class:`SampleReport` objects.
 Shape produced by :func:`build_report_data`::
 
     {
-      "meta":      {generated, viralquest_version, n_samples, input_root},
+      "meta":      {dataset, generated, viralquest_version, n_samples, input_root},
       "samples":   [ <per-sample overview summary, incl. salmon rollup>, ... ],
       "sequences": [ <every stamped sequence, for the viewer>, ... ],
       "clusters":  [ <cross-sample clusters>, ... ],   # filled in stage 2
@@ -204,6 +204,7 @@ def build_report_data(
     input_root: str = "",
     version:    str = "unknown",
     clusters:   list[dict] | None = None,
+    dataset:    str | None = None,
 ) -> dict:
     """Build the ``VQ_REPORT`` dict from loaded samples (+ optional clusters)."""
     clusters = clusters or []
@@ -225,6 +226,7 @@ def build_report_data(
 
     return {
         "meta": {
+            "dataset":            dataset,
             "generated":          datetime.now(timezone.utc).isoformat(),
             "viralquest_version": version,
             "n_samples":          len(samples),

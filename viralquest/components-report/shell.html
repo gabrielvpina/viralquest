@@ -148,7 +148,8 @@
     const v  = document.getElementById('nav-version');
     const ns = document.getElementById('nav-samples');
     if (v)  v.textContent  = 'v' + (meta.viralquest_version || '?');
-    if (ns) ns.textContent = (meta.n_samples || 0) + ' sample' + (meta.n_samples === 1 ? '' : 's');
+    if (ns) ns.textContent = (meta.dataset ? meta.dataset + ' · ' : '')
+                           + (meta.n_samples || 0) + ' sample' + (meta.n_samples === 1 ? '' : 's');
 
     // --- Init sections ----------------------------------------------
     vqInitAbout();

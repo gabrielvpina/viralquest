@@ -54,8 +54,11 @@ def _read(name: str) -> str:
 def _render_template(report_data: dict, d3_js: str) -> str:
     template = _read("shell.html")
 
-    n = report_data.get("meta", {}).get("n_samples", 0)
+    meta = report_data.get("meta", {})
+    n = meta.get("n_samples", 0)
     title = f"ViralQuest Report — {n} sample{'s' if n != 1 else ''}"
+    if meta.get("dataset"):
+        title = f"{meta['dataset']} · {title}"
 
     replacements = {
         "{{TITLE}}":        title,

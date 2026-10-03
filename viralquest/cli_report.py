@@ -1,13 +1,14 @@
 """
 cli_report.py — ``viralquest-report`` console entry point.
 
-Consolidates several ViralQuest result directories into a single
-self-contained HTML report.
+Consolidates several ViralQuest result directories into one named dataset:
+a self-contained HTML report plus merge-ready data exports.
 
-    viralquest-report -in my_results -out final_report
+    viralquest-report -in my_results -out final_report -n PRJNA123456
 
-The output directory contains the HTML plus (from stage 2 onward) the
-``clusters/``, ``quantification/`` and ``blastn/`` artefact folders.
+The output directory contains the HTML, ``<name>.viralquest.json`` and
+``<name>.viralquest.sqlite`` (see report_db.py), plus the ``clusters/``
+artefact folder when cross-sample clustering ran.
 """
 
 from __future__ import annotations
@@ -26,11 +27,19 @@ from viralquest.report_clusters import (
     write_artifacts,
 )
 from viralquest.report_data import build_report_data
+from viralquest.report_db import output_paths, validate_dataset_name, write_json, write_sqlite
 from viralquest.report_loader import load_samples
 
 __version__ = "3.0.10"
 
 HTML_NAME = "viralquest_report.html"
+
+
+def _dataset_name(value: str) -> str:
+    try:
+        return validate_dataset_name(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -46,6 +55,12 @@ def _build_parser() -> argparse.ArgumentParser:
     req.add_argument(
         "-out", "--outdir", dest="outdir", type=str, required=True,
         help="Output directory for the consolidated report.",
+    )
+    req.add_argument(
+        "-n", "--name", dest="name", type=_dataset_name, required=True, metavar="NAME",
+        help="Name of this dataset (e.g. a BioProject, a host species, a study): 1-64 letters, "
+             "digits, '.', '_' or '-'. Stored in the JSON / SQLite exports and in every SQLite row, "
+             "so datasets from different viralquest-report runs can be merged later.",
     )
     clu = parser.add_argument_group("cross-sample clustering")
     clu.add_argument(
@@ -125,13 +140,17 @@ def main(argv: list[str] | None = None) -> int:
         input_root=str(in_root),
         version=__version__,
         clusters=cluster_dicts,
+        dataset=args.name,
     )
 
     html_path = out_dir / HTML_NAME
     write_report(report_data, html_path)
+    json_path, db_path = output_paths(out_dir, args.name)
+    write_json(report_data, json_path)
+    write_sqlite(report_data, db_path)
     logger.success(
-        f"Consolidated report → '{html_path}'  "
-        f"({report_data['meta']['n_samples']} samples)."
+        f"Dataset '{args.name}' ({report_data['meta']['n_samples']} samples) → "
+        f"'{html_path}', '{json_path.name}', '{db_path.name}'."
     )
     return 0
 
