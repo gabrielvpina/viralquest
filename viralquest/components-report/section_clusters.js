@@ -21,10 +21,11 @@ let _clusters = [];
 let _samples  = [];          // every loaded sample name, report order
 let _seqByGid = new Map();
 let _hasTpm   = false;
+let _hasRpm   = false;
 let _inputReads = new Map();   // sample → library size (reads per million)
 let _state = {
   id: FLOOR_ID, cov: FLOOR_COV, minSamples: 2, agree: 'all', family: 'all', novelty: 'all',
-  q: '', sort: 'nSamples', dir: -1, sel: null, matrixMode: 'presence', simMetric: 'jaccard',
+  q: '', sort: 'nSamples', dir: -1, sel: null, matrixMode: 'presence',
 };
 let _view = [];              // clusters passing the filters, table order
 
@@ -47,7 +48,9 @@ function vqInitClusters(clusters, samples) {
   _seqByGid = new Map(seqs.map(s => [s.gid, s]));
   _hasTpm = _clusters.some(c => c.members.some(m => m.tpm != null));
   (samples || []).forEach(s => { if (s.salmon?.input_reads) _inputReads.set(s.sample, s.salmon.input_reads); });
-  if (_hasTpm) { _state.matrixMode = 'tpm'; }
+  _hasRpm = _inputReads.size > 0 && _clusters.some(c => c.members.some(m => m.reads != null));
+  // RPM compares across samples; TPM only within one, so it is the fallback.
+  _state.matrixMode = _hasRpm ? 'rpm' : _hasTpm ? 'tpm' : 'presence';
 
   // Family / novelty of each cluster come from its representative contig.
   const NOV = window.vqNovelty;
@@ -147,34 +150,20 @@ function vqInitClusters(clusters, samples) {
           <h3 class="vq-group__title">Across samples</h3>
           <span class="vq-group__hint">every cluster passing the filters · the selected cluster is highlighted</span>
         </div>
-        <div class="clu-across">
-          <div class="vq-chart-card" id="clu-matrix-card" style="min-height:auto">
+        <div class="vq-chart-card" id="clu-matrix-card" style="min-height:auto">
             <div class="vq-chart-card__head">
               <div>
                 <div class="vq-chart-card__title">Cluster Presence</div>
-                <div class="vq-chart-card__sub">clusters × samples · shared core on top · columns in similarity order · click a row to select</div>
+                <div class="vq-chart-card__sub" id="clu-matrix-sub"></div>
               </div>
               <div class="vq-toggle" id="clu-matrix-mode" role="tablist" aria-label="Cell value">
                 <button class="vq-toggle__btn${_state.matrixMode === 'presence' ? ' active' : ''}" type="button" data-mode="presence">Presence</button>
                 <button class="vq-toggle__btn${_state.matrixMode === 'members' ? ' active' : ''}" type="button" data-mode="members">Members</button>
-                ${_hasTpm ? `<button class="vq-toggle__btn${_state.matrixMode === 'tpm' ? ' active' : ''}" type="button" data-mode="tpm">TPM</button>` : ''}
+                ${_hasRpm ? `<button class="vq-toggle__btn${_state.matrixMode === 'rpm' ? ' active' : ''}" type="button" data-mode="rpm" title="reads per million input reads — comparable across samples">RPM</button>` : ''}
+                ${_hasTpm ? `<button class="vq-toggle__btn${_state.matrixMode === 'tpm' ? ' active' : ''}" type="button" data-mode="tpm" title="TPM within each sample's own index — compare within a sample only">TPM</button>` : ''}
               </div>
             </div>
             <div class="vq-chart-card__body clu-scroll" id="clu-matrix"></div>
-          </div>
-          <div class="vq-chart-card" id="clu-sim-card" style="min-height:auto">
-            <div class="vq-chart-card__head">
-              <div>
-                <div class="vq-chart-card__title">Sample Similarity</div>
-                <div class="vq-chart-card__sub" id="clu-sim-sub"></div>
-              </div>
-              <div class="vq-toggle" id="clu-sim-metric" role="tablist" aria-label="Similarity metric">
-                <button class="vq-toggle__btn active" type="button" data-metric="jaccard">Jaccard</button>
-                ${_hasTpm ? `<button class="vq-toggle__btn" type="button" data-metric="bray">Bray-Curtis</button>` : ''}
-              </div>
-            </div>
-            <div class="vq-chart-card__body clu-scroll" id="clu-sim"></div>
-          </div>
         </div>
       </section>
     </div>
@@ -221,12 +210,6 @@ function vqInitClusters(clusters, samples) {
     document.querySelectorAll('#clu-matrix-mode [data-mode]').forEach(x => x.classList.toggle('active', x === b));
     VQ.tooltipHide();
     _drawMatrix();
-  }));
-  document.querySelectorAll('#clu-sim-metric [data-metric]').forEach(b => b.addEventListener('click', () => {
-    _state.simMetric = b.dataset.metric;
-    document.querySelectorAll('#clu-sim-metric [data-metric]').forEach(x => x.classList.toggle('active', x === b));
-    VQ.tooltipHide();
-    _drawAcross();
   }));
 
   _rerender();
@@ -625,35 +608,22 @@ function _sampleVectors() {
   return vec;
 }
 
+/* Jaccard similarity of the samples' cluster sets — orders the matrix columns
+   so samples sharing the same clusters sit next to each other. */
 function _similarity(vec) {
   const n = _samples.length;
   const M = Array.from({ length: n }, () => new Array(n).fill(0));
-  const shared = Array.from({ length: n }, () => new Array(n).fill(0));
   for (let i = 0; i < n; i++) for (let j = i; j < n; j++) {
     const a = vec.get(_samples[i]), b = vec.get(_samples[j]);
     const inter = [...a.keys()].filter(k => b.has(k)).length;
-    let s;
-    if (_state.simMetric === 'bray') {
-      const keys = new Set([...a.keys(), ...b.keys()]);
-      let num = 0, den = 0;
-      keys.forEach(k => {
-        const x = a.get(k)?.tpm || 0, y = b.get(k)?.tpm || 0;
-        num += Math.min(x, y); den += x + y;
-      });
-      s = den ? 2 * num / den : (i === j ? 1 : 0);
-    } else {
-      const uni = new Set([...a.keys(), ...b.keys()]).size;
-      s = uni ? inter / uni : (i === j ? 1 : 0);
-    }
-    M[i][j] = M[j][i] = s;
-    shared[i][j] = shared[j][i] = inter;
+    const uni = new Set([...a.keys(), ...b.keys()]).size;
+    M[i][j] = M[j][i] = uni ? inter / uni : (i === j ? 1 : 0);
   }
-  return { M, shared };
+  return { M };
 }
 
 function _drawAcross() {
   _drawMatrix();
-  _drawSimilarity();
 }
 
 function _drawMatrix() {
@@ -667,23 +637,46 @@ function _drawMatrix() {
   // Rows: shared core first (prevalence), then size.
   const rows = _view.slice().sort((a, b) => b.nSamples - a.nSamples || b.size - a.size || a.gid.localeCompare(b.gid));
   const mode = _state.matrixMode;
+  const selS = _selSamples();
 
-  const avail = host.clientWidth || 600;
-  const padL = 250, padR = 54, rowH = 18;
-  const longest = d3.max(cols, s => s.length) || 4;
-  const cell = Math.max(14, Math.min(30, (avail - padL - padR) / cols.length));
-  const rotate = cell < longest * 6.5;
-  const headH = rotate ? Math.min(110, longest * 5 + 18) : 24;
-  const W = Math.max(avail, padL + padR + cell * cols.length);
-  const H = headH + rows.length * rowH + 6;
+  const sub = document.getElementById('clu-matrix-sub');
+  if (sub) sub.textContent = 'clusters × samples · shared core on top · columns grouped by shared clusters · '
+    + { presence: 'filled = cluster present', members: 'colour = member contigs in the sample',
+        rpm: 'colour = reads per million input reads (log)', tpm: 'colour = TPM (log) · compare within a sample only' }[mode]
+    + ' · click a row to select';
 
-  const maxN   = d3.max(rows, r => d3.max([...r.bySample.values()], b => b.n)) || 1;
-  const maxTpm = d3.max(rows, r => d3.max([...r.bySample.values()], b => b.tpm)) || 1;
-  const shade = b => {
-    if (mode === 'presence') return 0.75;
-    if (mode === 'members')  return 0.3 + 0.65 * Math.sqrt(b.n / maxN);
-    return b.tpm > 0 ? 0.2 + 0.75 * Math.log10(b.tpm + 1) / Math.log10(maxTpm + 1) : 0.12;
+  // Cell value per mode (null = absent).
+  const valOf = (b, s) => {
+    if (!b) return null;
+    if (mode === 'members') return b.n;
+    if (mode === 'rpm') return b.hasReads && _inputReads.get(s) ? b.reads / _inputReads.get(s) * 1e6 : null;
+    if (mode === 'tpm') return b.hasTpm ? b.tpm : null;
+    return 1;
   };
+  const vals = rows.flatMap(r => cols.map(s => valOf(r.bySample.get(s), s))).filter(v => v != null);
+  const maxV = d3.max(vals) || 1;
+  const t01 = v => mode === 'members' ? Math.sqrt(v / maxV)
+                 : mode === 'presence' ? 0.7
+                 : Math.log10(1 + v) / Math.log10(1 + maxV);
+  const color = v => d3.interpolateBlues(0.18 + 0.77 * t01(v));
+  const fmtCell = v => mode === 'members' ? String(v)
+    : v >= 1e4 ? (v / 1e3).toFixed(0) + 'k' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'k'
+    : v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v >= 0.01 ? v.toFixed(2) : '<0.01';
+
+  // Layout: cells share the card width (the matrix is the card's only content).
+  const avail = host.clientWidth || 900;
+  const idW = 96, padR = 96, rowH = 24;
+  const spW = Math.min(300, Math.max(150, avail * 0.2));
+  const padL = idW + spW;
+  const longest = d3.max(cols, s => s.length) || 4;
+  const cell = Math.max(22, Math.min(140, (avail - padL - padR) / cols.length));
+  const rotate = cell < longest * 7 + 10;
+  const headH = rotate ? Math.min(120, longest * 5.2 + 20) : 26;
+  const legendH = mode === 'presence' ? 0 : 40;
+  const W = Math.max(avail, padL + padR + cell * cols.length);
+  const H = headH + rows.length * rowH + 8 + legendH;
+  const spChars = Math.floor((spW - 14) / 6.4);
+  const showVals = mode !== 'presence' && cell >= 40;
 
   host.innerHTML = '';
   const svg = d3.select(host).append('svg')
@@ -691,10 +684,12 @@ function _drawMatrix() {
 
   cols.forEach((s, i) => {
     const x = padL + i * cell + cell / 2;
-    const t = svg.append('text').attr('class', 'clu-axis' + (_selSamples().has(s) ? ' is-on' : '')).text(s);
+    const t = svg.append('text').attr('class', 'clu-axis' + (selS.has(s) ? ' is-on' : '')).text(s);
     if (rotate) t.attr('transform', `translate(${x + 3},${headH - 6}) rotate(-45)`);
-    else t.attr('x', x).attr('y', headH - 8).attr('text-anchor', 'middle');
+    else t.attr('x', x).attr('y', headH - 9).attr('text-anchor', 'middle');
   });
+  svg.append('text').attr('class', 'clu-axis').attr('x', padL + cols.length * cell + 12).attr('y', headH - 9)
+    .text('samples');
 
   rows.forEach((r, j) => {
     const y = headH + j * rowH;
@@ -702,33 +697,61 @@ function _drawMatrix() {
     const g = svg.append('g').attr('class', 'clu-mrow' + (sel ? ' is-selected' : '')).style('cursor', 'pointer')
       .on('click', () => { _select(r.gid); document.getElementById('clu-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     g.append('rect').attr('class', 'clu-mrow__bg').attr('x', 0).attr('y', y).attr('width', W).attr('height', rowH);
-    g.append('text').attr('class', 'clu-mrow__id').attr('x', 6).attr('y', y + rowH / 2)
+    g.append('text').attr('class', 'clu-mrow__id').attr('x', 8).attr('y', y + rowH / 2)
       .attr('dominant-baseline', 'central').text(r.gid);
-    g.append('text').attr('class', 'clu-mrow__sp').attr('x', 92).attr('y', y + rowH / 2)
-      .attr('dominant-baseline', 'central').text(_trunc(r.species, 24)).append('title').text(r.species);
+    g.append('text').attr('class', 'clu-mrow__sp').attr('x', idW + 4).attr('y', y + rowH / 2)
+      .attr('dominant-baseline', 'central').text(_trunc(r.species, spChars)).append('title').text(r.species);
     cols.forEach((s, i) => {
       const b = r.bySample.get(s);
       const x = padL + i * cell;
       if (!b) {
         g.append('rect').attr('class', 'clu-cell--off')
-          .attr('x', x + cell / 2 - 1.5).attr('y', y + rowH / 2 - 1.5).attr('width', 3).attr('height', 3).attr('rx', 1.5);
+          .attr('x', x + cell / 2 - 2).attr('y', y + rowH / 2 - 2).attr('width', 4).attr('height', 4).attr('rx', 2);
         return;
       }
+      const v = valOf(b, s);
+      const fill = v == null ? 'var(--vq-border-dark)' : color(v);
       g.append('rect').attr('class', 'clu-cell')
-        .attr('x', x + 1.5).attr('y', y + 2).attr('width', cell - 3).attr('height', rowH - 4).attr('rx', 3)
-        .attr('fill-opacity', shade(b))
-        .on('mousemove', evt => VQ.tooltipShow(`
+        .attr('x', x + 2).attr('y', y + 2.5).attr('width', cell - 4).attr('height', rowH - 5).attr('rx', 4)
+        .attr('fill', fill)
+        .on('mousemove', evt => {
+          const rpm = b.hasReads && _inputReads.get(s) ? b.reads / _inputReads.get(s) * 1e6 : null;
+          VQ.tooltipShow(`
           <div class="vq-tooltip__title">${esc(r.gid)} · ${esc(s)}</div>
           <div class="vq-tooltip__row">
             <span class="vq-tooltip__key">Species</span><span>${esc(r.species || '—')}</span>
             <span class="vq-tooltip__key">Members</span><span>${b.n}</span>
+            ${rpm != null ? `<span class="vq-tooltip__key">RPM</span><span>${_fmtTpm(rpm)}</span>` : ''}
             ${b.hasTpm ? `<span class="vq-tooltip__key">TPM</span><span>${_fmtTpm(b.tpm)}</span>` : ''}
-          </div>`, evt))
+          </div>`, evt); })
         .on('mouseleave', VQ.tooltipHide);
+      if (showVals && v != null) g.append('text').attr('class', 'clu-cell__v')
+        .attr('x', x + cell / 2).attr('y', y + rowH / 2).attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+        .attr('fill', t01(v) > 0.55 ? '#fff' : 'var(--vq-text)').text(fmtCell(v));
     });
-    g.append('text').attr('class', 'clu-mrow__prev').attr('x', padL + cols.length * cell + 8).attr('y', y + rowH / 2)
+    // Prevalence: bar + k/N
+    const px = padL + cols.length * cell + 12, pw = 40;
+    g.append('rect').attr('class', 'clu-prev__track').attr('x', px).attr('y', y + rowH / 2 - 3).attr('width', pw).attr('height', 6).attr('rx', 3);
+    g.append('rect').attr('x', px).attr('y', y + rowH / 2 - 3).attr('width', pw * r.nSamples / _samples.length).attr('height', 6).attr('rx', 3)
+      .attr('fill', r.nSamples === _samples.length ? 'var(--vq-success)' : 'var(--vq-accent)');
+    g.append('text').attr('class', 'clu-mrow__prev').attr('x', px + pw + 6).attr('y', y + rowH / 2)
       .attr('dominant-baseline', 'central').text(`${r.nSamples}/${_samples.length}`);
   });
+
+  // Colour legend
+  if (legendH) {
+    const ly = headH + rows.length * rowH + 20, lw = Math.min(220, cols.length * cell);
+    const grad = svg.append('defs').append('linearGradient').attr('id', 'clu-mx-grad');
+    d3.range(0, 1.01, 0.1).forEach(f => grad.append('stop').attr('offset', f)
+      .attr('stop-color', d3.interpolateBlues(0.18 + 0.77 * f)));
+    svg.append('rect').attr('x', padL).attr('y', ly).attr('width', lw).attr('height', 8).attr('rx', 4).attr('fill', 'url(#clu-mx-grad)');
+    const lo = mode === 'members' ? '1' : '0';
+    svg.append('text').attr('class', 'clu-axis').attr('x', padL).attr('y', ly + 20).text(lo);
+    svg.append('text').attr('class', 'clu-axis').attr('x', padL + lw).attr('y', ly + 20).attr('text-anchor', 'end')
+      .text(`${fmtCell(maxV)} ${mode === 'members' ? 'members' : mode.toUpperCase()}`);
+    svg.append('text').attr('class', 'clu-axis').attr('x', padL + lw + 14).attr('y', ly + 8)
+      .text(mode === 'members' ? '√ scale' : 'log scale');
+  }
 }
 
 function _selSamples() {
@@ -742,94 +765,11 @@ function _simOrder() {
 }
 
 function _simData() {
-  const key = _state.simMetric + '|' + _view.map(r => r.gid).join(',') + '|' + _state.id + '|' + _state.cov;
+  const key = _view.map(r => r.gid).join(',') + '|' + _state.id + '|' + _state.cov;
   if (_simCache && _simCache.key === key) return _simCache;
   const sim = _similarity(_sampleVectors());
   _simCache = { key, ...sim, tree: VQ.upgma(sim.M) };
   return _simCache;
-}
-
-function _drawSimilarity() {
-  const host = document.getElementById('clu-sim');
-  if (!host) return;
-  const esc = VQ.esc;
-  const sub = document.getElementById('clu-sim-sub');
-  if (sub) sub.textContent = _state.simMetric === 'bray'
-    ? 'Bray-Curtis similarity on cluster TPM · UPGMA order · faded = pair without the selected cluster'
-    : 'Jaccard index on shared clusters · UPGMA order · faded = pair without the selected cluster';
-  if (_samples.length < 2 || !_view.length) { host.innerHTML = '<div class="vq-empty">Not enough data.</div>'; return; }
-
-  const { M, shared, tree } = _simData();
-  const order = tree.leaves;
-  const n = order.length;
-  const selS = _selSamples();
-
-  const avail = host.clientWidth || 500;
-  const longest = d3.max(_samples, s => s.length) || 4;
-  const dendW = 56, labW = Math.min(150, longest * 6.6 + 10);
-  const padR = Math.min(90, longest * 4.8 + 8);    // room for the last rotated header
-  const cell = Math.max(16, Math.min(46, (avail - dendW - labW - padR) / n));
-  const headH = Math.min(110, longest * 5 + 18);
-  const W = Math.max(avail, dendW + labW + n * cell + padR);
-  const H = headH + n * cell + 34;
-  const x0 = dendW + labW;
-
-  host.innerHTML = '';
-  const svg = d3.select(host).append('svg')
-    .attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`).style('display', 'block');
-
-  // Dendrogram (left), leaves aligned to rows.
-  const yLeaf = new Map(order.map((idx, k) => [idx, headH + k * cell + cell / 2]));
-  const maxH = tree.h || 1;
-  const xOf = h => dendW - 4 - (h / maxH) * (dendW - 10);
-  const walk = node => {
-    if (!node.kids) return { y: yLeaf.get(node.leaves[0]), x: xOf(0) };
-    const [a, b] = node.kids.map(walk);
-    const x = xOf(node.h);
-    svg.append('path').attr('class', 'clu-dendro')
-      .attr('d', `M${a.x},${a.y} H${x} V${b.y} H${b.x}`);
-    return { y: (a.y + b.y) / 2, x };
-  };
-  if (n > 1) walk(tree);
-
-  const color = s => d3.interpolateBlues(0.06 + 0.86 * Math.max(0, Math.min(1, s)));
-  order.forEach((i, r) => {
-    const yy = headH + r * cell;
-    svg.append('text').attr('class', 'clu-axis' + (selS.has(_samples[i]) ? ' is-on' : ' is-off'))
-      .attr('x', x0 - 6).attr('y', yy + cell / 2).attr('text-anchor', 'end').attr('dominant-baseline', 'central')
-      .text(_trunc(_samples[i], 22));
-    const xx = x0 + r * cell + cell / 2;
-    svg.append('text').attr('class', 'clu-axis' + (selS.has(_samples[i]) ? ' is-on' : ' is-off'))
-      .attr('transform', `translate(${xx + 3},${headH - 6}) rotate(-45)`).text(_trunc(_samples[i], 22));
-    order.forEach((j, c) => {
-      const s = M[i][j];
-      const both = selS.has(_samples[i]) && selS.has(_samples[j]);
-      svg.append('rect').attr('class', 'clu-sim' + (selS.size && !both ? ' is-dim' : ''))
-        .attr('x', x0 + c * cell + 1).attr('y', yy + 1).attr('width', cell - 2).attr('height', cell - 2).attr('rx', 3)
-        .attr('fill', color(s))
-        .on('mousemove', evt => VQ.tooltipShow(`
-          <div class="vq-tooltip__title">${esc(_samples[i])} × ${esc(_samples[j])}</div>
-          <div class="vq-tooltip__row">
-            <span class="vq-tooltip__key">${_state.simMetric === 'bray' ? 'Bray-Curtis sim.' : 'Jaccard'}</span><span>${s.toFixed(2)}</span>
-            <span class="vq-tooltip__key">Shared clusters</span><span>${shared[i][j]}</span>
-          </div>`, evt))
-        .on('mouseleave', VQ.tooltipHide);
-      if (cell >= 30) svg.append('text').attr('class', 'clu-sim__val')
-        .attr('x', x0 + c * cell + cell / 2).attr('y', yy + cell / 2)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-        .attr('fill', s > 0.55 ? '#fff' : 'var(--vq-text-2)')
-        .text(i === j ? '' : s.toFixed(2).replace(/^0/, ''));
-    });
-  });
-
-  // Colour scale legend
-  const ly = headH + n * cell + 14, lw = Math.min(180, n * cell);
-  const grad = svg.append('defs').append('linearGradient').attr('id', 'clu-sim-grad');
-  [0, 0.5, 1].forEach(t => grad.append('stop').attr('offset', t).attr('stop-color', color(t)));
-  svg.append('rect').attr('x', x0).attr('y', ly).attr('width', lw).attr('height', 7).attr('rx', 3.5)
-    .attr('fill', 'url(#clu-sim-grad)');
-  svg.append('text').attr('class', 'clu-axis').attr('x', x0).attr('y', ly + 19).text('0');
-  svg.append('text').attr('class', 'clu-axis').attr('x', x0 + lw).attr('y', ly + 19).attr('text-anchor', 'end').text('1');
 }
 
 function _trunc(s, n) {

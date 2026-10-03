@@ -2600,9 +2600,6 @@ button.ov-wf-cell:hover .ov-wf-dot { filter: brightness(1.08); transform: scale(
 
 .clu-stack  { display: flex; flex-direction: column; gap: var(--vq-space-3); }
 .clu-stack > .vq-chart-card { min-width: 0; }
-.clu-across { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
-              gap: var(--vq-space-3); align-items: start; }
-.clu-across > .vq-chart-card { min-width: 0; }
 .clu-scroll { overflow-x: auto; overflow-y: hidden; justify-content: flex-start; }
 
 /* Cluster table (selector) */
@@ -2658,7 +2655,7 @@ button.ov-wf-cell:hover .ov-wf-dot { filter: brightness(1.08); transform: scale(
           font-family: var(--vq-font-mono); }
 .clu-species--off { color: #9b6a09 !important; }
 
-/* Presence matrix + similarity heatmap */
+/* Presence matrix */
 .clu-axis       { font-size: 11px; fill: var(--vq-text-2); font-family: var(--vq-font); }
 .clu-axis.is-on { fill: var(--vq-accent-dark); font-weight: 700; }
 .clu-mrow__bg   { fill: transparent; }
@@ -2668,13 +2665,13 @@ button.ov-wf-cell:hover .ov-wf-dot { filter: brightness(1.08); transform: scale(
 .clu-mrow__sp   { font-size: 11px; font-style: italic; fill: var(--vq-text-2); }
 .clu-mrow.is-selected .clu-mrow__id { font-weight: 700; fill: var(--vq-accent-dark); }
 .clu-mrow__prev { font-size: 10.5px; font-family: var(--vq-font-mono); fill: var(--vq-text-3); }
-.clu-cell       { fill: var(--vq-accent); }
+.clu-cell       { stroke: var(--vq-surface); stroke-width: 1; }
+.clu-cell:hover { stroke: var(--vq-primary); stroke-width: 1.5; }
+.clu-cell__v    { font-size: 10px; font-family: var(--vq-font-mono); font-weight: 600; pointer-events: none; }
+.clu-prev__track { fill: var(--vq-c-track); }
 .clu-cell--off  { fill: var(--vq-border-dark); opacity: .6; }
 .clu-dendro     { fill: none; stroke: var(--vq-text-3); stroke-width: 1.2; }
-.clu-sim        { transition: opacity var(--vq-dur) var(--vq-ease); }
-.clu-sim.is-dim { opacity: .28; }
 .clu-axis.is-off { fill: var(--vq-text-3); }
-.clu-sim__val   { font-size: 10px; font-family: var(--vq-font-mono); pointer-events: none; }
 
 /* ════════════════════════════════════════════════════════════════════
    viralquest-report — Sequence Viewer (Section 3) sample filter bar
