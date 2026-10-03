@@ -1,5 +1,6 @@
 import json
 import lzma
+from pathlib import Path
 
 from loguru import logger
 
@@ -97,26 +98,48 @@ class ViralFamilyAnnotator:
         return annotated
 
 
+SYNONYMS_FILE = "viralSynonyms.json.xz"
+
+
 class TaxonomyLoader:
     """
-    Loads viralTax.json.xz and builds two lookup indices:
+    Loads viralTax.json.xz and builds the lookup indices:
       - by ScientificName  (primary match)
       - by Species field   (fallback; first record per species name wins)
+      - by TaxId
+      - by NCBI synonym    (old / equivalent / common names, from
+                            viralSynonyms.json.xz built by
+                            scripts/build_viral_synonyms.py; optional)
     """
 
     @staticmethod
     def load(json_xz_path: str) -> tuple[dict[str, dict], dict[str, dict]]:
+        sci_idx, sp_idx, _, _ = TaxonomyLoader.load_indices(json_xz_path, synonyms_path=False)
+        return sci_idx, sp_idx
+
+    @staticmethod
+    def load_indices(json_xz_path: str, synonyms_path: str | None | bool = None
+                     ) -> tuple[dict[str, dict], dict[str, dict], dict[int, dict], dict[str, dict]]:
+        """
+        (scientific-name, species, taxid, synonym) indices.  ``synonyms_path``
+        defaults to viralSynonyms.json.xz next to the taxonomy file; ``False``
+        skips synonyms.  A missing synonym file only disables that index.
+        """
         try:
             with lzma.open(json_xz_path, "rt", encoding="utf-8") as fh:
                 data = json.load(fh)
         except Exception as exc:
             logger.error(f"Cannot read {json_xz_path}: {exc}")
-            return {}, {}
+            return {}, {}, {}, {}
 
         sci_idx: dict[str, dict] = {}
         sp_idx: dict[str, dict] = {}
+        taxid_idx: dict[int, dict] = {}
 
         for record in data:
+            tid = record.get("TaxId")
+            if tid:
+                taxid_idx[int(tid)] = record
             sci = record.get("ScientificName")
             if sci:
                 sci_idx[sci.lower()] = record
@@ -126,42 +149,74 @@ class TaxonomyLoader:
                 if key not in sp_idx:
                     sp_idx[key] = record
 
+        syn_idx: dict[str, dict] = {}
+        if synonyms_path is not False:
+            syn_path = Path(synonyms_path) if synonyms_path else Path(json_xz_path).with_name(SYNONYMS_FILE)
+            syn_idx = TaxonomyLoader._load_synonyms(syn_path, taxid_idx)
+
         logger.success(
             f"TaxonomyLoader: {len(sci_idx)} scientific names, "
-            f"{len(sp_idx)} species names indexed from {json_xz_path}."
+            f"{len(sp_idx)} species names, {len(syn_idx)} NCBI synonyms indexed from {json_xz_path}."
         )
-        return sci_idx, sp_idx
+        return sci_idx, sp_idx, taxid_idx, syn_idx
+
+    @staticmethod
+    def _load_synonyms(path: Path, taxid_idx: dict[int, dict]) -> dict[str, dict]:
+        if not path.exists():
+            logger.debug(f"No synonym table at {path} — matching on primary names only.")
+            return {}
+        try:
+            with lzma.open(path, "rt", encoding="utf-8") as fh:
+                names = json.load(fh).get("names", {})
+        except Exception as exc:
+            logger.warning(f"Cannot read synonym table {path}: {exc}")
+            return {}
+        return {name: taxid_idx[tid] for name, tid in names.items() if tid in taxid_idx}
 
 
 class TaxonomyMatcher:
-    """Matches a species string against the loaded taxonomy indices."""
+    """Matches a species string against the loaded taxonomy indices
+    (scientific name, then species, then NCBI synonym)."""
 
-    def __init__(self, sci_idx: dict[str, dict], sp_idx: dict[str, dict]):
+    def __init__(self, sci_idx: dict[str, dict], sp_idx: dict[str, dict],
+                 syn_idx: dict[str, dict] | None = None):
         self._sci = sci_idx
         self._sp  = sp_idx
+        self._syn = syn_idx or {}
+
+    def lookup(self, name: str) -> tuple[dict | None, bool]:
+        """(record, via_synonym) for a name, or (None, False)."""
+        if not name:
+            return None, False
+        key = name.lower()
+        rec = self._sci.get(key) or self._sp.get(key)
+        if rec:
+            return rec, False
+        rec = self._syn.get(key)
+        return (rec, True) if rec else (None, False)
 
     def match(self, species: str) -> Taxonomy | None:
-        if not species:
-            return None
-        key    = species.lower()
-        record = self._sci.get(key) or self._sp.get(key)
-        if record is None:
-            return None
-        return Taxonomy(
-            tax_id        = record.get("TaxId", 0),
-            scientific_name = record.get("ScientificName", ""),
-            no_rank       = record.get("No_Rank"),
-            clade         = record.get("Clade"),
-            kingdom       = record.get("Kingdom"),
-            phylum        = record.get("Phylum"),
-            class_        = record.get("Class"),
-            order         = record.get("Order"),
-            family        = record.get("Family"),
-            subfamily     = record.get("Subfamily"),
-            genus         = record.get("Genus"),
-            species       = record.get("Species"),
-            genome        = record.get("Genome"),
-        )
+        record, _ = self.lookup(species)
+        return record_to_taxonomy(record) if record else None
+
+
+def record_to_taxonomy(record: dict) -> Taxonomy:
+    """Build a Taxonomy from one viralTax.json record."""
+    return Taxonomy(
+        tax_id        = record.get("TaxId", 0),
+        scientific_name = record.get("ScientificName", ""),
+        no_rank       = record.get("No_Rank"),
+        clade         = record.get("Clade"),
+        kingdom       = record.get("Kingdom"),
+        phylum        = record.get("Phylum"),
+        class_        = record.get("Class"),
+        order         = record.get("Order"),
+        family        = record.get("Family"),
+        subfamily     = record.get("Subfamily"),
+        genus         = record.get("Genus"),
+        species       = record.get("Species"),
+        genome        = record.get("Genome"),
+    )
 
 
 class TaxonomyAnnotator:
@@ -170,9 +225,11 @@ class TaxonomyAnnotator:
     the species extracted from their best BLASTx hit's subject_title.
     """
 
-    def __init__(self, json_xz_path: str):
-        sci_idx, sp_idx = TaxonomyLoader.load(json_xz_path)
-        self._matcher   = TaxonomyMatcher(sci_idx, sp_idx)
+    def __init__(self, json_xz_path: str, synonyms_path: str | None = None):
+        sci_idx, sp_idx, taxid_idx, syn_idx = TaxonomyLoader.load_indices(json_xz_path, synonyms_path)
+        self._matcher   = TaxonomyMatcher(sci_idx, sp_idx, syn_idx)
+        # Shared with BlastnTaxonomyResolver so the files are decompressed once.
+        self.indices    = (sci_idx, sp_idx, taxid_idx, syn_idx)
 
     def annotate(self, nuc_seqs: list[NucSequence]) -> int:
         """

@@ -63,6 +63,7 @@ def _resolve_db_paths(ext_db_dir: Path | None = None) -> tuple[dict, Path, list]
         "eggnog":     hmm_base  / "EggNOG-4.5.hmm",
         "pfam":       hmm_base  / "Pfam-A.hmm",
         "viral_tax":  data      / "viralTax.json.xz",
+        "viral_syn":  data      / "viralSynonyms.json.xz",
         "fam_high":   fam_dir   / "viral_info_highToken.json",
         "fam_low":    fam_dir   / "viral_info_lowToken.json",
     }
@@ -432,8 +433,12 @@ def _show_rich_help() -> None:
 
 # ── Validation ────────────────────────────────────────────────────────────────
 
+# Files the pipeline works without (it only loses that refinement).
+_OPTIONAL_DB = {"viral_syn"}
+
+
 def _check_databases(console, db: dict) -> bool:
-    missing = [name for name, path in db.items() if not path.exists()]
+    missing = [name for name, path in db.items() if name not in _OPTIONAL_DB and not path.exists()]
     if not missing:
         return True
     console.print(f"\n[bold red]ERROR:[/bold red] {len(missing)} database file(s) not found:\n")
@@ -862,6 +867,7 @@ def _run_pipeline(args):
                               HmmSearcher, HmmResultAttacher, HmmViralFlagSetter)
     from .blastn      import BlastnRunner, BlastnMode, BlastnResultAttacher
     from .tax         import TaxonomyAnnotator, ViralFamilyAnnotator
+    from .blastn_tax  import BlastnTaxonomyResolver
     from .track_seqs  import SequenceTracker
     from .exporter    import ReportExporter
     from .html_report import write_report
@@ -1079,12 +1085,19 @@ def _run_pipeline(args):
 
     # ── 8. Taxonomy annotation ────────────────────────────────────────────────
     t = time.time()
-    TaxonomyAnnotator(str(args._db["viral_tax"])).annotate(seqs)
+    tax_annotator = TaxonomyAnnotator(str(args._db["viral_tax"]), str(args._db["viral_syn"]))
+    tax_annotator.annotate(seqs)
     ViralFamilyAnnotator(
         str(args._db["fam_high"]), str(args._db["fam_low"])
     ).annotate(seqs)
+    # Best BLASTn hit → taxonomy, from the virus name in its title (offline).
+    bn_tax = {}
+    if any(s.blastn_hits for s in seqs):
+        bn_tax = BlastnTaxonomyResolver(*tax_annotator.indices).annotate(seqs)
     yield from _tick(t, "taxonomy", {
         "With taxonomy": sum(1 for s in seqs if s.taxonomy is not None),
+        **({"BLASTn hit taxonomy": bn_tax["resolved"],
+            "BLASTn hit unresolved": bn_tax["unresolved"]} if bn_tax else {}),
     })
 
     # ── 9. Clustering ─────────────────────────────────────────────────────────

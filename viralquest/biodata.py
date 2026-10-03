@@ -218,6 +218,25 @@ class Taxonomy:
     genome: str | None
 
 
+@dataclass(slots=True)
+class BlastnTaxonomy:
+    """
+    Taxonomy of the best BLASTn hit's subject.
+
+    status  — "resolved" or "unresolved".
+    method  — "title" (virus name scanned out of the hit title against the
+              bundled viral taxonomy), or None when unresolved.
+    """
+    status: str
+    method: str | None
+    accession: str | None
+    subject: str
+    taxid: int | None = None         # taxid of the matched viral taxon
+    matched_name: str | None = None  # the name matched in the title
+    synonym_of: str | None = None    # current name, when matched_name is an NCBI synonym
+    taxonomy: Taxonomy | None = None
+
+
 # ---------------------------------------------------------------------------
 # Viral family / order / genus descriptive info
 # ---------------------------------------------------------------------------
@@ -509,6 +528,9 @@ class NucSequence:
 
     # taxonomy resolved from best BLASTx species
     taxonomy: Taxonomy | None = field(default=None, init=False)
+
+    # taxonomy of the best BLASTn hit's subject (accession → taxid, else name)
+    blastn_taxonomy: BlastnTaxonomy | None = field(default=None, init=False)
 
     # viral family / order / genus annotation
     viral_family_info: ViralFamilyInfo | None = field(default=None, init=False)

@@ -247,6 +247,7 @@ class ReportExporter:
             "blastx_nr_hits": [_to_serializable(h) for h in seq.blastx_nr_hits],
             "blastn_hits":    [_to_serializable(h) for h in seq.blastn_hits],
             "taxonomy":       self._taxonomy_to_dict(seq.taxonomy) if seq.taxonomy else None,
+            "blastn_taxonomy": self._blastn_taxonomy_to_dict(seq.blastn_taxonomy) if seq.blastn_taxonomy else None,
             "coverage":       _to_serializable(seq.coverage) if seq.coverage else None,
             "seq_quality":    _to_serializable(seq.seq_quality) if seq.seq_quality else None,
             # Heuristic score always runs, so the field is always present.
@@ -411,6 +412,12 @@ class ReportExporter:
             stats["blastn"] = blastn
 
         return stats
+
+    @classmethod
+    def _blastn_taxonomy_to_dict(cls, bt) -> dict:
+        d = _to_serializable(bt)
+        d["taxonomy"] = cls._taxonomy_to_dict(bt.taxonomy) if bt.taxonomy else None
+        return d
 
     @staticmethod
     def _taxonomy_to_dict(tax: Taxonomy) -> dict:
