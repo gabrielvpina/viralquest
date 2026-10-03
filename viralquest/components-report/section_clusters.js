@@ -21,6 +21,7 @@ let _clusters = [];
 let _samples  = [];          // every loaded sample name, report order
 let _seqByGid = new Map();
 let _hasTpm   = false;
+let _inputReads = new Map();   // sample → library size (reads per million)
 let _state = {
   id: FLOOR_ID, cov: FLOOR_COV, minSamples: 2, agree: 'all', family: 'all', novelty: 'all',
   q: '', sort: 'nSamples', dir: -1, sel: null, matrixMode: 'presence', simMetric: 'jaccard',
@@ -45,6 +46,7 @@ function vqInitClusters(clusters, samples) {
   const seqs = (typeof VQ_REPORT !== 'undefined' ? VQ_REPORT.sequences : null) || [];
   _seqByGid = new Map(seqs.map(s => [s.gid, s]));
   _hasTpm = _clusters.some(c => c.members.some(m => m.tpm != null));
+  (samples || []).forEach(s => { if (s.salmon?.input_reads) _inputReads.set(s.sample, s.salmon.input_reads); });
   if (_hasTpm) { _state.matrixMode = 'tpm'; }
 
   // Family / novelty of each cluster come from its representative contig.
@@ -246,9 +248,10 @@ function _summary(c) {
   const others  = members.filter(m => !m.is_representative);
   const bySample = new Map();
   members.forEach(m => {
-    if (!bySample.has(m.sample)) bySample.set(m.sample, { n: 0, tpm: 0, hasTpm: false });
+    if (!bySample.has(m.sample)) bySample.set(m.sample, { n: 0, tpm: 0, reads: 0, hasTpm: false, hasReads: false });
     const b = bySample.get(m.sample);
     b.n += 1;
+    if (m.reads != null) { b.reads += m.reads; b.hasReads = true; }
     if (m.tpm != null) { b.tpm += m.tpm; b.hasTpm = true; }
   });
   const named = members.filter(m => m.species_db === 'nr' || m.species_db === 'refseq');
@@ -309,6 +312,8 @@ function _rerender() {
 function _select(gid) {
   if (!gid || gid === _state.sel) return;
   _state.sel = gid;
+  // The RNA Quantification tab follows the cluster picked here.
+  document.dispatchEvent(new CustomEvent('vq:cluster-select', { detail: gid }));
   _renderTable();
   _renderDetail();
   _drawAcross();
@@ -495,18 +500,24 @@ function _renderDetail() {
   }
   const idx = _view.indexOf(r);
   const safe = VQ.safeId(r.gid);
+  // Reads per million when Salmon reads + library size are known (comparable
+  // across samples); TPM otherwise.
+  const rpmOf = (s, b) => b.hasReads && _inputReads.get(s) ? b.reads / _inputReads.get(s) * 1e6 : null;
+  const maxRpm = d3.max(_samples, s => { const b = r.bySample.get(s); return b ? rpmOf(s, b) : null; }) || 0;
   const maxTpm = d3.max([...r.bySample.values()], b => b.tpm) || 0;
 
   const chips = _samples.map(s => {
     const b = r.bySample.get(s);
     if (!b) return `<span class="clu-presence clu-presence--off" title="${esc(s)}: not in this cluster">
                       <span class="clu-presence__name">${esc(s)}</span><span class="clu-presence__val">—</span></span>`;
-    const tpmTxt = b.hasTpm ? ` · ${_fmtTpm(b.tpm)} TPM` : '';
-    const w = b.hasTpm && maxTpm > 0 ? Math.max(4, 100 * b.tpm / maxTpm) : 100;
-    return `<span class="clu-presence" title="${esc(s)}: ${b.n} member${b.n > 1 ? 's' : ''}${tpmTxt}">
+    const rpm = rpmOf(s, b);
+    const qTxt = rpm != null ? ` · ${_fmtTpm(rpm)} RPM` : b.hasTpm ? ` · ${_fmtTpm(b.tpm)} TPM` : '';
+    const w = rpm != null && maxRpm > 0 ? Math.max(4, 100 * rpm / maxRpm)
+            : b.hasTpm && maxTpm > 0 ? Math.max(4, 100 * b.tpm / maxTpm) : 100;
+    return `<span class="clu-presence" title="${esc(s)}: ${b.n} member${b.n > 1 ? 's' : ''}${qTxt}">
               <span class="clu-presence__name">${esc(s)}</span>
-              <span class="clu-presence__val">${b.n}×${b.hasTpm ? ` · ${_fmtTpm(b.tpm)}` : ''}</span>
-              ${b.hasTpm ? `<span class="clu-presence__bar"><span style="width:${w.toFixed(1)}%"></span></span>` : ''}
+              <span class="clu-presence__val">${b.n}×${qTxt}</span>
+              ${rpm != null || b.hasTpm ? `<span class="clu-presence__bar"><span style="width:${w.toFixed(1)}%"></span></span>` : ''}
             </span>`;
   }).join('');
 
@@ -545,7 +556,7 @@ function _renderDetail() {
     </div>
 
     <div class="clu-block">
-      <div class="clu-block__title">Presence across samples</div>
+      <div class="clu-block__title">Presence across samples <span>${_inputReads.size ? 'members · reads per million (Salmon)' : 'members per sample'}</span></div>
       <div class="clu-presence-row">${chips}</div>
     </div>
 
@@ -638,24 +649,6 @@ function _similarity(vec) {
     shared[i][j] = shared[j][i] = inter;
   }
   return { M, shared };
-}
-
-/* Average-linkage (UPGMA) on 1 − similarity: leaf order + merge heights. */
-function _upgma(M) {
-  const n = M.length;
-  let nodes = M.map((_, i) => ({ leaves: [i], h: 0, x: null, kids: null }));
-  const dist = (A, B) => d3.mean(A.leaves.flatMap(i => B.leaves.map(j => 1 - M[i][j])));
-  while (nodes.length > 1) {
-    let best = null;
-    for (let a = 0; a < nodes.length; a++) for (let b = a + 1; b < nodes.length; b++) {
-      const d = dist(nodes[a], nodes[b]);
-      if (!best || d < best.d) best = { a, b, d };
-    }
-    const A = nodes[best.a], B = nodes[best.b];
-    const merged = { leaves: A.leaves.concat(B.leaves), h: best.d, kids: [A, B] };
-    nodes = nodes.filter((_, k) => k !== best.a && k !== best.b).concat([merged]);
-  }
-  return nodes[0];
 }
 
 function _drawAcross() {
@@ -752,7 +745,7 @@ function _simData() {
   const key = _state.simMetric + '|' + _view.map(r => r.gid).join(',') + '|' + _state.id + '|' + _state.cov;
   if (_simCache && _simCache.key === key) return _simCache;
   const sim = _similarity(_sampleVectors());
-  _simCache = { key, ...sim, tree: _upgma(sim.M) };
+  _simCache = { key, ...sim, tree: VQ.upgma(sim.M) };
   return _simCache;
 }
 

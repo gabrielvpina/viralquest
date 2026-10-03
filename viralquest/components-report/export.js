@@ -416,6 +416,30 @@ function vqRedrawOnResize(el, redraw) {
   el.__vqResizeObserver = ro;
 }
 
+/** Average-linkage (UPGMA) clustering of n items from a similarity matrix
+    (1 = identical).  Returns the root {leaves, h, kids}; root.leaves is the
+    display order.  O(n³) — fine for the tens of samples / rows a report has. */
+function vqUpgma(sim) {
+  let nodes = sim.map((_, i) => ({ leaves: [i], h: 0, kids: null }));
+  const dist = (A, B) => {
+    let s = 0;
+    A.leaves.forEach(i => B.leaves.forEach(j => { s += 1 - sim[i][j]; }));
+    return s / (A.leaves.length * B.leaves.length);
+  };
+  while (nodes.length > 1) {
+    let best = null;
+    for (let a = 0; a < nodes.length; a++) for (let b = a + 1; b < nodes.length; b++) {
+      const d = dist(nodes[a], nodes[b]);
+      if (!best || d < best.d) best = { a, b, d };
+    }
+    const A = nodes[best.a], B = nodes[best.b];
+    nodes = nodes.filter((_, k) => k !== best.a && k !== best.b)
+      .concat([{ leaves: A.leaves.concat(B.leaves), h: best.d, kids: [A, B] }]);
+  }
+  return nodes[0] || { leaves: [], h: 0, kids: null };
+}
+
+
 // ── Expose on window.VQ ─────────────────────────────────────────────────────
 
 window.VQ = Object.assign(window.VQ || {}, {
@@ -440,4 +464,5 @@ window.VQ = Object.assign(window.VQ || {}, {
   pct:            vqPct,
   cardGroup:      vqCardGroup,
   redrawOnResize: vqRedrawOnResize,
+  upgma:          vqUpgma,
 });

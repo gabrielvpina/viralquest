@@ -5,681 +5,470 @@
 
 /* ============================================================
    section_quant.js — Section 4: RNA Quantification
-   Built on the cross-sample clusters.  Pick clusters (checkboxes):
-     · one cluster  → vertical dot plot of each member's TPM
-     · ≥2 clusters  → one boxplot per cluster (members overlaid)
-   Members from samples without Salmon (TPM absent) are omitted and the
-   count is annotated under each cluster.
+   Target-centred: pick one species, family or cross-sample cluster at
+   the top; every card below describes that target only — its load in
+   each sample, its share of the sample's virome, its level against the
+   host housekeeping baseline, what it is made of, its contigs and the
+   viruses that co-occur with it.
+
+   Metrics.  Each sample's Salmon index holds that sample's own contigs
+   (plus the housekeeping panels / transcriptome), so TPM shares a
+   denominator only within one sample.  Across samples the tab defaults
+   to reads per million input reads (RPM, from NumReads and the library
+   size) and offers TPM relative to the sample's housekeeping median
+   (× HK) — both comparable between samples.  Raw TPM stays available,
+   flagged as within-sample only.
+
+   Fragments of one virus are summed per sample: Salmon splits reads
+   between near-identical contigs, so their counts are parts of one whole.
    ============================================================ */
 
-let _clusters   = [];
-let _selected   = new Set();
-let _logScale   = false;
-let _hmSamples  = [];   // sample summaries carrying quantification, for the heatmap
+const _METRICS = {
+  rpm: { label: 'RPM',  long: 'viral reads per million input reads — comparable across samples' },
+  hk:  { label: '× HK', long: 'TPM relative to the sample’s housekeeping-gene median — comparable across samples' },
+  tpm: { label: 'TPM',  long: 'TPM within each sample’s own index — compare within a sample only' },
+};
+const _GROUP_LABEL = { species: 'species', family: 'family', cluster: 'cluster' };
+const _PART_COLORS = [
+  '#2563eb', '#16a34a', '#db2777', '#d97706', '#7c3aed', '#0891b2',
+  '#dc2626', '#65a30d', '#c026d3', '#0d9488', '#ea580c', '#4f46e5',
+];
+const _OTHER_COLOR = '#cbd5e1';
+const _TOP_PARTS = 10;
+const _NO_HIT = 'No BLASTx hit';
 
-function _tpmMembers(c) {
-  return c.members.filter(m => m.tpm != null && !isNaN(m.tpm));
-}
-function _quantifiable(c) {
-  return _tpmMembers(c).length > 0;
-}
+let _S = { group: 'species', metric: 'rpm', target: null, q: '', pendingCluster: null };
+let _samples  = [];          // [{name, input, mapped, rate, hkMed, viralReads, salmon}]
+let _contigs  = [];          // one per quantified viral contig
+let _clusterSpecies = new Map();
+let _ents     = [];          // entities of the current grouping
+let _order    = [];          // sample display order (indices into _samples)
 
 function vqInitQuant(clusters, samples) {
   const el = document.getElementById('section-quant');
   if (!el) return;
 
-  _clusters = (clusters || []).filter(_quantifiable);
-
-  // Heatmap columns: every sample that produced quantification. Cluster members
-  // carry the only per-sample TPM the boxplot needs, but the heatmap also puts
-  // housekeeping genes on the axis, so it needs the sample summaries too.
-  const quantSamples = new Set(_clusters.flatMap(c => _tpmMembers(c).map(m => m.sample)));
-  _hmSamples = (samples || []).filter(s => s.salmon || quantSamples.has(s.sample));
-  _hkGenes   = _collectHkGenes(_hmSamples);
-
-  // Hide the whole section when no cluster carries any TPM (no Salmon anywhere).
-  if (!_clusters.length) {
+  const qs = (samples || []).filter(s => s.salmon);
+  if (!qs.length) {
     el.hidden = true;
     document.getElementById('tab-quant')?.style.setProperty('display', 'none');
     return;
   }
 
-  const esc = VQ.esc;
-  // Pre-select up to the first 3 clusters so the plot isn't empty on open.
-  _selected = new Set(_clusters.slice(0, Math.min(3, _clusters.length)).map(c => c.gid));
+  _samples = qs.map(s => ({
+    name:   s.sample,
+    salmon: s.salmon,
+    rate:   s.salmon.mapping_rate ?? null,
+    mapped: s.salmon.total_reads ?? null,
+    input:  s.salmon.input_reads
+            ?? (s.salmon.total_reads && s.salmon.mapping_rate
+                ? s.salmon.total_reads / (s.salmon.mapping_rate / 100) : null),
+    hkMed:  s.salmon.ref_hk?.median || null,
+    viralReads: s.salmon.viral_reads ?? null,
+  }));
+  const inQuant = new Set(_samples.map(s => s.name));
 
-  // Heatmap opens populated but not crowded: up to 8 clusters, and the 5 most
-  // expressed housekeeping genes as a baseline to read the viral rows against.
-  _hmClusters = new Set(_clusters.slice(0, Math.min(8, _clusters.length)).map(c => c.gid));
-  _hmGenes = new Set(
-    _hkGenes.slice()
-      .sort((a, b) => (d3.mean(Object.values(b.bySample)) || 0) - (d3.mean(Object.values(a.bySample)) || 0))
-      .slice(0, 5).map(g => g.name)
-  );
+  const clusterOf = new Map();
+  (clusters || []).forEach(c => {
+    _clusterSpecies.set(c.gid, c.species || c.gid);
+    c.members.forEach(m => clusterOf.set(m.gid, c.gid));
+  });
 
-  const rows = _clusters.map(c => {
-    const n = _tpmMembers(c).length;
-    const omitted = c.members.length - n;
-    return `
-      <label class="vr-sample" style="display:flex">
-        <input type="checkbox" value="${esc(c.gid)}" ${_selected.has(c.gid) ? 'checked' : ''}>
-        <span class="vq-badge vq-badge--cluster">${esc(c.gid)}</span>
-        <span class="clu-species">${esc(c.species)}</span>
-        <span class="vr-sample__n">${n} TPM${omitted ? ` · ${omitted} no salmon` : ''}</span>
-      </label>`;
-  }).join('');
+  const NOV = window.vqNovelty;
+  const seqs = (typeof VQ_REPORT !== 'undefined' ? VQ_REPORT.sequences : null) || [];
+  _contigs = seqs
+    .filter(q => inQuant.has(q.sample) && (q.reads != null || q.tpm != null))
+    .map(q => {
+      const hits = (q.blastx_nr_hits || []).length ? q.blastx_nr_hits : (q.blastx_hits || []);
+      return {
+        sample:  q.sample, gid: q.gid, id: q._orig_id || q.id, length: q.length || 0,
+        reads:   q.reads ?? null, tpm: q.tpm ?? null,
+        species: (hits[0] && (hits[0].species || _titleSpecies(hits[0].subject_title))) || _NO_HIT,
+        family:  q.taxonomy?.family || 'Unclassified',
+        nov:     NOV ? NOV.tier(q) : null,
+        cluster: clusterOf.get(q.gid) || null,
+      };
+    });
 
-  const hkAvailable = _hkGenes.length > 0;
-
-  const hmCluRows = _clusters.map(c => `
-      <label class="vr-sample" style="display:flex">
-        <input type="checkbox" value="${esc(c.gid)}" ${_hmClusters.has(c.gid) ? 'checked' : ''}>
-        <span class="vq-badge vq-badge--cluster">${esc(c.gid)}</span>
-        <span class="clu-species">${esc(c.species)}</span>
-        <span class="vr-sample__n">${_tpmMembers(c).length} TPM</span>
-      </label>`).join('');
-
-  const hmHkRows = _hkGenes.map(g => {
-    const mean = d3.mean(Object.values(g.bySample)) || 0;
-    return `
-      <label class="vr-sample" style="display:flex">
-        <input type="checkbox" value="${esc(g.name)}" ${_hmGenes.has(g.name) ? 'checked' : ''}>
-        <span class="clu-species" style="font-family:var(--vq-font-mono)">${esc(g.name)}</span>
-        <span class="vr-sample__n">${_fmtTpm(mean)} mean</span>
-      </label>`;
-  }).join('');
+  const hasHk  = _samples.some(s => s.hkMed);
+  const hasClu = _contigs.some(c => c.cluster);
 
   el.innerHTML = `
     <div class="vq-section-header">
       <div>
         <div class="vq-section-title">RNA Quantification</div>
-        <div class="vq-section-sub">Salmon TPM per cluster member · select clusters to compare</div>
-      </div>
-      <div class="vq-section-actions">
-        <div class="vq-toggle" role="tablist" aria-label="Y scale">
-          <button class="vq-toggle__btn active" type="button" data-scale="lin">Linear</button>
-          <button class="vq-toggle__btn"        type="button" data-scale="log">Log</button>
+        <div class="vq-section-sub">
+          Salmon read support in ${_samples.length} sample${_samples.length > 1 ? 's' : ''}
+          · choose a species, family or cluster — every card below follows it
         </div>
       </div>
     </div>
 
     <div class="vq-stats-page">
-      <div class="vq-card" style="margin-bottom:var(--vq-space-4)">
-        <div class="vq-card__header">
-          <div class="vq-card__title">Clusters</div>
-          <button class="vq-btn vq-btn--sm vq-btn--ghost" id="qt-clear" type="button">Clear selection</button>
-        </div>
-        <div class="vq-card__body">
-          <div class="qt-cluster-list" id="qt-list">${rows}</div>
-        </div>
-      </div>
-
-      <div class="vq-chart-card">
-        <div class="vq-chart-card__head">
-          <div>
-            <div class="vq-chart-card__title">TPM Distribution</div>
-            <div class="vq-chart-card__sub" id="qt-sub"></div>
+      <div class="vq-chart-card qt-target" style="min-height:auto">
+        <div class="qt-target__row">
+          <span class="qt-controls__label">Target</span>
+          <div class="vq-toggle" id="qt-group" role="tablist" aria-label="Target type">
+            <button class="vq-toggle__btn active" type="button" data-group="species">Species</button>
+            <button class="vq-toggle__btn" type="button" data-group="family">Family</button>
+            ${hasClu ? `<button class="vq-toggle__btn" type="button" data-group="cluster">Cluster</button>` : ''}
           </div>
-          <div class="vq-section-actions">${_exportBtn('qt-export')}</div>
+          <input class="vq-input vq-input--sm qt-target__search" type="search" id="qt-search"
+                 placeholder="Search…" aria-label="Search targets">
+          <select class="vq-select qt-target__select" id="qt-select" aria-label="Target"></select>
+          <button class="vq-btn vq-btn--sm vq-btn--ghost" type="button" id="qt-prev" title="Previous target">‹</button>
+          <button class="vq-btn vq-btn--sm vq-btn--ghost" type="button" id="qt-next" title="Next target">›</button>
         </div>
-        <div class="vq-chart-card__body"><div id="qt-plot" style="width:100%"></div></div>
+        <div class="qt-target__row">
+          <span class="qt-controls__label">Metric</span>
+          <div class="vq-toggle" id="qt-metric" role="tablist" aria-label="Abundance metric">
+            <button class="vq-toggle__btn active" type="button" data-metric="rpm">RPM</button>
+            ${hasHk ? `<button class="vq-toggle__btn" type="button" data-metric="hk">× HK</button>` : ''}
+            <button class="vq-toggle__btn" type="button" data-metric="tpm">TPM</button>
+          </div>
+          <span class="qt-controls__hint" id="qt-metric-hint"></span>
+        </div>
+        <div class="qt-target__head" id="qt-head"></div>
       </div>
 
-      <div class="vq-section-header" style="margin-top:var(--vq-space-6)">
-        <div>
-          <div class="vq-section-title">Cluster Heatmap</div>
-          <div class="vq-section-sub">
-            TPM per cluster across samples${hkAvailable ? ', against the curated housekeeping panel' : ''}
-            &nbsp;·&nbsp; pick the rows, the scale and the palette, then export the figure
+      <div class="vq-stats-row vq-stats-row--top" id="qt-kpis"></div>
+
+      <section class="vq-group">
+        <div class="vq-group__head">
+          <h3 class="vq-group__title">Abundance across samples</h3>
+          <span class="vq-group__hint">how much of the target each library carries</span>
+        </div>
+        <div class="vq-chart-card" id="qt-load-card" style="min-height:auto">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Load per Sample</div>
+              <div class="vq-chart-card__sub" id="qt-load-sub"></div>
+            </div>
+            <button class="vq-btn vq-btn--sm" id="qt-load-csv" type="button"
+                    title="Download the per-sample values of the target as CSV">Export CSV</button>
+          </div>
+          <div class="qt-focus__grid">
+            <div class="qt-scroll" id="qt-load"></div>
+            <div class="vq-vt-wrap qt-focus__table" id="qt-load-table"></div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="hm-picker">
-        <div class="vq-card">
-          <div class="vq-card__header">
-            <div class="vq-card__title">Clusters</div>
-            <div class="hm-picker__acts">
-              <button class="vq-btn vq-btn--sm vq-btn--ghost" data-hm-all="clu" type="button">All</button>
-              <button class="vq-btn vq-btn--sm vq-btn--ghost" data-hm-none="clu" type="button">None</button>
+      <section class="vq-group">
+        <div class="vq-group__head">
+          <h3 class="vq-group__title">Within each sample</h3>
+          <span class="vq-group__hint">the target against the rest of the virome and against the host</span>
+        </div>
+        <div class="qt-pair">
+          <div class="vq-chart-card" id="qt-share-card" style="min-height:auto">
+            <div class="vq-chart-card__head">
+              <div>
+                <div class="vq-chart-card__title">Share of the Viral Reads</div>
+                <div class="vq-chart-card__sub" id="qt-share-sub"></div>
+              </div>
+            </div>
+            <div class="vq-chart-card__body qt-scroll" id="qt-share"></div>
+          </div>
+          ${hasHk ? `
+          <div class="vq-chart-card" id="qt-hk-card" style="min-height:auto">
+            <div class="vq-chart-card__head">
+              <div>
+                <div class="vq-chart-card__title">Target vs Host Housekeeping</div>
+                <div class="vq-chart-card__sub">log₂(target TPM / housekeeping median) per sample · above 0 = out-transcribes the host baseline · grey = rest of the virome</div>
+              </div>
+            </div>
+            <div class="vq-chart-card__body qt-scroll" id="qt-hk"></div>
+          </div>` : ''}
+        </div>
+      </section>
+
+      <section class="vq-group">
+        <div class="vq-group__head">
+          <h3 class="vq-group__title">Inside the target</h3>
+          <span class="vq-group__hint">what the target’s reads are made of, and its contigs</span>
+        </div>
+        <div class="qt-stack">
+          <div class="vq-chart-card" id="qt-parts-card" style="min-height:auto">
+            <div class="vq-chart-card__head">
+              <div>
+                <div class="vq-chart-card__title" id="qt-parts-title">Composition</div>
+                <div class="vq-chart-card__sub" id="qt-parts-sub"></div>
+              </div>
+            </div>
+            <div class="vq-chart-card__body qt-scroll" id="qt-parts"></div>
+            <div class="ov-legend qt-legend" id="qt-parts-legend"></div>
+          </div>
+          <div class="vq-chart-card" id="qt-contigs-card" style="min-height:auto">
+            <div class="vq-chart-card__head">
+              <div>
+                <div class="vq-chart-card__title">Contigs</div>
+                <div class="vq-chart-card__sub" id="qt-contigs-sub"></div>
+              </div>
+              <button class="vq-btn vq-btn--sm" id="qt-contigs-csv" type="button"
+                      title="Download the target's contigs as CSV">Export CSV</button>
+            </div>
+            <div class="vq-chart-card__body" style="justify-content:flex-start">
+              <div class="vq-vt-wrap qt-contigs-wrap" id="qt-contigs"></div>
             </div>
           </div>
-          <div class="vq-card__body">
-            <div class="qt-cluster-list hm-list" id="hm-clu-list">${hmCluRows}</div>
-          </div>
         </div>
+      </section>
 
-        ${hkAvailable ? `
-        <div class="vq-card">
-          <div class="vq-card__header">
-            <div class="vq-card__title">Housekeeping genes</div>
-            <div class="hm-picker__acts">
-              <button class="vq-btn vq-btn--sm vq-btn--ghost" data-hm-all="hk" type="button">All</button>
-              <button class="vq-btn vq-btn--sm vq-btn--ghost" data-hm-none="hk" type="button">None</button>
+      ${_samples.length >= 3 ? `
+      <section class="vq-group">
+        <div class="vq-group__head">
+          <h3 class="vq-group__title">Co-occurrence</h3>
+          <span class="vq-group__hint">viruses whose abundance rises and falls with the target across samples</span>
+        </div>
+        <div class="vq-chart-card" id="qt-co-card" style="min-height:auto">
+          <div class="vq-chart-card__head">
+            <div>
+              <div class="vq-chart-card__title">Co-occurring Viruses</div>
+              <div class="vq-chart-card__sub" id="qt-co-sub"></div>
             </div>
           </div>
-          <div class="vq-card__body">
-            <div class="qt-cluster-list hm-list" id="hm-hk-list">${hmHkRows}</div>
-          </div>
-        </div>` : ''}
-      </div>
-
-      <div class="vq-chart-card">
-        <div class="vq-chart-card__head">
-          <div>
-            <div class="vq-chart-card__title">Heatmap</div>
-            <div class="vq-chart-card__sub" id="hm-sub"></div>
-          </div>
-          <div class="vq-section-actions">
-            <button class="vq-btn vq-btn--sm vq-btn--ghost" id="hm-export-png" type="button">Export PNG</button>
-            <button class="vq-btn vq-btn--sm vq-btn--ghost" id="hm-export-svg" type="button">Export SVG</button>
-          </div>
+          <div class="vq-chart-card__body qt-scroll" id="qt-co"></div>
         </div>
-
-        <div class="hm-controls">
-          <div class="vq-toggle" role="tablist" aria-label="Heatmap scale">
-            <button class="vq-toggle__btn" type="button" data-hm-scale="lin">Linear</button>
-            <button class="vq-toggle__btn active" type="button" data-hm-scale="log">Log</button>
-            <button class="vq-toggle__btn" type="button" data-hm-scale="z">Z-score</button>
-          </div>
-          <label class="hm-ctl">Palette
-            <select class="vq-input vq-input--sm" id="hm-palette">
-              ${Object.entries(_PALETTES).map(([k, p]) =>
-                `<option value="${k}">${esc(p.label)}</option>`).join('')}
-            </select>
-          </label>
-          <label class="hm-ctl">Sort rows
-            <select class="vq-input vq-input--sm" id="hm-sort">
-              <option value="mean">Mean TPM</option>
-              <option value="name">Name</option>
-              <option value="type">Clusters first</option>
-            </select>
-          </label>
-          <label class="hm-ctl hm-ctl--check">
-            <input type="checkbox" class="vq-checkbox" id="hm-labels" checked> Cell values
-          </label>
-        </div>
-
-        <div class="vq-chart-card__body"><div id="hm-plot" style="width:100%"></div></div>
-      </div>
+      </section>` : ''}
     </div>
   `;
 
-  document.getElementById('qt-list').addEventListener('change', e => {
-    if (e.target.matches('input[type="checkbox"]')) {
-      if (e.target.checked) _selected.add(e.target.value);
-      else _selected.delete(e.target.value);
-      _renderPlot();
-    }
-  });
-  el.querySelectorAll('[data-scale]').forEach(btn => btn.addEventListener('click', () => {
-    el.querySelectorAll('[data-scale]').forEach(b => b.classList.toggle('active', b === btn));
-    _logScale = btn.dataset.scale === 'log';
-    _renderPlot();
+  // ── Controls ──
+  el.querySelectorAll('#qt-group [data-group]').forEach(b => b.addEventListener('click', () => {
+    if (_S.group === b.dataset.group) return;
+    _S.group = b.dataset.group;
+    el.querySelectorAll('#qt-group [data-group]').forEach(x => x.classList.toggle('active', x === b));
+    _S.target = (_S.group === 'cluster' && _S.pendingCluster) || null;
+    _S.q = ''; document.getElementById('qt-search').value = '';
+    _rebuild();
   }));
-  document.getElementById('qt-export')?.addEventListener('click', () => {
-    const svg = document.querySelector('#qt-plot svg');
-    if (svg) VQ.exportPNG(svg, 'quantification.png');
-  });
-  document.getElementById('qt-clear')?.addEventListener('click', () => {
-    _selected.clear();
-    document.querySelectorAll('#qt-list input[type="checkbox"]').forEach(cb => { cb.checked = false; });
-    _renderPlot();
-  });
-
-  // ── Heatmap controls ────────────────────────────────────────────────────
-  const bindList = (id, set) => document.getElementById(id)?.addEventListener('change', e => {
-    if (!e.target.matches('input[type="checkbox"]')) return;
-    if (e.target.checked) set.add(e.target.value); else set.delete(e.target.value);
-    _renderHeatmap();
-  });
-  bindList('hm-clu-list', _hmClusters);
-  bindList('hm-hk-list',  _hmGenes);
-
-  el.querySelectorAll('[data-hm-all],[data-hm-none]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const on   = btn.hasAttribute('data-hm-all');
-      const kind = btn.getAttribute(on ? 'data-hm-all' : 'data-hm-none');
-      const listId = kind === 'clu' ? 'hm-clu-list' : 'hm-hk-list';
-      const set    = kind === 'clu' ? _hmClusters : _hmGenes;
-      set.clear();
-      document.querySelectorAll(`#${listId} input[type="checkbox"]`).forEach(cb => {
-        cb.checked = on;
-        if (on) set.add(cb.value);
-      });
-      _renderHeatmap();
-    });
-  });
-
-  el.querySelectorAll('[data-hm-scale]').forEach(btn => btn.addEventListener('click', () => {
-    el.querySelectorAll('[data-hm-scale]').forEach(b => b.classList.toggle('active', b === btn));
-    _hmScale = btn.dataset.hmScale;
-    _renderHeatmap();
+  el.querySelectorAll('#qt-metric [data-metric]').forEach(b => b.addEventListener('click', () => {
+    _S.metric = b.dataset.metric;
+    el.querySelectorAll('#qt-metric [data-metric]').forEach(x => x.classList.toggle('active', x === b));
+    VQ.tooltipHide();
+    _fillSelect();
+    _renderTarget();
   }));
-  document.getElementById('hm-palette')?.addEventListener('change', e => {
-    _hmPalette = e.target.value; _renderHeatmap();
+  document.getElementById('qt-search').addEventListener('input', e => {
+    _S.q = e.target.value.trim().toLowerCase(); _fillSelect();
   });
-  document.getElementById('hm-sort')?.addEventListener('change', e => {
-    _hmSort = e.target.value; _renderHeatmap();
-  });
-  document.getElementById('hm-labels')?.addEventListener('change', e => {
-    _hmLabels = e.target.checked; _renderHeatmap();
-  });
-  document.getElementById('hm-export-png')?.addEventListener('click', () => {
-    const svg = document.querySelector('#hm-plot svg');
-    if (svg) VQ.exportPNG(svg, 'cluster_heatmap.png');
-  });
-  document.getElementById('hm-export-svg')?.addEventListener('click', () => {
-    const svg = document.querySelector('#hm-plot svg');
-    if (svg) VQ.exportSVG(svg, 'cluster_heatmap.svg');
+  document.getElementById('qt-select').addEventListener('change', e => _setTarget(e.target.value));
+  document.getElementById('qt-prev').addEventListener('click', () => _step(-1));
+  document.getElementById('qt-next').addEventListener('click', () => _step(1));
+  document.getElementById('qt-load-csv').addEventListener('click', () =>
+    VQ.downloadText(_loadCsv(), `viralquest_${_S.group}_${_safe(_target()?.label)}_per_sample.csv`));
+  document.getElementById('qt-contigs-csv').addEventListener('click', () =>
+    VQ.downloadText(_contigsCsv(), `viralquest_${_S.group}_${_safe(_target()?.label)}_contigs.csv`));
+  document.getElementById('qt-contigs').addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-gid]');
+    if (tr) VQ.jumpToViewer(tr.dataset.gid);
   });
 
-  // Re-render when the card gains or changes width (e.g. when this tab first
-  // opens, or the window resizes) so the plot always fills the card.
-  let _lastW = 0;
-  const plotHost = document.getElementById('qt-plot');
-  new ResizeObserver(() => {
-    const w = Math.round(plotHost.clientWidth);
-    if (w && w !== _lastW) { _lastW = w; _renderPlot(); }
-  }).observe(plotHost);
+  // A cluster picked in General Clusters becomes the target (Cluster grouping).
+  document.addEventListener('vq:cluster-select', e => {
+    _S.pendingCluster = e.detail;
+    if (_S.group === 'cluster' && _ents.some(x => x.key === e.detail)) _setTarget(e.detail);
+  });
 
-  let _lastHmW = 0;
-  const hmHost = document.getElementById('hm-plot');
-  new ResizeObserver(() => {
-    const w = Math.round(hmHost.clientWidth);
-    if (w && w !== _lastHmW) { _lastHmW = w; _renderHeatmap(); }
-  }).observe(hmHost);
-
-  _renderPlot();
-  _renderHeatmap();
+  _rebuild();
+  VQ.redrawOnResize(document.getElementById('qt-load'), _renderTarget);
 }
 
-// ── Plot ────────────────────────────────────────────────────────────────────
+// ── Data ────────────────────────────────────────────────────────────────────
 
-function _renderPlot() {
-  const host = document.getElementById('qt-plot');
-  const sub  = document.getElementById('qt-sub');
+function _titleSpecies(title) {
+  const m = /\[([^\]]+)\]\s*$/.exec(title || '');
+  return m ? m[1] : null;
+}
+
+function _mostCommon(counts) {
+  let best = null, n = -1;
+  counts.forEach((k, v) => { if (k > n) { best = v; n = k; } });
+  return best;
+}
+
+function _keyOf(c, group = _S.group) {
+  if (group === 'family')  return c.family;
+  if (group === 'cluster') return c.cluster;
+  return c.species;
+}
+
+/* Group the contigs into entities (species / family / cluster). */
+function _buildEntities() {
+  const map = new Map();
+  _contigs.forEach(c => {
+    const key = _keyOf(c);
+    if (!key) return;                                   // unclustered contig in Cluster mode
+    if (!map.has(key)) map.set(key, {
+      key,
+      label: _S.group === 'cluster' ? (_clusterSpecies.get(key) || key) : key,
+      sub:   _S.group === 'cluster' ? key : '',
+      fam: new Map(), nov: new Map(), bySample: new Map(), contigs: [],
+    });
+    const e = map.get(key);
+    e.contigs.push(c);
+    e.fam.set(c.family, (e.fam.get(c.family) || 0) + 1);
+    if (c.nov) e.nov.set(c.nov, (e.nov.get(c.nov) || 0) + 1);
+    if (!e.bySample.has(c.sample)) e.bySample.set(c.sample, { reads: 0, tpm: 0, n: 0 });
+    const b = e.bySample.get(c.sample);
+    b.reads += c.reads || 0; b.tpm += c.tpm || 0; b.n += 1;
+  });
+  return [...map.values()].map(e => {
+    e.family  = _mostCommon(e.fam) || '';
+    e.novelty = _mostCommon(e.nov) || null;
+    e.reads   = d3.sum([...e.bySample.values()], b => b.reads);
+    e.prev    = e.bySample.size;
+    return e;
+  });
+}
+
+/* Value of an entity in a sample for a metric; null = not detected there. */
+function _val(e, s, metric = _S.metric) {
+  const b = e.bySample.get(s.name);
+  if (!b) return null;
+  if (metric === 'rpm') return s.input ? b.reads / s.input * 1e6 : null;
+  if (metric === 'hk')  return s.hkMed ? b.tpm / s.hkMed : null;
+  return b.tpm;
+}
+
+function _meanVal(e, metric = _S.metric) {
+  return d3.mean(_samples, s => _val(e, s, metric) || 0) || 0;
+}
+
+const _target = () => _ents.find(e => e.key === _S.target) || null;
+const _ranked = () => _ents.slice().sort((a, b) => _meanVal(b) - _meanVal(a) || b.reads - a.reads);
+
+function _rebuild() {
+  _ents  = _buildEntities();
+  _order = _samples.map((_, i) => i);
+  if (!_target()) _S.target = _ranked()[0]?.key || null;
+  _fillSelect();
+  _renderTarget();
+}
+
+function _fillSelect() {
+  const sel = document.getElementById('qt-select');
+  if (!sel) return;
+  const esc = VQ.esc, unit = _METRICS[_S.metric].label;
+  const q = _S.q;
+  let list = _ranked().filter(e => !q || `${e.label} ${e.sub} ${e.family}`.toLowerCase().includes(q));
+  const cur = _target();
+  if (cur && !list.includes(cur)) list = [cur].concat(list);
+  sel.innerHTML = list.map(e => `<option value="${esc(e.key)}"${e.key === _S.target ? ' selected' : ''}>${
+    esc(`${_trunc(e.label, 48)}${e.sub ? ' · ' + e.sub : ''} — ${e.prev}/${_samples.length} samples · mean ${_fmtVal(_meanVal(e))} ${unit}`)}</option>`).join('')
+    || '<option value="">no match</option>';
+}
+
+function _setTarget(key) {
+  if (!key || key === _S.target || !_ents.some(e => e.key === key)) return;
+  _S.target = key;
+  VQ.tooltipHide();
+  _fillSelect();
+  _renderTarget();
+}
+
+function _step(dir) {
+  const list = [...document.getElementById('qt-select').options].map(o => o.value).filter(Boolean);
+  const i = list.indexOf(_S.target);
+  if (i >= 0 && list[i + dir]) _setTarget(list[i + dir]);
+}
+
+// ── Target rendering ────────────────────────────────────────────────────────
+
+function _renderTarget() {
+  const hint = document.getElementById('qt-metric-hint');
+  if (hint) {
+    hint.textContent = _METRICS[_S.metric].long;
+    hint.classList.toggle('is-warn', _S.metric === 'tpm');
+  }
+  const e = _target();
+  _renderHead(e);
+  _renderKpis(e);
+  _drawLoad(e);
+  _drawShare(e);
+  _drawHk(e);
+  _drawParts(e);
+  _renderContigs(e);
+  _drawCooccurrence(e);
+}
+
+function _renderHead(e) {
+  const host = document.getElementById('qt-head');
   if (!host) return;
-  host.innerHTML = '';
-
-  const chosen = _clusters.filter(c => _selected.has(c.gid));
-  if (!chosen.length) {
-    host.innerHTML = `<div class="vq-empty">Select one or more clusters to plot TPM.</div>`;
-    if (sub) sub.textContent = '';
-    return;
-  }
-
-  const showBox = chosen.length >= 2;
-  const cols = chosen.map(c => {
-    const members = _tpmMembers(c).slice().sort((a, b) => a.tpm - b.tpm);
-    return { gid: c.gid, species: c.species, members,
-             omitted: c.members.length - members.length };
-  });
-  if (sub) {
-    const totalOmit = cols.reduce((a, c) => a + c.omitted, 0);
-    sub.textContent = `${chosen.length} cluster${chosen.length > 1 ? 's' : ''} · `
-      + (showBox ? 'boxplot' : 'dot plot')
-      + ` · scale: ${_logScale ? 'log₁₀(TPM + 1)' : 'linear TPM'}`
-      + (totalOmit ? ` · ${totalOmit} member(s) omitted (no Salmon)` : '');
-  }
-
-  const tx = _logScale ? (v => Math.log10(v + 1)) : (v => v);
-  const allVals = cols.flatMap(c => c.members.map(m => tx(m.tpm)));
-  const maxV = d3.max(allVals) || 1;
-
-  const padL = 54, padR = 18, padT = 14, padB = 70;
-  const H = 320;
-
-  // Fill 100% of the card: the viewBox width tracks the container's pixel
-  // width (height fixed), so width:100% renders at exactly that size — no
-  // distortion, no letter-boxing, and it spans the whole card.
-  const W = Math.max(320, Math.round(host.clientWidth) || 900);
-  const plotW = W - padL - padR;
-  const colW  = showBox ? plotW / cols.length : plotW;
-
-  const svg = d3.select(host).append('svg')
-    .attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMidYMin meet')
-    .style('width', '100%').style('height', 'auto').style('display', 'block');
-
-  const y = d3.scaleLinear().domain([0, maxV]).nice().range([H - padB, padT]);
-
-  // y axis + grid
-  y.ticks(5).forEach(t => {
-    // Inline stroke (not the .ov-grid class) so the gridlines survive PNG/SVG
-    // export, where external stylesheet rules are not carried over.
-    svg.append('line').attr('x1', padL).attr('x2', W - padR)
-      .attr('y1', y(t)).attr('y2', y(t))
-      .attr('stroke', 'var(--vq-border)').attr('stroke-width', 1)
-      .attr('shape-rendering', 'crispEdges');
-    const lbl = _logScale ? (Math.pow(10, t) - 1) : t;
-    svg.append('text').attr('x', padL - 8).attr('y', y(t))
-      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
-      .attr('class', 'ov-axis-label').text(_fmtTpm(lbl));
-  });
-  svg.append('text').attr('x', 14).attr('y', H / 2)
-    .attr('text-anchor', 'middle').attr('class', 'ov-axis-label')
-    .attr('transform', `rotate(-90 14 ${H / 2})`)
-    .text(_logScale ? 'log₁₀(TPM + 1)' : 'TPM');
-
-  if (showBox) {
-    cols.forEach((c, i) => {
-      const cx = padL + i * colW + colW / 2;
-      const vals = c.members.map(m => tx(m.tpm));
-      const boxW = Math.min(colW * 0.5, 110);
-      if (vals.length >= 1) _drawBox(svg, cx, boxW, vals, y);
-      c.members.forEach(m => {
-        const jitter = vals.length > 1 ? (_hash(m.gid) - 0.5) * Math.min(colW * 0.4, 80) : 0;
-        _point(svg, cx + jitter, y(tx(m.tpm)), m);
-      });
-      svg.append('text').attr('x', cx).attr('y', H - padB + 16)
-        .attr('text-anchor', 'middle').attr('font-size', 10)
-        .attr('font-family', 'var(--vq-font-mono)').attr('fill', 'var(--vq-text-2)')
-        .text(c.gid);
-      svg.append('text').attr('x', cx).attr('y', H - padB + 30)
-        .attr('text-anchor', 'middle').attr('class', 'ov-axis-label')
-        .text(`n=${c.members.length}${c.omitted ? ` (+${c.omitted})` : ''}`);
-    });
-  } else {
-    // Single cluster: one x position per member so points never overlap.
-    const c = cols[0];
-    const xb = d3.scalePoint().domain(c.members.map((_, j) => j))
-      .range([padL, W - padR]).padding(0.7);
-    c.members.forEach((m, j) => {
-      const px = xb(j);
-      _point(svg, px, y(tx(m.tpm)), m);
-      svg.append('text').attr('x', px).attr('y', H - padB + 14)
-        .attr('text-anchor', 'end').attr('class', 'ov-axis-label')
-        .attr('transform', `rotate(-40 ${px} ${H - padB + 14})`)
-        .text(_trunc(m.sample, 12));
-    });
-    svg.append('text').attr('x', (padL + W - padR) / 2).attr('y', H - 8)
-      .attr('text-anchor', 'middle').attr('font-size', 10)
-      .attr('font-family', 'var(--vq-font-mono)').attr('fill', 'var(--vq-text-2)')
-      .text(`${c.gid} · n=${c.members.length}${c.omitted ? ` (+${c.omitted})` : ''}`);
-  }
+  const esc = VQ.esc, NOV = window.vqNovelty;
+  if (!e) { host.innerHTML = '<div class="vq-empty">No target available for this grouping.</div>'; return; }
+  host.innerHTML = `
+    <div class="qt-target__name">${esc(e.label)}</div>
+    <div class="clu-detail__pills">
+      ${e.sub ? `<span class="vq-badge vq-badge--cluster">${esc(e.sub)}</span>` : ''}
+      <span class="vq-wf-opt"><span class="vq-wf-opt__k">Type</span>${_GROUP_LABEL[_S.group]}</span>
+      ${e.family && _S.group !== 'family' ? `<span class="vq-wf-opt"><span class="vq-wf-opt__k">Family</span>${esc(e.family)}</span>` : ''}
+      ${e.novelty && NOV ? `<span class="vq-nov vq-nov--${e.novelty}" title="dominant novelty tier of its contigs">${esc(NOV.label[e.novelty])}</span>` : ''}
+    </div>`;
 }
 
-function _drawBox(svg, cx, boxW, vals, y) {
-  const s = vals.slice().sort((a, b) => a - b);
-  const q1 = d3.quantile(s, 0.25), med = d3.quantile(s, 0.5), q3 = d3.quantile(s, 0.75);
-  const lo = s[0], hi = s[s.length - 1];
-  const x0 = cx - boxW / 2, x1 = cx + boxW / 2;
-
-  svg.append('line').attr('x1', cx).attr('x2', cx).attr('y1', y(lo)).attr('y2', y(hi))
-    .attr('stroke', 'var(--vq-text-3)').attr('stroke-width', 1);
-  svg.append('rect').attr('x', x0).attr('y', y(q3)).attr('width', boxW)
-    .attr('height', Math.max(1, y(q1) - y(q3)))
-    .attr('fill', 'var(--vq-accent-subtle, #e8eef7)')
-    .attr('stroke', 'var(--vq-accent)').attr('stroke-width', 1.4).attr('rx', 2);
-  svg.append('line').attr('x1', x0).attr('x2', x1).attr('y1', y(med)).attr('y2', y(med))
-    .attr('stroke', 'var(--vq-accent)').attr('stroke-width', 2);
+function _shareOf(e, s) {
+  const tot = d3.sum(_ents, x => x.bySample.get(s.name)?.reads || 0);
+  const mine = e.bySample.get(s.name)?.reads || 0;
+  const rank = mine > 0
+    ? 1 + _ents.filter(x => (x.bySample.get(s.name)?.reads || 0) > mine).length : null;
+  const of = _ents.filter(x => (x.bySample.get(s.name)?.reads || 0) > 0).length;
+  return { tot, mine, share: tot > 0 ? mine / tot : 0, rank, of };
 }
 
-// ── Heatmap ─────────────────────────────────────────────────────────────────
-/* Complements the boxplot: the boxplot answers "how does one cluster spread
-   across its members", the heatmap answers "which virus is where, and how does
-   that compare to the host's own housekeeping baseline".
-
-   Rows are chosen by the user — viral clusters and, when the reference pathway
-   ran with a curated housekeeping panel, individual HK genes on the same axis.
-   Putting them in one matrix is the point: a viral row brighter than the HK
-   rows means the virus out-transcribes the host's own reference genes. */
-
-const _PALETTES = {
-  viridis: { label: 'Viridis', fn: v => d3.interpolateViridis(v),        diverging: false },
-  magma:   { label: 'Magma',   fn: v => d3.interpolateMagma(v),          diverging: false },
-  blues:   { label: 'Blues',   fn: v => d3.interpolateBlues(0.12 + v * 0.88), diverging: false },
-};
-
-let _hmClusters = new Set();
-let _hmGenes    = new Set();
-let _hkGenes    = [];        // [{ name, bySample: {sample: tpm} }]
-let _hmScale    = 'log';     // 'lin' | 'log' | 'z'
-let _hmPalette  = 'viridis';
-let _hmLabels   = true;
-let _hmSort     = 'mean';    // 'mean' | 'name' | 'type'
-
-/* Union of the curated HK panel across samples, with each sample's TPM. */
-function _collectHkGenes(samples) {
-  const byName = new Map();
-  samples.forEach(s => {
-    ((s.salmon && s.salmon.ref_hk && s.salmon.ref_hk.genes) || []).forEach(g => {
-      if (!byName.has(g.name)) byName.set(g.name, { name: g.name, bySample: {} });
-      byName.get(g.name).bySample[s.sample] = g.tpm;
-    });
-  });
-  return [...byName.values()];
-}
-
-/* One row per selected cluster / gene, keyed by sample.
-
-   A cluster's members in one sample are SUMMED, not averaged: Salmon splits
-   reads between near-identical contigs of the same virus, so the fragments'
-   TPMs are partial counts of one thing. Averaging would under-report a virus
-   purely because its assembly fragmented. */
-function _hmRows() {
-  const rows = [];
-
-  _clusters.filter(c => _hmClusters.has(c.gid)).forEach(c => {
-    const bySample = {};
-    _tpmMembers(c).forEach(m => {
-      bySample[m.sample] = (bySample[m.sample] || 0) + m.tpm;
-    });
-    rows.push({
-      key: c.gid, kind: 'cluster',
-      label: c.species || c.gid, sub: c.gid,
-      n: _tpmMembers(c).length, bySample,
-    });
-  });
-
-  _hkGenes.filter(g => _hmGenes.has(g.name)).forEach(g => {
-    rows.push({
-      key: 'hk:' + g.name, kind: 'hk',
-      label: g.name, sub: 'housekeeping',
-      n: null, bySample: g.bySample,
-    });
-  });
-
-  const meanOf = r => {
-    const v = _hmSamples.map(s => r.bySample[s.sample]).filter(x => x != null);
-    return v.length ? d3.mean(v) : -1;
-  };
-  const cmp = {
-    mean: (a, b) => meanOf(b) - meanOf(a),
-    name: (a, b) => a.label.localeCompare(b.label),
-    type: (a, b) => (a.kind === b.kind ? meanOf(b) - meanOf(a) : (a.kind === 'cluster' ? -1 : 1)),
-  }[_hmSort];
-  return rows.sort(cmp);
-}
-
-function _renderHeatmap() {
-  const host = document.getElementById('hm-plot');
-  const sub  = document.getElementById('hm-sub');
+function _renderKpis(e) {
+  const host = document.getElementById('qt-kpis');
   if (!host) return;
-  host.innerHTML = '';
-
-  const rows = _hmRows();
-  if (!rows.length) {
-    host.innerHTML = `<div class="vq-empty">Select clusters or housekeeping genes to build the heatmap.</div>`;
-    if (sub) sub.textContent = '';
-    return;
-  }
-  const cols = _hmSamples;
-
-  // Per-row transform. z-score is per row, so rows with very different absolute
-  // levels can still be compared by shape; it needs ≥2 samples to mean anything.
-  const canZ = cols.length >= 2;
-  const mode = (_hmScale === 'z' && !canZ) ? 'log' : _hmScale;
-  const raw  = (r, s) => r.bySample[s.sample];
-
-  let valueOf, domain, interp, legendTicks;
-  if (mode === 'z') {
-    const stats = new Map(rows.map(r => {
-      const v = cols.map(s => raw(r, s)).filter(x => x != null);
-      const mu = d3.mean(v) ?? 0;
-      const sd = v.length > 1 ? (d3.deviation(v) || 0) : 0;
-      return [r.key, { mu, sd }];
-    }));
-    valueOf = (r, s) => {
-      const v = raw(r, s); if (v == null) return null;
-      const { mu, sd } = stats.get(r.key);
-      return sd ? (v - mu) / sd : 0;
-    };
-    const vals   = rows.flatMap(r => cols.map(s => valueOf(r, s))).filter(v => v != null);
-    const maxAbs = Math.max(1e-6, d3.max(vals.map(Math.abs)) || 1);
-    domain = [-maxAbs, maxAbs];
-    interp = v => d3.interpolateRdBu(1 - v);          // red = high, blue = low
-    legendTicks = [-maxAbs, 0, maxAbs].map(v => [v, v.toFixed(1)]);
-  } else {
-    valueOf = (r, s) => {
-      const v = raw(r, s); if (v == null) return null;
-      return mode === 'log' ? Math.log10(v + 1) : v;
-    };
-    const vals = rows.flatMap(r => cols.map(s => valueOf(r, s))).filter(v => v != null);
-    const maxV = d3.max(vals) || 1;
-    domain = [0, maxV];
-    interp = _PALETTES[_hmPalette].fn;
-    legendTicks = [0, maxV / 2, maxV].map(v =>
-      [v, _fmtTpm(mode === 'log' ? Math.pow(10, v) - 1 : v)]);
-  }
-
-  const colour = d3.scaleSequential(domain, interp);
-
-  if (sub) {
-    const nClu = rows.filter(r => r.kind === 'cluster').length;
-    const nHk  = rows.length - nClu;
-    sub.textContent =
-      `${rows.length} row${rows.length > 1 ? 's' : ''} (${nClu} cluster${nClu === 1 ? '' : 's'}`
-      + (nHk ? `, ${nHk} housekeeping` : '') + `) × ${cols.length} sample${cols.length > 1 ? 's' : ''}`
-      + ` · ${mode === 'z' ? 'z-score per row' : mode === 'log' ? 'log₁₀(TPM + 1)' : 'linear TPM'}`
-      + (_hmScale === 'z' && !canZ ? ' · z-score needs ≥2 samples, showing log' : '');
-  }
-
-  // Geometry. Labels sit in a left gutter; sample names are rotated above.
-  const W     = Math.max(360, Math.round(host.clientWidth) || 900);
-  const padL  = Math.min(230, Math.max(120, Math.round(W * 0.24)));
-  const padR  = 16;
-  const headH = 74;
-  const rowH  = rows.length > 26 ? 18 : rows.length > 14 ? 22 : 26;
-  const legH  = 46;
-  const gridW = W - padL - padR;
-  const cellW = gridW / cols.length;
-  const H     = headH + rows.length * rowH + legH;
-
-  const svg = d3.select(host).append('svg')
-    .attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMinYMin meet')
-    .style('width', '100%').style('height', 'auto').style('display', 'block');
-
-  // Exports carry no external stylesheet, so every fill/font is inline here.
-  const FONT = 'var(--vq-font)';
-  const txt = (x, y, s, opts = {}) => svg.append('text')
-    .attr('x', x).attr('y', y)
-    .attr('font-family', opts.mono ? 'var(--vq-font-mono)' : FONT)
-    .attr('font-size', opts.size || 10)
-    .attr('font-weight', opts.weight || 400)
-    .attr('fill', opts.fill || 'var(--vq-text-2)')
-    .attr('text-anchor', opts.anchor || 'start')
-    .attr('dominant-baseline', opts.baseline || 'central')
-    .text(s);
-
-  // Column headers (rotated so long sample names stay readable)
-  cols.forEach((s, j) => {
-    const cx = padL + j * cellW + cellW / 2;
-    svg.append('text')
-      .attr('x', cx).attr('y', headH - 8)
-      .attr('font-family', FONT).attr('font-size', 10)
-      .attr('fill', 'var(--vq-text-2)').attr('text-anchor', 'start')
-      .attr('transform', `rotate(-42 ${cx} ${headH - 8})`)
-      .text(_trunc(s.sample, 18));
-  });
-
-  rows.forEach((r, i) => {
-    const y = headH + i * rowH;
-
-    // Row label: virus name (or gene), with the cluster id / kind underneath
-    // when there is vertical room for it.
-    txt(padL - 8, y + rowH / 2 - (rowH >= 22 ? 5 : 0), _trunc(r.label, Math.floor(padL / 6.4)),
-        { anchor: 'end', weight: 600, size: rowH >= 22 ? 11 : 10,
-          fill: r.kind === 'hk' ? 'var(--vq-text-2)' : 'var(--vq-text)' })
-      .append('title').text(r.label);
-    if (rowH >= 22) {
-      txt(padL - 8, y + rowH / 2 + 7,
-          r.kind === 'cluster' ? `${r.sub} · n=${r.n}` : r.sub,
-          { anchor: 'end', size: 9, fill: 'var(--vq-text-3)', mono: r.kind === 'cluster' });
-    }
-
-    cols.forEach((s, j) => {
-      const x  = padL + j * cellW;
-      const v  = valueOf(r, s);
-      const rv = raw(r, s);
-
-      if (v == null) {
-        // Absent ≠ zero: no member of this cluster in this sample (or Salmon
-        // never ran there). Left unpainted so it cannot read as "measured 0".
-        svg.append('rect').attr('x', x).attr('y', y)
-          .attr('width', cellW - 1).attr('height', rowH - 1)
-          .attr('fill', 'var(--vq-surface-2)')
-          .attr('stroke', 'var(--vq-border)').attr('stroke-width', 1)
-          .attr('stroke-dasharray', '2,2')
-          .on('mousemove', e => VQ.tooltipShow(
-            `<b>${VQ.esc(r.label)}</b><br>${VQ.esc(s.sample)}<br>not quantified`, e))
-          .on('mouseleave', () => VQ.tooltipHide());
-        return;
-      }
-
-      const fill = colour(v);
-      svg.append('rect').attr('x', x).attr('y', y)
-        .attr('width', cellW - 1).attr('height', rowH - 1)
-        .attr('fill', fill)
-        .on('mousemove', e => VQ.tooltipShow(
-          `<b>${VQ.esc(r.label)}</b><br>${VQ.esc(s.sample)}<br>`
-          + `TPM ${rv.toFixed(2)}${mode === 'z' ? ` · z ${v.toFixed(2)}` : ''}`, e))
-        .on('mouseleave', () => VQ.tooltipHide());
-
-      if (_hmLabels && cellW >= 46 && rowH >= 18) {
-        // Flip the label to white on dark cells so it stays legible in both
-        // the light and dark ends of every palette.
-        const lab = d3.lab(fill);
-        txt(x + cellW / 2, y + rowH / 2,
-            mode === 'z' ? v.toFixed(1) : _fmtTpm(rv),
-            { anchor: 'middle', size: 9.5, fill: lab.l < 62 ? '#ffffff' : '#111827' });
-      }
-    });
-  });
-
-  // Colour legend
-  const legY = headH + rows.length * rowH + 16;
-  const legW = Math.min(220, gridW);
-  const gradId = 'hm-grad-' + _hmPalette + '-' + mode;
-  const grad = svg.append('defs').append('linearGradient')
-    .attr('id', gradId).attr('x1', '0%').attr('x2', '100%');
-  d3.range(0, 1.0001, 0.05).forEach(t => {
-    grad.append('stop').attr('offset', `${t * 100}%`)
-      .attr('stop-color', colour(domain[0] + t * (domain[1] - domain[0])));
-  });
-  svg.append('rect').attr('x', padL).attr('y', legY)
-    .attr('width', legW).attr('height', 10).attr('rx', 2)
-    .attr('fill', `url(#${gradId})`)
-    .attr('stroke', 'var(--vq-border)').attr('stroke-width', 1);
-  legendTicks.forEach(([v, label]) => {
-    const t = (v - domain[0]) / (domain[1] - domain[0] || 1);
-    txt(padL + t * legW, legY + 22, label,
-        { anchor: t === 0 ? 'start' : t >= 1 ? 'end' : 'middle', size: 9, fill: 'var(--vq-text-3)' });
-  });
-  txt(padL + legW + 12, legY + 5,
-      mode === 'z' ? 'z-score (row)' : mode === 'log' ? 'TPM (log scale)' : 'TPM',
-      { size: 10, fill: 'var(--vq-text-3)' });
+  if (!e) { host.innerHTML = ''; return; }
+  const fmt = VQ.fmtNum, unit = _METRICS[_S.metric].label;
+  const vals = _samples.map(s => ({ s, v: _val(e, s) })).filter(d => d.v != null);
+  const peak = vals.reduce((a, d) => (!a || d.v > a.v ? d : a), null);
+  const hk = _samples.map(s => _val(e, s, 'hk')).filter(v => v != null && v > 0).sort((a, b) => a - b);
+  const hkMed = hk.length ? d3.quantileSorted(hk, 0.5) : null;
+  const shares = _samples.filter(s => e.bySample.has(s.name)).map(s => _shareOf(e, s).share).sort((a, b) => a - b);
+  const shMed = shares.length ? d3.quantileSorted(shares, 0.5) : null;
+  host.innerHTML = [
+    VQ.statChip('Detected In', `${e.prev}/${_samples.length}`, 'accent', 'samples with Salmon reads'),
+    VQ.statChip('Total Reads', fmt(Math.round(e.reads)), '', `${fmt(e.contigs.length)} contig${e.contigs.length === 1 ? '' : 's'}`),
+    VQ.statChip(`Peak ${unit}`, peak ? _fmtVal(peak.v) : '—', 'success', peak ? `in ${peak.s.name}` : ''),
+    VQ.statChip('Share of Viral Reads', shMed == null ? '—' : _fmtPct(shMed), '', 'median where detected'),
+    ...(hkMed != null ? [VQ.statChip('vs Host Baseline', _fmtVal(hkMed, 'hk'), hkMed >= 1 ? 'warn' : '',
+      hkMed >= 1 ? 'median · above the housekeeping median' : 'median · below the housekeeping median')] : []),
+  ].join('');
 }
 
-// ── helpers ─────────────────────────────────────────────────────────────────
+function _fmtVal(v, metric = _S.metric) {
+  if (v == null || isNaN(v)) return '—';
+  if (metric === 'hk') return v >= 10 ? v.toFixed(0) + '×' : v >= 0.1 ? v.toFixed(2) + '×' : v.toExponential(1) + '×';
+  if (v === 0) return '0';
+  if (v >= 1000) return Math.round(v).toLocaleString();
+  if (v >= 10) return v.toFixed(1);
+  if (v >= 0.1) return v.toFixed(2);
+  return v.toExponential(1);
+}
 
-function _point(svg, cx, cy, m) {
-  svg.append('circle').attr('cx', cx).attr('cy', cy).attr('r', 4)
-    .attr('fill', 'var(--vq-accent)').attr('opacity', 0.8)
-    .attr('stroke', '#fff').attr('stroke-width', 1)
-    .on('mousemove', e => VQ.tooltipShow(
-      `<b>${VQ.esc(m.sample)}</b> · ${VQ.esc(m.seq_id)}<br>TPM ${m.tpm.toFixed(2)}`, e))
-    .on('mouseleave', () => VQ.tooltipHide());
+function _fmtPct(f) {
+  if (f == null) return '—';
+  const p = 100 * f;
+  return p >= 10 ? p.toFixed(1) + '%' : p >= 0.1 ? p.toFixed(2) + '%' : p > 0 ? p.toExponential(1) + '%' : '0%';
+}
+
+function _fmtShort(v) {
+  if (v == null || isNaN(v)) return '';
+  if (Math.abs(v) < 1e-9) return '0';
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(v >= 1e4 ? 0 : 1) + 'k';
+  if (v >= 10) return v.toFixed(0);
+  if (v >= 1) return v.toFixed(1);
+  return v.toFixed(2);
+}
+
+function _fmtTpm(v) {
+  if (v == null || isNaN(v)) return '—';
+  if (v === 0)   return '0';
+  if (v >= 1000) return v.toFixed(0);
+  if (v >= 10)   return v.toFixed(1);
+  return v.toFixed(2);
 }
 
 function _trunc(s, n) {
@@ -687,21 +476,399 @@ function _trunc(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
-function _exportBtn(id) {
-  return `<button class="vq-btn vq-btn--sm vq-btn--ghost" id="${id}" type="button">Export PNG</button>`;
+const _safe = s => String(s || 'target').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60);
+
+function _pxSvg(host, minW, H) {
+  const W = Math.max(host.clientWidth || 0, minW);
+  host.innerHTML = '';
+  const svg = d3.select(host).append('svg')
+    .attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`)
+    .style('display', 'block');
+  return { svg, W };
 }
 
-// Deterministic 0..1 jitter from a string so points don't jump on re-render.
-function _hash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
-  return (Math.abs(h) % 1000) / 1000;
+// ── Load per sample (lollipop + table) ──────────────────────────────────────
+
+function _drawLoad(e) {
+  const plot = document.getElementById('qt-load'), table = document.getElementById('qt-load-table');
+  if (!plot) return;
+  const esc = VQ.esc;
+  const sub = document.getElementById('qt-load-sub');
+  if (!e) { plot.innerHTML = ''; if (table) table.innerHTML = ''; return; }
+  if (sub) sub.textContent = `${_METRICS[_S.metric].label} per sample, log scale · — = not detected in that sample`;
+  const cols = _order.map(i => _samples[i]);
+  const hasHk = _samples.some(s => s.hkMed);
+
+  table.innerHTML = `
+    <table class="vq-table vq-vt">
+      <thead><tr><th>Sample</th><th class="vq-vt-num">Contigs</th><th class="vq-vt-num">Reads</th>
+        <th class="vq-vt-num">RPM</th><th class="vq-vt-num">TPM</th>${hasHk ? '<th class="vq-vt-num">× HK</th>' : ''}</tr></thead>
+      <tbody>${cols.map(s => {
+        const b = e.bySample.get(s.name);
+        if (!b) return `<tr class="qt-absent"><td>${esc(s.name)}</td><td class="vq-vt-num" colspan="${hasHk ? 5 : 4}"><span class="vq-vt-na">not detected</span></td></tr>`;
+        return `<tr><td>${esc(s.name)}</td><td class="vq-vt-num">${b.n}</td>
+          <td class="vq-vt-num">${Math.round(b.reads).toLocaleString()}</td>
+          <td class="vq-vt-num">${_fmtVal(_val(e, s, 'rpm'), 'rpm')}</td>
+          <td class="vq-vt-num">${_fmtTpm(b.tpm)}</td>
+          ${hasHk ? `<td class="vq-vt-num">${_fmtVal(_val(e, s, 'hk'), 'hk')}</td>` : ''}</tr>`;
+      }).join('')}</tbody>
+    </table>`;
+
+  const vals = cols.map(s => ({ s, v: _val(e, s) }));
+  const present = vals.filter(d => d.v != null && d.v > 0);
+  const padL = 58, padR = 14, padT = 16, padB = 74, H = 290;
+  const { svg, W } = _pxSvg(plot, 320, H);
+  const x = d3.scaleBand().domain(cols.map(s => s.name)).range([padL, W - padR]).padding(0.35);
+  const isHk = _S.metric === 'hk';
+  const lo = present.length ? d3.min(present, d => d.v) : 1, hi = present.length ? d3.max(present, d => d.v) : 10;
+  const y = d3.scaleLog().domain(isHk ? [Math.min(lo, 0.5) / 1.5, Math.max(hi, 2) * 1.5]
+                                      : [Math.max(1e-3, lo / 3), hi * 2]).range([H - padB, padT]).nice();
+  const ticks = y.ticks(6).filter(t => Math.abs(Math.log10(t) % 1) < 1e-9);
+  (ticks.length >= 2 ? ticks : y.ticks(4)).forEach(t => {
+    svg.append('line').attr('class', isHk && Math.abs(t - 1) < 1e-9 ? 'qt-zero' : 'ov-grid')
+      .attr('x1', padL).attr('x2', W - padR).attr('y1', y(t)).attr('y2', y(t));
+    svg.append('text').attr('class', 'qt-axis').attr('x', padL - 6).attr('y', y(t))
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central').text(_fmtShort(t) + (isHk ? '×' : ''));
+  });
+  svg.append('text').attr('class', 'qt-axis').attr('transform', `translate(12,${(padT + H - padB) / 2}) rotate(-90)`)
+    .attr('text-anchor', 'middle').text(`${_METRICS[_S.metric].label} (log scale)`);
+  const base = isHk ? y(1) : H - padB;
+  vals.forEach(({ s, v }) => {
+    const cx = x(s.name) + x.bandwidth() / 2;
+    svg.append('text').attr('class', 'qt-axis')
+      .attr('transform', `translate(${cx + 3},${H - padB + 12}) rotate(-40)`).attr('text-anchor', 'end').text(_trunc(s.name, 16));
+    if (v == null || v <= 0) {
+      svg.append('text').attr('class', 'qt-axis').attr('x', cx).attr('y', H - padB - 6).attr('text-anchor', 'middle').text('—');
+      return;
+    }
+    svg.append('line').attr('class', 'qt-lollipop').attr('x1', cx).attr('x2', cx).attr('y1', base).attr('y2', y(v));
+    svg.append('circle').attr('class', 'qt-lollipop__dot').attr('cx', cx).attr('cy', y(v)).attr('r', 6.5)
+      .on('mousemove', evt => VQ.tooltipShow(`<div class="vq-tooltip__title">${esc(s.name)}</div>
+        <div class="vq-tooltip__row"><span class="vq-tooltip__key">${esc(_METRICS[_S.metric].label)}</span><span>${_fmtVal(v)}</span>
+        <span class="vq-tooltip__key">Reads</span><span>${Math.round(e.bySample.get(s.name).reads).toLocaleString()}</span></div>`, evt))
+      .on('mouseleave', VQ.tooltipHide);
+    svg.append('text').attr('class', 'qt-num').attr('x', cx).attr('y', y(v) - 12).attr('text-anchor', 'middle').text(_fmtShort(v));
+  });
 }
 
-function _fmtTpm(v) {
-  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
-  if (v >= 10)   return v.toFixed(0);
-  return v.toFixed(1);
+// ── Share of the viral reads ────────────────────────────────────────────────
+
+function _drawShare(e) {
+  const host = document.getElementById('qt-share');
+  if (!host) return;
+  const esc = VQ.esc;
+  const sub = document.getElementById('qt-share-sub');
+  const plural = { species: 'species', family: 'families', cluster: 'clusters' }[_S.group];
+  if (sub) sub.textContent = `fraction of each sample’s viral reads that belong to the target · rank among the sample’s ${plural}`;
+  if (!e) { host.innerHTML = ''; return; }
+  const cols = _order.map(i => _samples[i]);
+  const rows = cols.map(s => ({ s, ..._shareOf(e, s) }));
+
+  const padL = 130, padR = 120, rowH = 28;
+  const { svg, W } = _pxSvg(host, 380, rows.length * rowH + 8);
+  const x = d3.scaleLinear().domain([0, 1]).range([padL, W - padR]);
+  rows.forEach((r, j) => {
+    const y = 4 + j * rowH;
+    const g = svg.append('g').attr('class', 'qt-row');
+    g.append('rect').attr('class', 'qt-row__bg').attr('x', 0).attr('y', y).attr('width', W).attr('height', rowH);
+    g.append('text').attr('class', 'qt-axis-strong').attr('x', 6).attr('y', y + rowH / 2)
+      .attr('dominant-baseline', 'central').text(_trunc(r.s.name, 18));
+    g.append('rect').attr('class', 'qt-track').attr('x', padL).attr('y', y + 8).attr('width', W - padR - padL)
+      .attr('height', rowH - 16).attr('rx', 5);
+    if (r.mine > 0) g.append('rect').attr('class', 'qt-share__bar').attr('x', padL).attr('y', y + 8)
+      .attr('width', Math.max(3, x(r.share) - padL)).attr('height', rowH - 16).attr('rx', 5);
+    g.append('text').attr('class', 'qt-num').attr('x', W - padR + 10).attr('y', y + rowH / 2)
+      .attr('dominant-baseline', 'central').text(r.mine > 0 ? _fmtPct(r.share) : '—');
+    g.append('text').attr('class', 'qt-num qt-num--muted').attr('x', W - 6).attr('y', y + rowH / 2)
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(r.rank ? `#${r.rank} of ${r.of}` : '');
+    g.on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${esc(r.s.name)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Target reads</span><span>${Math.round(r.mine).toLocaleString()}</span>
+          <span class="vq-tooltip__key">Viral reads</span><span>${Math.round(r.tot).toLocaleString()}</span>
+          <span class="vq-tooltip__key">Share</span><span>${_fmtPct(r.share)}</span>
+          ${r.rank ? `<span class="vq-tooltip__key">Rank</span><span>${r.rank} of ${r.of} ${plural}</span>` : ''}
+        </div>`, evt))
+     .on('mouseleave', VQ.tooltipHide);
+  });
+}
+
+// ── Target vs host housekeeping ─────────────────────────────────────────────
+
+function _drawHk(e) {
+  const host = document.getElementById('qt-hk');
+  if (!host) return;
+  const esc = VQ.esc;
+  if (!e) { host.innerHTML = ''; return; }
+  const cols = _order.map(i => _samples[i]);
+  const pts = [];
+  _ents.forEach(x => cols.forEach(s => {
+    const v = _val(x, s, 'hk');
+    if (v != null && v > 0) pts.push({ e: x, s, l: Math.log2(v) });
+  }));
+  const mine = pts.filter(p => p.e === e);
+  if (!mine.length) { host.innerHTML = '<div class="vq-empty">The target has no TPM against a housekeeping baseline.</div>'; return; }
+
+  const padL = 44, padR = 14, padT = 12, padB = 70, H = 300;
+  const { svg, W } = _pxSvg(host, 340, H);
+  const lo = Math.min(-2, d3.min(pts, p => p.l)), hi = Math.max(2, d3.max(pts, p => p.l));
+  const y = d3.scaleLinear().domain([lo, hi]).nice().range([H - padB, padT]);
+  const x = d3.scalePoint().domain(cols.map(s => s.name)).range([padL, W - padR]).padding(0.5);
+  const step = x.step();
+
+  y.ticks(6).forEach(t => {
+    svg.append('line').attr('class', t === 0 ? 'qt-zero' : 'ov-grid').attr('x1', padL).attr('x2', W - padR).attr('y1', y(t)).attr('y2', y(t));
+    svg.append('text').attr('class', 'qt-axis').attr('x', padL - 6).attr('y', y(t))
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central').text(t);
+  });
+  svg.append('text').attr('class', 'qt-axis qt-zero__lbl').attr('x', W - padR - 2).attr('y', y(0) - 5)
+    .attr('text-anchor', 'end').text('= host HK median');
+  cols.forEach(s => svg.append('text').attr('class', 'qt-axis')
+    .attr('transform', `translate(${x(s.name) + 3},${H - padB + 12}) rotate(-40)`)
+    .attr('text-anchor', 'end').text(_trunc(s.name, 16)));
+
+  const jit = (k, s) => ((Math.sin((k.length * 31 + s.length) * 12.9898 + k.charCodeAt(0)) * 43758.5453) % 1 + 1) % 1 - 0.5;
+  pts.filter(p => p.e !== e).forEach(p => svg.append('circle').attr('class', 'qt-hk-pt qt-hk-pt--rest')
+    .attr('cx', x(p.s.name) + jit(p.e.key, p.s.name) * Math.min(step * 0.55, 30)).attr('cy', y(p.l)).attr('r', 2.6)
+    .on('mousemove', evt => tip(evt, p)).on('mouseleave', VQ.tooltipHide)
+    .on('click', () => _setTarget(p.e.key)));
+  if (mine.length > 1) svg.append('path').attr('class', 'qt-hk-line')
+    .attr('d', d3.line().x(p => x(p.s.name)).y(p => y(p.l))(mine));
+  mine.forEach(p => svg.append('circle').attr('class', 'qt-hk-focus')
+    .attr('cx', x(p.s.name)).attr('cy', y(p.l)).attr('r', 6)
+    .on('mousemove', evt => tip(evt, p)).on('mouseleave', VQ.tooltipHide));
+
+  function tip(evt, p) {
+    VQ.tooltipShow(`
+      <div class="vq-tooltip__title">${esc(p.e.label)}</div>
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Sample</span><span>${esc(p.s.name)}</span>
+        <span class="vq-tooltip__key">TPM</span><span>${_fmtTpm(p.e.bySample.get(p.s.name).tpm)}</span>
+        <span class="vq-tooltip__key">HK median</span><span>${_fmtTpm(p.s.hkMed)} TPM</span>
+        <span class="vq-tooltip__key">Ratio</span><span>${_fmtVal(Math.pow(2, p.l), 'hk')} (log₂ ${p.l.toFixed(2)})</span>
+        ${p.e !== e ? '<span class="vq-tooltip__key"></span><span>click to make it the target</span>' : ''}
+      </div>`, evt);
+  }
+}
+
+// ── Inside the target: what its reads are made of ───────────────────────────
+// family → its species · species → the clusters its contigs fall in ·
+// cluster → the species each member resolved to (species agreement).
+
+function _partOf(c) {
+  if (_S.group === 'family')  return c.species;
+  if (_S.group === 'cluster') return c.species;
+  return c.cluster ? `${c.cluster} · ${_clusterSpecies.get(c.cluster) || ''}` : 'not in a cross-sample cluster';
+}
+
+function _drawParts(e) {
+  const host = document.getElementById('qt-parts');
+  if (!host) return;
+  const esc = VQ.esc;
+  const title = document.getElementById('qt-parts-title');
+  const sub = document.getElementById('qt-parts-sub');
+  const what = { family: 'Species in the Family', species: 'Clusters of the Species', cluster: 'Species of the Cluster Members' }[_S.group];
+  if (title) title.textContent = what;
+  if (sub) sub.textContent = {
+    family:  'share of the family’s reads per species in each sample',
+    species: 'share of the species’ reads per cross-sample cluster in each sample — the same colour in two samples is the same genotype',
+    cluster: 'share of the cluster’s reads by each member’s own best-hit species — one colour everywhere means the members agree',
+  }[_S.group];
+  const legend = document.getElementById('qt-parts-legend');
+  if (!e) { host.innerHTML = ''; if (legend) legend.innerHTML = ''; return; }
+
+  const totals = new Map();
+  e.contigs.forEach(c => totals.set(_partOf(c), (totals.get(_partOf(c)) || 0) + (c.reads || 0)));
+  const top = [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, _TOP_PARTS).map(([k]) => k);
+  const color = new Map(top.map((k, i) => [k, _PART_COLORS[i % _PART_COLORS.length]]));
+  const cols = _order.map(i => _samples[i]).filter(s => e.bySample.has(s.name));
+
+  const padL = 140, padR = 100, rowH = 26;
+  const { svg, W } = _pxSvg(host, 520, cols.length * rowH + 8);
+  const x = d3.scaleLinear().domain([0, 1]).range([padL, W - padR]);
+  cols.forEach((s, j) => {
+    const y = 4 + j * rowH;
+    const parts = new Map();
+    e.contigs.filter(c => c.sample === s.name).forEach(c => {
+      const k = top.includes(_partOf(c)) ? _partOf(c) : null;
+      parts.set(k, (parts.get(k) || 0) + (c.reads || 0));
+    });
+    const tot = d3.sum([...parts.values()]);
+    const g = svg.append('g').attr('class', 'qt-row');
+    g.append('rect').attr('class', 'qt-row__bg').attr('x', 0).attr('y', y).attr('width', W).attr('height', rowH);
+    g.append('text').attr('class', 'qt-axis-strong').attr('x', 6).attr('y', y + rowH / 2)
+      .attr('dominant-baseline', 'central').text(_trunc(s.name, 18));
+    g.append('rect').attr('class', 'qt-track').attr('x', padL).attr('y', y + 5).attr('width', W - padR - padL)
+      .attr('height', rowH - 10).attr('rx', 4);
+    let acc = 0;
+    if (tot > 0) top.concat([null]).forEach(k => {
+      const r = parts.get(k) || 0;
+      if (r <= 0) return;
+      const f = r / tot;
+      g.append('rect').attr('class', 'qt-seg').attr('x', x(acc)).attr('y', y + 5)
+        .attr('width', Math.max(0.5, x(acc + f) - x(acc))).attr('height', rowH - 10)
+        .attr('fill', k ? color.get(k) : _OTHER_COLOR)
+        .on('mousemove', evt => VQ.tooltipShow(`
+          <div class="vq-tooltip__title">${esc(k || 'Other')}</div>
+          <div class="vq-tooltip__row">
+            <span class="vq-tooltip__key">Sample</span><span>${esc(s.name)}</span>
+            <span class="vq-tooltip__key">Share</span><span>${_fmtPct(f)} of the target’s reads</span>
+            <span class="vq-tooltip__key">Reads</span><span>${Math.round(r).toLocaleString()}</span>
+          </div>`, evt))
+        .on('mouseleave', VQ.tooltipHide);
+      acc += f;
+    });
+    g.append('text').attr('class', 'qt-num').attr('x', W - 6).attr('y', y + rowH / 2)
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(`${Math.round(tot).toLocaleString()} reads`);
+  });
+  if (legend) legend.innerHTML = top.map(k =>
+    `<span class="ov-legend__item"><span class="ov-legend__dot" style="background:${color.get(k)}"></span>${esc(_trunc(k, 48))}</span>`).join('')
+    + (totals.size > top.length ? `<span class="ov-legend__item"><span class="ov-legend__dot" style="background:${_OTHER_COLOR}"></span>Other (${totals.size - top.length})</span>` : '');
+}
+
+// ── Contigs of the target ───────────────────────────────────────────────────
+
+function _renderContigs(e) {
+  const host = document.getElementById('qt-contigs');
+  if (!host) return;
+  const esc = VQ.esc, NOV = window.vqNovelty;
+  const sub = document.getElementById('qt-contigs-sub');
+  if (!e) { host.innerHTML = ''; return; }
+  const byName = new Map(_samples.map(s => [s.name, s]));
+  const rows = e.contigs.slice().sort((a, b) => (b.reads || 0) - (a.reads || 0));
+  const hasHk = _samples.some(s => s.hkMed);
+  const showSp = _S.group !== 'species', showClu = _S.group !== 'cluster' && rows.some(c => c.cluster);
+  if (sub) sub.textContent = `${rows.length} contig${rows.length === 1 ? '' : 's'} · sorted by reads · click a row to open it in the Sequence Viewer`;
+  host.innerHTML = `
+    <table class="vq-table vq-vt">
+      <thead><tr>
+        <th>Sample</th><th>Contig</th>${showSp ? '<th>Species</th>' : ''}${showClu ? '<th>Cluster</th>' : ''}
+        <th>Novelty</th><th class="vq-vt-num">Length (bp)</th><th class="vq-vt-num">Reads</th>
+        <th class="vq-vt-num">RPM</th><th class="vq-vt-num">TPM</th>${hasHk ? '<th class="vq-vt-num">× HK</th>' : ''}
+      </tr></thead>
+      <tbody>${rows.map(c => {
+        const s = byName.get(c.sample);
+        const rpm = c.reads != null && s.input ? c.reads / s.input * 1e6 : null;
+        const hk = c.tpm != null && s.hkMed ? c.tpm / s.hkMed : null;
+        return `<tr data-gid="${esc(c.gid)}" title="Open ${esc(c.id)} in the Sequence Viewer">
+          <td>${esc(c.sample)}</td>
+          <td class="vq-td--mono">${esc(c.id)}</td>
+          ${showSp ? `<td class="vq-vt-species">${esc(c.species)}</td>` : ''}
+          ${showClu ? `<td class="vq-td--mono">${c.cluster ? esc(c.cluster) : '<span class="vq-vt-na">—</span>'}</td>` : ''}
+          <td>${c.nov && NOV ? `<span class="vq-nov vq-nov--${c.nov}">${esc(NOV.label[c.nov])}</span>` : '<span class="vq-vt-na">—</span>'}</td>
+          <td class="vq-vt-num">${c.length.toLocaleString()}</td>
+          <td class="vq-vt-num">${c.reads == null ? '—' : Math.round(c.reads).toLocaleString()}</td>
+          <td class="vq-vt-num">${_fmtVal(rpm, 'rpm')}</td>
+          <td class="vq-vt-num">${_fmtTpm(c.tpm)}</td>
+          ${hasHk ? `<td class="vq-vt-num">${_fmtVal(hk, 'hk')}</td>` : ''}
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+
+// ── Co-occurrence ───────────────────────────────────────────────────────────
+// Pearson correlation of log abundance across samples (absent = 0) between
+// the target and every other entity seen in ≥ 2 samples.
+
+function _drawCooccurrence(e) {
+  const host = document.getElementById('qt-co');
+  if (!host) return;
+  const esc = VQ.esc;
+  const sub = document.getElementById('qt-co-sub');
+  if (!e) { host.innerHTML = ''; return; }
+  if (sub) sub.textContent = `Pearson r of log(1 + ${_METRICS[_S.metric].label}) across ${_samples.length} samples (absent = 0) · strongest positive and negative · click a bar to make it the target`;
+  if (e.prev < 2) {
+    host.innerHTML = '<div class="vq-empty">The target occurs in a single sample — co-occurrence needs at least two.</div>';
+    return;
+  }
+  const vec = x => _samples.map(s => Math.log10(1 + (_val(x, s) || 0)));
+  const t = vec(e);
+  const corr = (a, b) => {
+    const ma = d3.mean(a), mb = d3.mean(b);
+    let n = 0, da = 0, db = 0;
+    a.forEach((v, i) => { n += (v - ma) * (b[i] - mb); da += (v - ma) ** 2; db += (b[i] - mb) ** 2; });
+    return da && db ? n / Math.sqrt(da * db) : null;
+  };
+  const all = _ents.filter(x => x !== e && x.prev >= 2)
+    .map(x => ({ x, r: corr(t, vec(x)), both: _samples.filter(s => x.bySample.has(s.name) && e.bySample.has(s.name)).length }))
+    .filter(d => d.r != null);
+  const pos = all.filter(d => d.r > 0).sort((a, b) => b.r - a.r).slice(0, 8);
+  const neg = all.filter(d => d.r < 0).sort((a, b) => a.r - b.r).slice(0, 4);
+  const rows = pos.concat(neg);
+  if (!rows.length) { host.innerHTML = '<div class="vq-empty">No other virus varies with the target.</div>'; return; }
+
+  const padL = 300, padR = 180, rowH = 24;
+  const { svg, W } = _pxSvg(host, 640, rows.length * rowH + 34 + (neg.length && pos.length ? 10 : 0));
+  const x = d3.scaleLinear().domain([-1, 1]).range([padL, W - padR]);
+  [-1, -0.5, 0, 0.5, 1].forEach(v => {
+    svg.append('line').attr('class', v === 0 ? 'qt-zero' : 'ov-grid').attr('x1', x(v)).attr('x2', x(v))
+      .attr('y1', 4).attr('y2', rows.length * rowH + 14);
+    svg.append('text').attr('class', 'qt-axis').attr('x', x(v)).attr('y', rows.length * rowH + 28 + (neg.length && pos.length ? 10 : 0))
+      .attr('text-anchor', 'middle').text(v);
+  });
+  rows.forEach((d, j) => {
+    const y = 6 + j * rowH + (j >= pos.length && pos.length ? 10 : 0);
+    const g = svg.append('g').attr('class', 'qt-row').style('cursor', 'pointer').on('click', () => _setTarget(d.x.key));
+    g.append('rect').attr('class', 'qt-row__bg').attr('x', 0).attr('y', y).attr('width', W).attr('height', rowH);
+    g.append('text').attr('class', 'qt-co__lbl').attr('x', padL - 10).attr('y', y + rowH / 2)
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(_trunc(d.x.label, 40) + (d.x.sub ? ` · ${d.x.sub}` : ''));
+    g.append('rect').attr('class', d.r > 0 ? 'qt-co__pos' : 'qt-co__neg')
+      .attr('x', Math.min(x(0), x(d.r))).attr('y', y + 5).attr('width', Math.abs(x(d.r) - x(0))).attr('height', rowH - 10).attr('rx', 3);
+    g.append('text').attr('class', 'qt-num').attr('x', W - padR + 10).attr('y', y + rowH / 2)
+      .attr('dominant-baseline', 'central').text(`r = ${d.r.toFixed(2)}`);
+    g.append('text').attr('class', 'qt-num qt-num--muted').attr('x', W - 6).attr('y', y + rowH / 2)
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central').text(`${d.both} shared`);
+    g.on('mousemove', evt => VQ.tooltipShow(`
+        <div class="vq-tooltip__title">${esc(d.x.label)}</div>
+        <div class="vq-tooltip__row">
+          <span class="vq-tooltip__key">Pearson r</span><span>${d.r.toFixed(3)}</span>
+          <span class="vq-tooltip__key">Samples with both</span><span>${d.both} of ${_samples.length}</span>
+          <span class="vq-tooltip__key">Its samples</span><span>${d.x.prev}</span>
+        </div>`, evt))
+     .on('mouseleave', VQ.tooltipHide);
+  });
+}
+
+// ── CSV exports (plain numbers, RFC 4180 quoting) ───────────────────────────
+
+function _csv(head, rows) {
+  const cell = v => {
+    if (v == null || (typeof v === 'number' && isNaN(v))) return '';
+    const s = String(v);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [head.map(cell).join(','), ...rows.map(r => r.map(cell).join(','))].join('\r\n') + '\r\n';
+}
+
+const _num = (v, p = 6) => (v == null || isNaN(v)) ? null : +(+v).toPrecision(p);
+
+function _loadCsv() {
+  const e = _target();
+  if (!e) return _csv(['sample'], []);
+  return _csv(
+    ['target_type', 'target', 'sample', 'detected', 'contigs', 'reads', 'rpm', 'tpm', 'hk_ratio', 'share_of_viral_reads', 'rank_in_sample'],
+    _order.map(i => _samples[i]).map(s => {
+      const b = e.bySample.get(s.name), sh = _shareOf(e, s);
+      return [_S.group, e.sub || e.label, s.name, b ? 1 : 0, b ? b.n : 0, b ? _num(b.reads) : 0,
+              _num(_val(e, s, 'rpm')), b ? _num(b.tpm) : null, _num(_val(e, s, 'hk')), _num(sh.share), sh.rank];
+    }));
+}
+
+function _contigsCsv() {
+  const e = _target();
+  if (!e) return _csv(['contig_id'], []);
+  const byName = new Map(_samples.map(s => [s.name, s]));
+  return _csv(
+    ['sample', 'contig_id', 'species', 'family', 'cluster', 'novelty', 'length_bp', 'reads', 'rpm', 'tpm', 'hk_ratio'],
+    e.contigs.slice().sort((a, b) => (b.reads || 0) - (a.reads || 0)).map(c => {
+      const s = byName.get(c.sample);
+      return [c.sample, c.id, c.species, c.family, c.cluster, c.nov, c.length, _num(c.reads),
+              c.reads != null && s.input ? _num(c.reads / s.input * 1e6) : null, _num(c.tpm),
+              c.tpm != null && s.hkMed ? _num(c.tpm / s.hkMed) : null];
+    }));
 }
 
 window.vqInitQuant = vqInitQuant;

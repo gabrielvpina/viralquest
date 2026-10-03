@@ -99,38 +99,40 @@ def discover_result_dirs(root: Path) -> list[tuple[Path, Path]]:
 
 # ── Loading + stamping ─────────────────────────────────────────────────────
 
-def _salmon_tpm_map(report: dict) -> dict[str, float]:
+def _salmon_viral_map(report: dict) -> dict[str, tuple[float | None, float | None]]:
     """
-    Map original sequence id → TPM from ``salmon_quant.viral_quant``.
+    Map original sequence id → (TPM, reads) from ``salmon_quant.viral_quant``.
 
     Entry names look like ``VQ_VIRAL_{seq_id}``; the prefix is stripped so the
-    key matches the sequence ``id``.
+    key matches the sequence ``id``.  Reads are Salmon's ``num_reads`` (EM
+    estimate, fractional): unlike TPM they do not depend on what else is in the
+    sample's index, so the report can turn them into reads per million.
     """
     sq = report.get("salmon_quant")
     if not sq:
         return {}
-    out: dict[str, float] = {}
+    out: dict[str, tuple[float | None, float | None]] = {}
     for entry in sq.get("viral_quant", []) or []:
         name = entry.get("name", "")
         seq_id = name[len("VQ_VIRAL_"):] if name.startswith("VQ_VIRAL_") else name
-        tpm = entry.get("tpm")
-        if seq_id and tpm is not None:
-            out[seq_id] = tpm
+        tpm, reads = entry.get("tpm"), entry.get("num_reads")
+        if seq_id and (tpm is not None or reads is not None):
+            out[seq_id] = (tpm, reads)
     return out
 
 
 def _stamp(report: dict, sample: str) -> None:
     """
-    Mutate *report* in place: stamp ``sample``/``gid`` (and ``tpm`` when salmon
-    ran) onto every sequence.  The original ``id`` is preserved for display.
+    Mutate *report* in place: stamp ``sample``/``gid`` (and ``tpm`` + ``reads``
+    when salmon ran) onto every sequence.  The original ``id`` is preserved.
     """
-    tpm_map = _salmon_tpm_map(report)
+    quant = _salmon_viral_map(report)
     for seq in report.get("sequences", []) or []:
         sid = seq.get("id", "")
         seq["sample"] = sample
         seq["gid"]    = f"{sample}{GID_SEP}{sid}"
-        if tpm_map:
-            seq["tpm"] = tpm_map.get(sid)
+        if quant:
+            seq["tpm"], seq["reads"] = quant.get(sid, (None, None))
 
 
 def load_samples(root: str | Path) -> list[SampleReport]:

@@ -59,6 +59,7 @@ class GeneralMember:
     species:           str | None    # this member's own best species label
     species_db:        str | None    # "nr" | "refseq" | "blastn" | None
     tpm:               float | None
+    reads:             float | None = None   # Salmon NumReads (for reads per million)
     # Alignment coordinates vs the representative (for the alignment-bar view).
     aln_start:         int = 1       # subject (representative) start
     aln_end:           int = 1       # subject (representative) end
@@ -164,14 +165,14 @@ def _member(seq: dict, hit: dict | None, is_rep: bool) -> GeneralMember:
         return GeneralMember(
             gid=seq["gid"], sample=seq.get("sample", ""), seq_id=seq.get("id", ""),
             length=length, identity=100.0, coverage=100.0,
-            species=label, species_db=db, tpm=seq.get("tpm"),
+            species=label, species_db=db, tpm=seq.get("tpm"), reads=seq.get("reads"),
             aln_start=1, aln_end=length, query_start=1, query_end=length,
             is_representative=True,
         )
     return GeneralMember(
         gid=seq["gid"], sample=seq.get("sample", ""), seq_id=seq.get("id", ""),
         length=length, identity=hit["pident"], coverage=hit["qcov"],
-        species=label, species_db=db, tpm=seq.get("tpm"),
+        species=label, species_db=db, tpm=seq.get("tpm"), reads=seq.get("reads"),
         aln_start=hit["sstart"], aln_end=hit["send"],
         query_start=hit["qstart"], query_end=hit["qend"],
         is_representative=False,

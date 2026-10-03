@@ -353,7 +353,45 @@ def test_clusters_tab_is_cluster_centred(results_root):
     """General Clusters: selector table, single-cluster detail, presence matrix, sample similarity."""
     html = _render_template(build_report_data(load_samples(results_root)), d3_js=STUB_D3)
     for marker in ('id="clu-table"', 'id="clu-detail"', 'id="clu-matrix"', 'id="clu-sim"',
-                   'id="clu-csv"', "function _upgma(M)", "function _clustersCsv()"):
+                   'id="clu-csv"', "VQ.upgma(sim.M)", "function _clustersCsv()"):
         assert marker in html, marker
     # The old one-card-per-cluster list and ego network are gone.
     assert "function _drawEgo" not in html and 'id="clu-cards"' not in html
+
+
+# ── RNA quantification ──────────────────────────────────────────────────────
+
+def test_salmon_reads_stamped_and_library_size(tmp_path):
+    rep = _report([_seq("k141_1"), _seq("k141_2")], salmon=True)
+    rep["salmon_quant"].update(mapping_rate=80.0, total_reads=8000)
+    rep["salmon_quant"]["viral_quant"][0]["num_reads"] = 120.5
+    _write_sample(tmp_path, "s1", rep)
+    sample = load_samples(tmp_path)[0]
+    by_id = {q["id"]: q for q in sample.sequences}
+    assert by_id["k141_1"]["reads"] == 120.5 and by_id["k141_1"]["tpm"] == 10.0
+    assert by_id["k141_2"]["reads"] is None          # Salmon ran, no NumReads for it
+    salmon = build_report_data([sample])["samples"][0]["salmon"]
+    assert salmon["input_reads"] == 10000             # 8000 mapped / 80 %
+
+
+def test_cluster_members_carry_reads():
+    seqs = [_gseq("sA::s1", "sA", tpm=12.0), _gseq("sB::s1", "sB", tpm=3.0)]
+    seqs[0]["reads"], seqs[1]["reads"] = 40.0, 7.5
+    with patch("viralquest.report_clusters._run_blastn", return_value={"sB::s1": _hit()}):
+        members = build_general_clusters(seqs)[0].to_dict()["members"]
+    assert {m["gid"]: m["reads"] for m in members} == {"sA::s1": 40.0, "sB::s1": 7.5}
+
+
+def test_quant_tab_is_target_centred(results_root):
+    html = _render_template(build_report_data(load_samples(results_root)), d3_js=STUB_D3)
+    # One target picker at the top; every card below follows it.
+    for marker in ('id="qt-group"', 'id="qt-select"', 'id="qt-search"', 'id="qt-metric"',
+                   'id="qt-load"', 'id="qt-share"', 'id="qt-hk"', 'id="qt-parts"', 'id="qt-contigs"',
+                   'id="qt-co"', 'id="qt-load-csv"', 'id="qt-contigs-csv"', "vq:cluster-select"):
+        assert marker in html, marker
+    # Whole-virome views and the old pickers are gone from this tab.
+    for gone in ('id="qt-mx"', 'id="qt-comp"', 'id="qt-div"', 'id="qt-list"', 'id="hm-clu-list"', 'id="qt-kg"'):
+        assert gone not in html, gone
+    # The host kingdom matrix (not target-specific) lives in the Overview again.
+    assert 'id="ov-kingdoms-card"' in html
+    assert "upgma:          vqUpgma" in html

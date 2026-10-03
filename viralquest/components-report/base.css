@@ -2698,36 +2698,66 @@ button.ov-wf-cell:hover .ov-wf-dot { filter: brightness(1.08); transform: scale(
    viralquest-report — RNA Quantification (Section 4)
    ════════════════════════════════════════════════════════════════════ */
 
-.qt-cluster-list { display: flex; flex-direction: column; gap: 4px;
-                   max-height: 240px; overflow-y: auto; }
-.qt-cluster-list .vr-sample { gap: 8px; padding: 3px 4px; border-radius: 6px; }
-.qt-cluster-list .vr-sample:hover { background: var(--vq-surface-2); }
+/* Target picker (top of the tab) */
+.qt-target { padding: 14px 18px; border-color: var(--vq-accent);
+             box-shadow: 0 0 0 1px var(--vq-accent-subtle), var(--vq-shadow-sm); }
+.qt-target__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.qt-target__row + .qt-target__row { margin-top: 10px; }
+.qt-target__search { width: 170px; }
+.qt-target__select { flex: 1 1 360px; min-width: 0; max-width: 680px; }
+.qt-target__head { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--vq-border); }
+.qt-target__name { font-size: 20px; font-weight: 700; font-style: italic; color: var(--vq-text);
+                   letter-spacing: -.01em; }
+.qt-controls__label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+                      color: var(--vq-text-3); min-width: 54px; }
+.qt-controls__hint { margin-left: auto; font-size: 12px; color: var(--vq-text-3); }
+.qt-controls__hint.is-warn { color: #9b6a09; }
 
-/* ── Cluster heatmap ─────────────────────────────────────────────────────── */
+.qt-stack { display: flex; flex-direction: column; gap: var(--vq-space-3); }
+.qt-stack > .vq-chart-card { min-width: 0; }
+.qt-pair  { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+            gap: var(--vq-space-3); align-items: start; }
+.qt-pair > .vq-chart-card { min-width: 0; }
+.qt-scroll { overflow-x: auto; overflow-y: hidden; justify-content: flex-start; }
 
-/* Two pickers side by side while there is room; they stack on narrow screens
-   so neither list is ever squeezed to an unusable width. */
-.hm-picker {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--vq-space-3);
-  margin-bottom: var(--vq-space-4);
-}
-.hm-picker__acts { display: inline-flex; gap: 4px; }
-.hm-list         { max-height: 220px; overflow-y: auto; }
+/* Shared SVG text / rows */
+.qt-axis        { font-size: 10.5px; fill: var(--vq-text-3); font-family: var(--vq-font); }
+.qt-axis-strong { font-size: 11.5px; fill: var(--vq-text); font-weight: 600; font-family: var(--vq-font); }
+.qt-num         { font-size: 11px; fill: var(--vq-text); font-family: var(--vq-font-mono); font-weight: 600; }
+.qt-num--muted  { fill: var(--vq-text-3); font-weight: 400; }
+.qt-row__bg { fill: transparent; }
+.qt-row:hover .qt-row__bg { fill: var(--vq-surface-2); }
+.qt-track { fill: var(--vq-c-track); }
+.qt-seg   { stroke: var(--vq-surface); stroke-width: .8; }
+.qt-seg:hover { filter: brightness(1.08); }
 
-.hm-controls {
-  display: flex; flex-wrap: wrap; align-items: center;
-  gap: var(--vq-space-3) var(--vq-space-4);
-  padding: var(--vq-space-3) var(--vq-space-4);
-  border-bottom: 1px solid var(--vq-border);
-}
-.hm-ctl {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--vq-text-3);
-}
-.hm-ctl select        { min-width: 120px; }
-.hm-ctl--check        { cursor: pointer; color: var(--vq-text-2); }
+/* Load per sample */
+.qt-focus__grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); gap: 14px; align-items: start; }
+.qt-focus__table { max-height: 300px; }
+.qt-focus__table tbody tr { cursor: default; }
+.qt-absent td { opacity: .6; }
+.qt-lollipop      { stroke: var(--vq-border-dark); stroke-width: 2; }
+.qt-lollipop__dot { fill: var(--vq-accent); stroke: var(--vq-surface); stroke-width: 2; }
+@media (max-width: 900px) { .qt-focus__grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Share of viral reads */
+.qt-share__bar { fill: var(--vq-accent); }
+
+/* Target vs host housekeeping */
+.qt-zero      { stroke: var(--vq-text-2); stroke-width: 1.2; stroke-dasharray: 4,3; }
+.qt-zero__lbl { fill: var(--vq-text-2); }
+.qt-hk-pt--rest { fill: var(--vq-text-3); fill-opacity: .35; cursor: pointer; }
+.qt-hk-pt--rest:hover { fill-opacity: .9; }
+.qt-hk-line   { fill: none; stroke: var(--vq-accent); stroke-width: 2; opacity: .7; }
+.qt-hk-focus  { fill: var(--vq-accent); stroke: var(--vq-surface); stroke-width: 2; }
+
+/* Contigs */
+.qt-contigs-wrap { max-height: 360px; }
+
+/* Co-occurrence */
+.qt-co__lbl { font-size: 11.5px; font-style: italic; fill: var(--vq-text); font-family: var(--vq-font); }
+.qt-co__pos { fill: var(--vq-success); opacity: .8; }
+.qt-co__neg { fill: var(--vq-danger); opacity: .75; }
 
 
 /* ── Overview: full-width cards stacked inside a titled group ─────────── */

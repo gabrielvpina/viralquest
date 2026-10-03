@@ -81,6 +81,13 @@ def _best_species(seq: dict) -> str | None:
     return None
 
 
+def _input_reads(sq: dict) -> int | None:
+    mapped, rate = sq.get("total_reads"), sq.get("mapping_rate")
+    if not mapped or not rate:
+        return None
+    return int(round(mapped / (rate / 100.0)))
+
+
 def _summarize_salmon(s: SampleReport) -> dict | None:
     """
     Kingdom-level rollup of a sample's Salmon quantification.
@@ -125,6 +132,9 @@ def _summarize_salmon(s: SampleReport) -> dict | None:
         "viral_tpm_sum": round(sum(_tpm(e) for e in (sq.get("viral_quant") or [])), 3),
         # Reads assigned to the viral contigs (Salmon's NumReads, fractional).
         "viral_reads":   round(sum(e.get("num_reads") or 0.0 for e in (sq.get("viral_quant") or [])), 1),
+        # Library size, estimated as mapped reads / mapping rate: the denominator
+        # for reads per million, which (unlike TPM) compares across samples.
+        "input_reads":   _input_reads(sq),
         "conserved":     conserved,
         "ref_hk": {
             "n":        len(ref_hk),

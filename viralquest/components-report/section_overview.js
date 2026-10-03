@@ -117,7 +117,8 @@ function vqInitOverview(report) {
             </div>
           </div>
           <div class="vq-chart-card__body" id="ov-kingdoms-body"></div>
-        </div>` : ''}`) : ''}
+        </div>` : ''}
+`) : ''}
 
       ${group('Sequence properties', 'length and score distributions per sample', `
         ${_card('ov-lengths', 'Sequence Length per Sample',
