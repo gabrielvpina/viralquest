@@ -352,11 +352,12 @@ def test_detected_viruses_table_is_per_contig_with_csv(results_root):
 def test_clusters_tab_is_cluster_centred(results_root):
     """General Clusters: selector table, single-cluster detail, presence matrix, sample similarity."""
     html = _render_template(build_report_data(load_samples(results_root)), d3_js=STUB_D3)
-    for marker in ('id="clu-table"', 'id="clu-detail"', 'id="clu-matrix"', 'id="clu-sim"',
+    for marker in ('id="clu-table"', 'id="clu-detail"', 'id="clu-matrix"',
                    'id="clu-csv"', "VQ.upgma(sim.M)", "function _clustersCsv()"):
         assert marker in html, marker
     # The old one-card-per-cluster list and ego network are gone.
     assert "function _drawEgo" not in html and 'id="clu-cards"' not in html
+    assert 'id="clu-sim"' not in html             # sample-similarity card removed
 
 
 # ── RNA quantification ──────────────────────────────────────────────────────
@@ -387,7 +388,9 @@ def test_quant_tab_is_target_centred(results_root):
     # One target picker at the top; every card below follows it.
     for marker in ('id="qt-group"', 'id="qt-select"', 'id="qt-search"', 'id="qt-metric"',
                    'id="qt-load"', 'id="qt-share"', 'id="qt-hk"', 'id="qt-parts"', 'id="qt-contigs"',
-                   'id="qt-co"', 'id="qt-load-csv"', 'id="qt-contigs-csv"', "vq:cluster-select"):
+                   'id="qt-co"', 'id="qt-load-csv"', 'id="qt-contigs-csv"', "vq:cluster-select",
+                   'id="qt-hm"', 'id="qt-hm-csv"', 'id="qt-hm-level"', 'id="qt-hm-filter"',
+                   'id="qt-hm-metric"', "function _heatmapRows()", 'id="qt-hm-pal"', "const _HM_PALETTES"):
         assert marker in html, marker
     # Whole-virome views and the old pickers are gone from this tab.
     for gone in ('id="qt-mx"', 'id="qt-comp"', 'id="qt-div"', 'id="qt-list"', 'id="hm-clu-list"', 'id="qt-kg"'):
