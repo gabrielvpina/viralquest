@@ -34,7 +34,14 @@ class OrfAnalyzer:
         
         seq_str = nuc_seq.sequence
         
-        results = orfipy_core.orfs(seq_str, minlen=self.min_len_nt)
+        # partial5 / partial3: ORFs that run off either end of the contig (no
+        # start or no stop codon inside it).  Assembled viral contigs are often
+        # fragments of a gene or of a polyprotein, so complete-only ORF calling
+        # would miss them and hide their domains from the HMM searches.
+        # The ORF_type field ("complete", "5-prime-partial", "3-prime-partial",
+        # "no_start_no_stop") records which kind each ORF is.
+        results = orfipy_core.orfs(seq_str, minlen=self.min_len_nt,
+                                   partial5=True, partial3=True)
         
         orfs_number = 0
         
