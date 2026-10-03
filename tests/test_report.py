@@ -398,3 +398,70 @@ def test_quant_tab_is_target_centred(results_root):
     # The host kingdom matrix (not target-specific) lives in the Overview again.
     assert 'id="ov-kingdoms-card"' in html
     assert "upgma:          vqUpgma" in html
+
+
+# ── Named dataset exports (JSON + SQLite) ───────────────────────────────────
+
+def test_dataset_name_validation():
+    from viralquest.report_db import validate_dataset_name
+    for ok in ("PRJNA123456", "Aedes_aegypti_2024", "study-1.v2"):
+        assert validate_dataset_name(ok) == ok
+    for bad in ("", "bad name", "-starts-with-dash", "a/b", "x" * 65, None):
+        with pytest.raises(ValueError):
+            validate_dataset_name(bad)
+
+
+def test_cli_requires_a_dataset_name(results_root, tmp_path):
+    from viralquest.cli_report import _build_parser
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["-in", str(results_root), "-out", str(tmp_path)])
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["-in", str(results_root), "-out", str(tmp_path), "-n", "bad name"])
+    args = _build_parser().parse_args(["-in", str(results_root), "-out", str(tmp_path), "-n", "PRJ1"])
+    assert args.name == "PRJ1"
+
+
+def _dataset_files(results_root, tmp_path, name):
+    from viralquest.report_db import output_paths, write_json, write_sqlite
+    data = build_report_data(load_samples(results_root), version="3.0.0", dataset=name)
+    j, db = output_paths(tmp_path, name)
+    return write_json(data, j), write_sqlite(data, db), data
+
+
+def test_json_export_carries_name_and_schema(results_root, tmp_path):
+    j, _, data = _dataset_files(results_root, tmp_path, "PRJ1")
+    assert j.name == "PRJ1.viralquest.json"
+    doc = json.loads(j.read_text())
+    assert doc["dataset"] == "PRJ1" and doc["meta"]["dataset"] == "PRJ1"
+    assert doc["schema"] == "viralquest-report" and doc["schema_version"] >= 1
+    assert len(doc["sequences"]) == len(data["sequences"]) == 4
+
+
+def test_sqlite_export_tables(results_root, tmp_path):
+    import sqlite3
+    _, db, _ = _dataset_files(results_root, tmp_path, "PRJ1")
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT dataset, n_samples, n_sequences FROM dataset_info").fetchall() == [("PRJ1", 3, 4)]
+    assert con.execute("SELECT count(*) FROM samples WHERE dataset='PRJ1'").fetchone()[0] == 3
+    assert con.execute("SELECT count(DISTINCT dataset) FROM sequences").fetchone()[0] == 1
+    fam = dict(con.execute("SELECT gid, family FROM sequences").fetchall())
+    assert fam["sampleB::k141_1"] == "Flaviviridae"
+    assert con.execute("SELECT count(*) FROM blastx_hits WHERE source='nr'").fetchone()[0] == 3
+    # Salmon reads → RPM is only set where the sample ran Salmon.
+    assert con.execute("SELECT count(*) FROM sequences WHERE tpm IS NOT NULL").fetchone()[0] == 2
+    assert con.execute("PRAGMA user_version").fetchone()[0] >= 1
+
+
+def test_two_datasets_merge_without_clashes(results_root, tmp_path):
+    """Same sample / contig ids in two datasets: the dataset column keeps them apart."""
+    import sqlite3
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _, db_a, _ = _dataset_files(results_root, tmp_path / "a", "STUDY_A")
+    _, db_b, _ = _dataset_files(results_root, tmp_path / "b", "STUDY_B")
+    con = sqlite3.connect(db_a)
+    con.execute("ATTACH ? AS b", (str(db_b),))
+    for table in ("dataset_info", "samples", "sequences", "blastx_hits", "blastn_hits", "orfs", "domains"):
+        con.execute(f"INSERT INTO {table} SELECT * FROM b.{table}")
+    rows = con.execute("SELECT dataset, count(*) FROM sequences GROUP BY dataset ORDER BY dataset").fetchall()
+    assert rows == [("STUDY_A", 4), ("STUDY_B", 4)]

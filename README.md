@@ -349,7 +349,27 @@ Setup guide: [wiki/Setup-AI-Summary-resource](https://github.com/gabrielvpina/vi
 ```bash
 viralquest-report \
   -in   results_dir/ \
-  -out  consolidated_report/
+  -out  consolidated_report/ \
+  -n    PRJNA123456
+```
+
+Each run is a named **dataset** (`-n`: a BioProject, a host species, a study …). Besides the HTML, the output directory holds:
+
+| File | Content |
+|---|---|
+| `viralquest_report.html` | Self-contained interactive report |
+| `<name>.viralquest.json` | Full report data — dataset name, schema version, per-sample summaries, every sequence record, cross-sample clusters |
+| `<name>.viralquest.sqlite` | The same data as tables: `dataset_info`, `samples`, `sequences`, `blastx_hits`, `blastn_hits`, `blastn_taxonomy`, `orfs`, `domains`, `clusters`, `cluster_members` |
+
+Every SQLite row carries the `dataset` column and every primary key starts with it, so datasets can be combined later without id clashes (sample, contig and cluster ids are only unique within one dataset):
+
+```sql
+-- merge dataset B into a copy of dataset A
+ATTACH 'B.viralquest.sqlite' AS b;
+INSERT INTO dataset_info SELECT * FROM b.dataset_info;
+INSERT INTO samples      SELECT * FROM b.samples;
+INSERT INTO sequences    SELECT * FROM b.sequences;
+-- … same for the other tables
 ```
 
 ### Arguments
@@ -358,6 +378,7 @@ viralquest-report \
 |---|---|
 | `-in` / `--input` | Directory containing ViralQuest result directories (each with a `*_viralquest.json`) |
 | `-out` / `--outdir` | Output directory for the consolidated report |
+| `-n` / `--name` | **Required.** Dataset name (1–64 letters, digits, `.`, `_`, `-`); names the JSON / SQLite exports and tags every row |
 | `--min-identity` | BLASTn identity floor for cross-sample clusters |
 | `--min-coverage` | BLASTn coverage floor for cross-sample clusters |
 | `--blastn-bin` | `blastn` binary to use (default: `blastn`) |
