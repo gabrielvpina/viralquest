@@ -2904,3 +2904,22 @@ button.ov-wf-cell:hover .ov-wf-dot { filter: brightness(1.08); transform: scale(
 .ov-box__pt--out   { fill: var(--vq-surface); fill-opacity: 1; stroke: var(--vq-danger); stroke-width: 1.2; }
 .ov-box__median    { stroke: var(--vq-primary); stroke-width: 3; stroke-linecap: round; }
 .ov-box__mean      { fill: var(--vq-surface); stroke: var(--vq-primary); stroke-width: 1.5; }
+
+/* Genome viewer — "Top hits & taxonomy": BLASTx | BLASTn split */
+.vq-th-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100%; }
+.vq-th-col   { padding: 10px 12px; min-width: 0; }
+.vq-th-col + .vq-th-col { border-left: 1px solid var(--vq-border); }
+.vq-th-head  { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+               color: var(--vq-primary); margin-bottom: 6px; display: flex; justify-content: space-between; }
+.vq-th-head span { color: var(--vq-text-3); letter-spacing: .03em; }
+.vq-th-title { font-weight: 600; line-height: 1.35; margin-bottom: 4px; word-break: break-word; color: var(--vq-text); }
+.vq-th-kv    { display: flex; justify-content: space-between; gap: 8px; }
+.vq-th-kv > span:first-child { color: var(--vq-text-3); flex-shrink: 0; }
+.vq-th-kv > span:last-child  { text-align: right; word-break: break-word; min-width: 0; }
+.vq-th-sep   { border-top: 1px solid var(--vq-border); margin-top: 8px; padding-top: 8px; }
+.vq-th-none  { color: var(--vq-text-3); font-size: 11px; }
+.vq-th-method { font-size: 10.5px; color: var(--vq-accent-dark); background: var(--vq-accent-subtle);
+                border-radius: 4px; padding: 0 6px; display: inline-block; margin-bottom: 4px; cursor: help; }
+.vq-th-syn { color: var(--vq-text-3); font-weight: 400; }
+.vq-th-unres { font-size: 11px; font-weight: 700; color: #9b6a09; background: #fef3d7;
+               border-radius: 4px; padding: 1px 6px; display: inline-block; margin-bottom: 4px; }

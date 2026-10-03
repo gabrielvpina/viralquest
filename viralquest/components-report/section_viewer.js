@@ -1000,7 +1000,7 @@ function _seqCard(seq) {
   // FASTA preview (header + sequence, seq-quality regions colour-highlighted).
   const hasFasta  = !!(seq.sequence || seq.sequence_nt);
   const fastaHtml = hasFasta ? _fastaHighlightedHTML(seq) : '';
-  const topHitContent = _topHitContent(seq);   // middle block: best BLASTx hit + taxonomy
+  const topHitContent = _topHitContent(seq);   // middle block: best BLASTx | BLASTn hit + taxonomy
   // Column widths adapt: with no BLASTx hit (HMM-only) the middle block is absent,
   // so the FASTA pane grows and the sequence-quality pane shrinks.
   const hasTopHit = !!topHitContent;
@@ -1089,16 +1089,15 @@ function _seqCard(seq) {
         </div>` : ''}
 
         ${topHitContent ? `
-        <div style="flex:1 1 240px;min-width:230px;display:flex;flex-direction:column">
+        <div style="flex:1.3 1 400px;min-width:360px;display:flex;flex-direction:column">
           <div class="vq-body-label" style="display:flex;align-items:center;gap:7px;min-height:24px;margin:0 0 6px">
-            <span>Top hit &amp; taxonomy</span>
+            <span>Top hits &amp; taxonomy</span>
             <span id="taxinfo-${safe}" role="img" tabindex="0" aria-label="Taxonomy source"
                   style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
                          border-radius:50%;border:1px solid var(--vq-border-dark);color:var(--vq-text-3);
                          font-size:10px;font-weight:700;cursor:help">?</span>
           </div>
-          <div class="vq-qual-block" style="height:360px;overflow:auto;display:flex;flex-direction:column;
-                                            justify-content:flex-start;gap:2px;font-size:11.5px;line-height:1.75">
+          <div class="vq-qual-block" style="height:360px;overflow:auto;padding:0;font-size:11.5px;line-height:1.7">
             ${topHitContent}
           </div>
         </div>` : ''}
@@ -1159,9 +1158,12 @@ function _seqCard(seq) {
   _bindInfo('heurinfo',  _heurInfoHTML());
   _bindInfo('siginfo', _signalsInfoHTML());
   _bindInfo('taxinfo', `
-    <div class="vq-tooltip__title">Top hit &amp; taxonomy</div>
-    <div style="max-width:240px">Best BLASTx hit (NR preferred, else RefSeq).
-    Taxonomic lineage resolved from <strong>ICTV</strong> and <strong>NCBI</strong> taxonomy.</div>`);
+    <div class="vq-tooltip__title">Top hits &amp; taxonomy</div>
+    <div style="max-width:280px"><strong>BLASTx</strong>: best hit (NR preferred, else RefSeq); lineage from its species.<br>
+    <strong>BLASTn</strong>: best hit by bit score; its taxonomy comes from the virus name found in the hit
+    title, matched against the bundled viral taxonomy and its NCBI synonyms (former and equivalent names).
+    Unresolved when the title names no known viral taxon (e.g. a host mRNA).<br>
+    Lineages from <strong>ICTV</strong> and <strong>NCBI</strong> taxonomy.</div>`);
 
   // Per-sequence low-complexity highlight toggle
   card.querySelector('#lowcx-' + safe)?.addEventListener('change', e => {
@@ -2072,52 +2074,102 @@ function _dotPlotSVG(sq, size = _SEQQUAL_SIZE) {
   return svg.node();
 }
 
-// Inner content for the middle "Top hit & taxonomy" block: best BLASTx hit
-// (NR preferred, else RefSeq) + taxonomy lineage. Returns '' when there is
-// neither a hit nor taxonomy to show.
+// Inner content for the middle "Top hits & taxonomy" block, split in two
+// columns: best BLASTx hit (NR preferred, else RefSeq) + its taxonomy, and
+// best BLASTn hit + the taxonomy of the virus named in its title (matched
+// against the bundled viral taxonomy — see blastn_tax.py).  Returns '' when
+// there is nothing to show on either side.
+
+function _taxKv(esc, k, v) {
+  return (v || v === 0) ? `
+    <div class="vq-th-kv"><span>${esc(k)}</span><span>${esc(String(v))}</span></div>` : '';
+}
+
+function _lineageHtml(esc, t) {
+  const kv = (k, v) => _taxKv(esc, k, v);
+  return `
+    ${kv('Kingdom',   t.kingdom)}
+    ${kv('Phylum',    t.phylum)}
+    ${kv('Class',     t['class'])}
+    ${kv('Order',     t.order)}
+    ${kv('Family',    t.family)}
+    ${kv('Subfamily', t.subfamily)}
+    ${kv('Genus',     t.genus)}
+    ${t.species ? kv('Species', t.species)
+                : kv(t.scientific_name && t.scientific_name === t.genus ? 'Taxon (genus)' : 'Taxon', t.scientific_name)}
+    ${t.genome ? `<div class="vq-th-sep">${kv('Genome', t.genome)}</div>` : ''}`;
+}
+
 function _topHitContent(seq) {
   const esc  = VQ.esc;
+  const kv   = (k, v) => _taxKv(esc, k, v);
+  const link = (acc, kind) => {
+    const url = _ncbiUrl(acc, kind);
+    return url ? `<a class="vq-acc-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(acc)}</a>` : esc(acc);
+  };
+  const accRow = (acc, kind) => acc ? `
+    <div class="vq-th-kv"><span>Accession</span><span>${link(acc, kind)}</span></div>` : '';
+
+  // ── BLASTx ──
   const t    = seq.taxonomy || {};
-  const pool = (seq.blastx_nr_hits && seq.blastx_nr_hits.length)
-    ? seq.blastx_nr_hits : (seq.blastx_hits || []);
-  const best = pool.length ? pool.reduce((a, b) => (b.bit_score > a.bit_score ? b : a)) : null;
+  const pool = (seq.blastx_nr_hits && seq.blastx_nr_hits.length) ? seq.blastx_nr_hits : (seq.blastx_hits || []);
+  const bx   = pool.length ? pool.reduce((a, b) => (b.bit_score > a.bit_score ? b : a)) : null;
+  const bxDb = seq.blastx_nr_hits && seq.blastx_nr_hits.length ? 'nr' : 'refseq';
   const hasTax = t.family || t.genus || t.species || t.scientific_name;
-  if (!best && !hasTax) return '';
 
-  const kv = (k, v) => (v || v === 0) ? `
-    <div style="display:flex;justify-content:space-between;gap:10px">
-      <span style="color:var(--vq-text-3)">${esc(k)}</span>
-      <span style="text-align:right;word-break:break-word">${esc(String(v))}</span>
-    </div>` : '';
+  // ── BLASTn ──
+  const bnHits = seq.blastn_hits || [];
+  const bn  = bnHits.length ? bnHits.reduce((a, b) => ((b.bit_score ?? 0) > (a.bit_score ?? 0) ? b : a)) : null;
+  const bt  = seq.blastn_taxonomy || null;
+  const btT = bt && bt.taxonomy ? bt.taxonomy : null;
 
-  const hit = best ? `
-    <div style="font-weight:600;line-height:1.35;margin-bottom:4px;word-break:break-word">
-      ${esc(best.subject_title || best.species || best.subject_id || '—')}
-    </div>
-    ${kv('Accession', best.subject_id)}
-    ${kv('Identity',  best.pct_identity != null ? best.pct_identity.toFixed(1) + '%' : null)}
-    ${kv('Coverage',  best.query_coverage ? best.query_coverage.toFixed(0) + '%' : null)}
-    ${kv('E-value',   best.e_value != null ? best.e_value.toExponential(1) : null)}
-    ${kv('Bit score', best.bit_score != null ? Math.round(best.bit_score) : null)}`
-    : `<div style="color:var(--vq-text-3)">No BLASTx hit</div>`;
+  if (!bx && !hasTax && !bn) return '';
 
-  const tax = hasTax ? `
-    <div style="border-top:1px solid var(--vq-border);margin-top:8px;padding-top:8px">
-      ${kv('Kingdom',   t.kingdom)}
-      ${kv('Phylum',    t.phylum)}
-      ${kv('Class',     t['class'])}
-      ${kv('Order',     t.order)}
-      ${kv('Family',    t.family)}
-      ${kv('Subfamily', t.subfamily)}
-      ${kv('Genus',     t.genus)}
-      ${kv('Species',   t.species || t.scientific_name)}
-      ${t.genome ? `
-      <div style="border-top:1px dashed var(--vq-border);margin-top:6px;padding-top:6px">
-        ${kv('Genome', t.genome)}
-      </div>` : ''}
-    </div>` : '';
+  const bxCol = `
+    <div class="vq-th-col">
+      <div class="vq-th-head">BLASTx <span>${bx ? (bxDb === 'nr' ? 'NR' : 'RefSeq') : ''}</span></div>
+      ${bx ? `
+        <div class="vq-th-title">${esc(bx.subject_title || bx.species || bx.subject_id || '—')}</div>
+        ${accRow(bx.subject_id, bxDb)}
+        ${kv('Identity',  bx.pct_identity != null ? bx.pct_identity.toFixed(1) + '%' : null)}
+        ${kv('Coverage',  bx.query_coverage ? bx.query_coverage.toFixed(0) + '%' : null)}
+        ${kv('E-value',   bx.e_value != null ? bx.e_value.toExponential(1) : null)}
+        ${kv('Bit score', bx.bit_score != null ? Math.round(bx.bit_score) : null)}`
+        : `<div class="vq-th-none">No BLASTx hit</div>`}
+      ${hasTax ? `<div class="vq-th-sep">${_lineageHtml(esc, t)}</div>`
+               : (bx ? `<div class="vq-th-sep"><div class="vq-th-none">Taxonomy not resolved</div></div>` : '')}
+    </div>`;
 
-  return hit + tax;
+  let bnTax;
+  if (!bn) bnTax = '';
+  else if (!bt) bnTax = `<div class="vq-th-sep"><div class="vq-th-none">Taxonomy not computed for this report</div></div>`;
+  else if (bt.status === 'resolved' && btT) bnTax = `
+    <div class="vq-th-sep">
+      <div class="vq-th-method" title="${esc((bt.taxid ? 'taxid ' + bt.taxid : '') + (bt.synonym_of ? ' · NCBI synonym' : ''))}">matched: ${esc(bt.matched_name || '—')}${
+        bt.synonym_of ? ` <span class="vq-th-syn">synonym of <i>${esc(bt.synonym_of)}</i></span>` : ''}</div>
+      ${_lineageHtml(esc, btT)}
+    </div>`;
+  else bnTax = `
+    <div class="vq-th-sep">
+      <div class="vq-th-unres">Taxonomy unresolved</div>
+      <div class="vq-th-none" style="margin-top:4px">no known viral taxon named in the hit title</div>
+    </div>`;
+
+  const bnCol = `
+    <div class="vq-th-col">
+      <div class="vq-th-head">BLASTn</div>
+      ${bn ? `
+        <div class="vq-th-title">${esc(bn.stitle || bn.accession || '—')}</div>
+        ${accRow(bn.accession, 'blastn')}
+        ${kv('Identity',  bn.pident != null ? bn.pident.toFixed(1) + '%' : null)}
+        ${kv('Coverage',  bn.qcovhsp != null ? bn.qcovhsp + '%' : null)}
+        ${kv('E-value',   bn.evalue != null ? Number(bn.evalue).toExponential(1) : null)}
+        ${kv('Bit score', bn.bit_score != null ? Math.round(bn.bit_score) : null)}`
+        : `<div class="vq-th-none">No BLASTn hit</div>`}
+      ${bnTax}
+    </div>`;
+
+  return `<div class="vq-th-split">${bxCol}${bnCol}</div>`;
 }
 
 // One classifier shared by the dot plot, the legend count and the FASTA
