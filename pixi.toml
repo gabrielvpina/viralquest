@@ -3,7 +3,7 @@ authors = ["gabrielvpina <gvpina.rodrigues@gmail.com>"]
 channels = ["conda-forge", "bioconda"]
 name = "viralquest"
 platforms = ["linux-64", "osx-arm64", "osx-64"]
-version = "3.0.9"
+version = "3.0.10"
 
 [tasks]
 start             = "python main.py"
