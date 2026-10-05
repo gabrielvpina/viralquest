@@ -26,3 +26,4 @@ preview.html
 # Quarto docs site (rendered output)
 docs-md/_site/
 docs-md/.quarto/
+showcase/
