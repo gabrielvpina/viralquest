@@ -12,18 +12,9 @@
 
 ## Overview
 
-ViralQuest v3 detects and characterizes viral sequences from assembled metagenomics or transcriptomics contigs. The pipeline integrates:
+ViralQuest detects and characterizes viral sequences from assembled metagenomics or transcriptomics contigs. The pipeline integrates:
 
-- **Diamond BLASTx** against a curated viral RefSeq database (filter) and NCBI NR (confirmation)
-- **HMM profiling** with RVDB, Vfam, and EggNOG (viral detection) + Pfam (functional annotation)
-- **BLASTn** — local database or online via NCBI qblast; online mode captures accession and query coordinates
-- **Taxonomy annotation** from NCBI viral taxonomy + ICTV
-- **Sequence clustering** by species
-- **Salmon quantification** with reference or de-novo pathway and bundled multi-kingdom housekeeping genes
-- **Read coverage profiling** (minimap2) — per-base depth track with sense/antisense strand split and base-quality colouring, long-read aware (Illumina / Nanopore / PacBio); coverage discontinuities flag potentially chimeric contigs
-- **Sequence quality checks** — dustmasker low-complexity, self-BLASTn repeat detection (direct / inverted, with dot plot), and jellyfish k-mer repetitiveness on confirmed viral contigs
-- **Sequence scoring** — a deterministic heuristic score that always runs (no LLM/API required), plus optional **LLM scoring** via Ollama (local) or OpenAI / Anthropic / Google APIs (`google-genai`)
-- **Self-contained HTML report** with interactive genome map (ORF frames + HMM domains + read-coverage track), cluster analysis, taxonomy tree, BLAST tables, sequence-quality panels, and Salmon plots
+![Pipeline Workflow](data/screenshots/vq-readme.png)
 
 Paper: [https://link.springer.com/article/10.1186/s12859-026-06391-6](https://link.springer.com/article/10.1186/s12859-026-06391-6)
 
