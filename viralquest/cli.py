@@ -26,7 +26,7 @@ from pathlib import Path
 
 # ── Version ───────────────────────────────────────────────────────────────────
 
-__version__ = "3.0.11"
+__version__ = "3.0.12"
 __author__  = "Gabriel Rodrigues"
 __link__ = "https://github.com/gabrielvpina/viralquest"
 
@@ -174,6 +174,8 @@ def _build_parser():
         help="CPU threads for Diamond, HMMsearch, BLASTn, and Salmon (default: 2).")
     tun.add_argument("--force", action="store_true",
         help="Export all input sequences, not only confirmed viral ones.")
+    tun.add_argument("--no-synteny", dest="no_synteny", action="store_true",
+        help="Skip the synteny step (NCBI GenBank of the best viral BLASTn hit + DIAMOND blastp).")
     tun.add_argument("--min-identity", dest="min_identity", type=float,
         default=90.0, metavar="PCT",
         help="Minimum %% identity for intra-cluster BLASTn alignment (default: 90.0).")
@@ -298,7 +300,10 @@ def _show_rich_help() -> None:
         "  Minimum query coverage for a sequence to qualify as a cluster member.\n"
         "  Clusters with fewer than 2 qualifying members are dropped.\n\n"
         "[bold cyan]--force[/]\n"
-        "  Export all input sequences even if viral confirmation fails.",
+        "  Export all input sequences even if viral confirmation fails.\n\n"
+        "[bold cyan]--no-synteny[/]\n"
+        "  Skip synteny with the best viral BLASTn reference (needs NCBI access;\n"
+        "  runs by default whenever BLASTn runs).",
         title="[bold green]PIPELINE OPTIONS[/bold green]",
         border_style="green", width=85, box=box.ROUNDED,
     ))
@@ -792,6 +797,11 @@ def _salmon_enabled(args) -> bool:
             and args.read_type not in _LONG_READ_TYPES)
 
 
+def _synteny_enabled(args) -> bool:
+    """Synteny needs BLASTn hits (its references) and is on unless --no-synteny."""
+    return bool(args.blastn_local or args.blastn_online) and not getattr(args, "no_synteny", False)
+
+
 def _build_steps(args) -> list[str]:
     steps = [
         f"Parse FASTA{'  +  CAP3' if args.cap3 else ''}",
@@ -806,6 +816,8 @@ def _build_steps(args) -> list[str]:
     elif args.blastn_online:
         steps.append(f"BLASTn online  —  {args.blastn_online_db}")
     steps.append("HMMsearch  —  Pfam  (functional annotation)")
+    if _synteny_enabled(args):
+        steps.append("Synteny  —  NCBI reference ORFs · DIAMOND blastp")
     steps.append("Taxonomy annotation")
     steps.append("Cluster sequences by species")
     if _salmon_enabled(args):
@@ -846,6 +858,7 @@ def _workflow_options(args) -> dict:
         "llm":              (f"{args.model_type} / {args.model_name}"
                              if args.model_type and args.model_name else None),
         "force":            bool(args.force),
+        "synteny":          _synteny_enabled(args),
     }
 
 
@@ -1089,6 +1102,25 @@ def _run_pipeline(args):
                             for d in o.domains if d.database == "Pfam"),
     })
 
+    # ── 7b. Synteny with the best viral BLASTn reference ─────────────────────
+    synteny_refs = None
+    if _synteny_enabled(args):
+        from .synteny import SyntenyAnalyzer
+        t = time.time()
+        syn_seqs = [s for s in seqs if s.blastn_hits]
+        synteny_refs = SyntenyAnalyzer(
+            outdir / "synteny", email=args.blastn_online, threads=args.cpu,
+        ).run(syn_seqs)
+        yield from _tick(t, "synteny", {
+            "References":           len(synteny_refs),
+            "Sequences":            sum(1 for s in syn_seqs if s.synteny),
+            "With matching ORFs":   sum(1 for s in syn_seqs if s.synteny and s.synteny.hits),
+        })
+    elif args.blastn_local or args.blastn_online:
+        _skip("synteny", "Synteny", "--no-synteny set")
+    else:
+        _skip("synteny", "Synteny", "BLASTn not run")
+
     # ── 8. Taxonomy annotation ────────────────────────────────────────────────
     t = time.time()
     tax_annotator = TaxonomyAnnotator(str(args._db["viral_tax"]), str(args._db["viral_syn"]))
@@ -1287,6 +1319,7 @@ def _run_pipeline(args):
         salmon_report=salmon_report,
         cap3=cap3_info,
         blastn=blastn_info,
+        synteny_refs=synteny_refs,
     )
     # The export step is recorded before the JSON is written so the workflow
     # it carries is complete (JSON write time itself is not included).
