@@ -2369,4 +2369,15 @@ function _signalsInfoHTML() {
 }
 
 window.vqInitViewer = vqInitViewer;
+
+// Genome-map building blocks shared with the Synteny tab, so both draw ORFs
+// and domains the same way — and one domain keeps one colour across tabs.
+window.VQ = Object.assign(window.VQ || {}, {
+  genome: {
+    orfArrowPoints:        _orfArrowPoints,
+    bestDomainPerDatabase: _bestDomainPerDatabase,
+    assignDomainLanes:     _assignDomainLanes,
+    domainColor:           _domainColor,
+  },
+});
 })();

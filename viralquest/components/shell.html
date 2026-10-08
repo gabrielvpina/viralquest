@@ -37,6 +37,8 @@
               id="tab-clusters" aria-controls="section-clusters" aria-selected="false" tabindex="-1">Cluster Analysis</button>
       <button class="vq-nav__tab"        data-section="viewer"   role="tab"
               id="tab-viewer"   aria-controls="section-viewer"   aria-selected="false" tabindex="-1">Sequence Viewer</button>
+      <button class="vq-nav__tab"        data-section="synteny"  role="tab"
+              id="tab-synteny"  aria-controls="section-synteny"  aria-selected="false" tabindex="-1">Synteny</button>
       <button class="vq-nav__tab"        data-section="taxonomy" role="tab"
               id="tab-taxonomy" aria-controls="section-taxonomy" aria-selected="false" tabindex="-1">Taxonomy</button>
       <button class="vq-nav__tab"        data-section="salmon"   role="tab"
@@ -58,6 +60,7 @@
     <section class="vq-section"        id="section-virome"   role="tabpanel" aria-labelledby="tab-virome"      hidden></section>
     <section class="vq-section"        id="section-clusters" role="tabpanel" aria-labelledby="tab-clusters"    hidden></section>
     <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-labelledby="tab-viewer"      hidden></section>
+    <section class="vq-section"        id="section-synteny"  role="tabpanel" aria-labelledby="tab-synteny"     hidden></section>
     <section class="vq-section"        id="section-taxonomy" role="tabpanel" aria-labelledby="tab-taxonomy"    hidden></section>
     <section class="vq-section"        id="section-salmon"   role="tabpanel" aria-labelledby="tab-salmon"      hidden></section>
 
@@ -88,6 +91,7 @@
   <script>{{VQ_VIRUSES}}</script>
   <script>{{VQ_CLUSTERS}}</script>
   <script>{{VQ_VIEWER}}</script>
+  <script>{{VQ_SYNTENY}}</script>
   <script>{{VQ_TAXONOMY}}</script>
   <script>{{VQ_SALMON}}</script>
 
@@ -144,6 +148,10 @@
     if (!VQ_REPORT.salmon_quant) {
       document.getElementById('tab-salmon').style.display = 'none';
     }
+    // --- Synteny tab visibility (no step run / no viral reference) -----
+    if (!((VQ_REPORT.synteny || {}).clusters || []).length) {
+      document.getElementById('tab-synteny').style.display = 'none';
+    }
 
 
     // --- Back to top ------------------------------------------------
@@ -187,6 +195,7 @@
     vqInitViruses(VQ_REPORT);
     vqInitClusters(VQ_REPORT.clusters || []);
     vqInitViewer(VQ_REPORT.sequences || []);
+    vqInitSynteny(VQ_REPORT);
     vqInitTaxonomy(VQ_REPORT._taxonomy_tree || null, VQ_REPORT.sequences || []);
     if (VQ_REPORT.salmon_quant) {
       vqInitSalmon(VQ_REPORT.salmon_quant, VQ_REPORT.clusters || []);

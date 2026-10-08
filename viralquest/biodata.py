@@ -510,6 +510,64 @@ class SalmonQuantReport:
 # Nucleotide sequence  (central object)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Synteny  (input ORFs ↔ CDS of the best viral BLASTn reference)
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class RefFeature:
+    """A CDS or mat_peptide of a reference genome (GenBank), genome coordinates."""
+    kind: str                 # "CDS" | "mat_peptide"
+    product: str
+    protein_id: str | None
+    start: int                # 0-based, inclusive (envelope of all parts)
+    end: int                  # exclusive
+    strand: str               # "+" | "-"
+    length_aa: int
+    parent: int | None = None # mat_peptide → index of the CDS it lies in
+
+
+@dataclass(slots=True)
+class RefGenome:
+    """Reference virus genome: the subject of a sequence's best viral BLASTn hit."""
+    accession: str            # with version, as in the GenBank record
+    title: str
+    organism: str
+    length: int
+    cds: list[RefFeature] = field(default_factory=list)
+    peptides: list[RefFeature] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SyntenyHit:
+    """One DIAMOND blastp HSP: an input ORF against a reference CDS."""
+    orf_name: str
+    cds_index: int            # index into RefGenome.cds
+    pident: float
+    evalue: float
+    bit_score: float
+    q_start: int              # 1-based aa on the ORF
+    q_end: int
+    s_start: int              # 1-based aa on the CDS
+    s_end: int
+    q_cov: float              # % of the ORF aligned
+    s_cov: float              # % of the CDS aligned
+    orf_nt: list[int]         # [start, end) of the aligned stretch on the contig
+    ref_nt: list[int]         # [start, end) envelope of the aligned stretch on the reference
+    # One [ref_start, ref_end, orf_start, orf_end] per CDS part the alignment
+    # spans — several for a spliced / joined CDS, so each exon gets its ribbon.
+    segments: list[list[int]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SyntenyResult:
+    """A sequence's synteny with its reference (see synteny.py)."""
+    reference: str            # RefGenome.accession
+    flipped: bool             # contig is reverse-complemented relative to the reference
+    offset: float             # reference position ≈ offset ± contig position (see synteny.py)
+    hits: list[SyntenyHit] = field(default_factory=list)
+
+
 @dataclass(slots=True)
 class NucSequence:
     """A parsed nucleotide sequence with all downstream annotation results."""
@@ -556,6 +614,9 @@ class NucSequence:
     # Structural quality signals — dustmask / self-BLAST / jellyfish / dot plot
     # (populated when --reads is given)
     seq_quality: "SequenceQuality | None" = field(default=None, init=False)
+
+    # Synteny with the best viral BLASTn reference (populated unless --no-synteny)
+    synteny: SyntenyResult | None = field(default=None, init=False)
 
     # computed
     length:    int   = field(init=False)

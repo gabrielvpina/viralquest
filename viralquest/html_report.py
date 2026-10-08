@@ -313,6 +313,7 @@ def _render_template(report: dict, d3_js: str) -> str:
         "{{VQ_VIRUSES}}":   (_COMPONENTS / "section_viruses.js").read_text(encoding="utf-8"),
         "{{VQ_CLUSTERS}}":  (_COMPONENTS / "section_clusters.js").read_text(encoding="utf-8"),
         "{{VQ_VIEWER}}":    (_COMPONENTS / "section_viewer.js").read_text(encoding="utf-8"),
+        "{{VQ_SYNTENY}}":   (_COMPONENTS / "section_synteny.js").read_text(encoding="utf-8"),
         "{{VQ_TAXONOMY}}":  (_COMPONENTS / "section_taxonomy.js").read_text(encoding="utf-8"),
         "{{VQ_SALMON}}":    (_COMPONENTS / "section_salmon.js").read_text(encoding="utf-8"),
     }

@@ -180,12 +180,12 @@ const _body = id => document.getElementById(id + '-body');
 // falls back to the detected optional stages (NR, BLASTn, Salmon, LLM).
 
 const _WF_ORDER = [
-  'parse', 'orfs', 'refseq', 'hmm', 'nr', 'blastn', 'pfam', 'taxonomy',
+  'parse', 'orfs', 'refseq', 'hmm', 'nr', 'blastn', 'pfam', 'synteny', 'taxonomy',
   'clusters', 'salmon', 'seq_quality', 'coverage', 'heuristic', 'llm', 'export',
 ];
 const _WF_SHORT = {
   parse: 'Parse FASTA', orfs: 'ORFs', refseq: 'RefSeq', hmm: 'HMM filter',
-  nr: 'Diamond NR', blastn: 'BLASTn', pfam: 'Pfam', taxonomy: 'Taxonomy',
+  nr: 'Diamond NR', blastn: 'BLASTn', pfam: 'Pfam', synteny: 'Synteny', taxonomy: 'Taxonomy',
   clusters: 'Clusters', salmon: 'Salmon', seq_quality: 'Seq quality',
   coverage: 'Coverage', heuristic: 'Heuristic', llm: 'LLM', export: 'Export',
 };

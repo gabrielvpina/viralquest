@@ -134,6 +134,7 @@ class ReportExporter:
         salmon_report:  SalmonQuantReport | None = None,
         cap3:           dict | None              = None,
         blastn:         dict | None              = None,
+        synteny_refs:   dict | None              = None,
     ) -> dict:
         """
         Build the report dictionary, optionally write it to *output_path*,
@@ -151,6 +152,8 @@ class ReportExporter:
                         when --cap3 ran; None otherwise
         blastn        : BLASTn run status (mode, db, queried, failed ids)
                         when BLASTn ran; None otherwise
+        synteny_refs  : {accession: RefGenome} from SyntenyAnalyzer when the
+                        synteny step ran; adds a top-level ``synteny`` key
         """
         nr_run = (
             self.nr_run if self.nr_run is not None
@@ -191,6 +194,9 @@ class ReportExporter:
 
         if salmon_report is not None:
             report["salmon_quant"] = _to_serializable(salmon_report)
+
+        if synteny_refs is not None:
+            report["synteny"] = self._build_synteny(confirmed, synteny_refs)
 
         if output_path is not None:
             self.write(report, output_path)
@@ -252,6 +258,7 @@ class ReportExporter:
             "seq_quality":    _to_serializable(seq.seq_quality) if seq.seq_quality else None,
             # Heuristic score always runs, so the field is always present.
             "heuristic_output": _to_serializable(seq.heuristic_output) if seq.heuristic_output else None,
+            "synteny":        _to_serializable(seq.synteny) if seq.synteny else None,
         }
         if self.include_llm:
             d["llm_output"] = _to_serializable(seq.llm_output) if seq.llm_output else None
@@ -305,6 +312,27 @@ class ReportExporter:
             kept, key=lambda dom: (dom.get("start", 0), dom.get("database", ""))
         )
         return d
+
+    @staticmethod
+    def _build_synteny(confirmed: list, refs: dict) -> dict:
+        """
+        Synteny clusters: one per reference accession, holding the exported
+        sequences whose best viral BLASTn hit is that record. References are
+        stored once here (sequences point at them by accession). Clusters are
+        ordered by member count, then organism.
+        """
+        members: dict[str, list[str]] = {}
+        for s in confirmed:
+            if s.synteny and s.synteny.reference in refs:
+                members.setdefault(s.synteny.reference, []).append(s.id)
+        clusters = sorted(
+            ({"reference": acc, "members": ids} for acc, ids in members.items()),
+            key=lambda c: (-len(c["members"]), refs[c["reference"]].organism, c["reference"]),
+        )
+        return {
+            "references": {acc: _to_serializable(refs[acc]) for acc in members},
+            "clusters":   clusters,
+        }
 
     @staticmethod
     def _cluster_to_dict(cluster: ViralCluster) -> dict:

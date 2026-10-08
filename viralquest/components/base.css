@@ -1403,6 +1403,32 @@ body {
 .vq-meta-row__sep { color: var(--vq-border-dark); }
 
 /* ============================================================
+   Synteny tab
+   ============================================================ */
+
+.vq-syn-picker { align-items: center; gap: var(--vq-space-2); flex-wrap: wrap; }
+.vq-syn-select { flex: 1 1 320px; min-width: 0; max-width: 100%; }
+
+.vq-syn-summary, .vq-syn-map, .vq-syn-pairs { margin-bottom: var(--vq-space-4); }
+.vq-syn-pairs { overflow-x: auto; }
+.vq-syn-summary__title { font-weight: 600; color: var(--vq-primary); }
+.vq-syn-summary__sub   { font-size: var(--vq-text-sm); color: var(--vq-text-3); margin-bottom: var(--vq-space-3); }
+
+.vq-syn-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--vq-space-1) var(--vq-space-4);
+  font-size: var(--vq-text-sm);
+}
+.vq-syn-kv > span:nth-child(odd) { color: var(--vq-text-3); }
+
+.vq-syn-note {
+  margin-top: var(--vq-space-3);
+  font-size: var(--vq-text-sm);
+  color: var(--vq-text-2);
+}
+
+/* ============================================================
    Checkbox
    ============================================================ */
 

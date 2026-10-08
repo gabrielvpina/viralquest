@@ -562,7 +562,15 @@ class BlastnOutputParser:
 NCBI_EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 
 
-def _acc_key(accession: str) -> str:
+def ncbi_efetch(params: dict, tool: str = "viralquest") -> str:
+    """POST one NCBI E-utilities efetch request and return the response text."""
+    data = urlencode(params).encode()
+    req  = Request(NCBI_EFETCH_URL, data, {"User-Agent": f"{tool} (E-utilities client)"})
+    with urlopen(req, timeout=120) as resp:
+        return resp.read().decode()
+
+
+def acc_key(accession: str) -> str:
     """Accession without its version, so "NC_001477" and "NC_001477.1" meet."""
     return accession.strip().split(".")[0]
 
@@ -578,7 +586,7 @@ def _parse_fasta(text: str) -> dict[str, str]:
         acc   = parts[1] if len(parts) > 1 else (parts[0] if parts else "")
         seq   = "".join(body.split())
         if acc and seq:
-            out[_acc_key(acc)] = seq
+            out[acc_key(acc)] = seq
     return out
 
 
@@ -633,15 +641,15 @@ class BlastnSubjectFetcher:
         if self.db_path:
             found = self._from_blastdb(accs)
             counts["blastdbcmd"] = len(found)
-        missing = [a for a in accs if _acc_key(a) not in found]
+        missing = [a for a in accs if acc_key(a) not in found]
         if missing:
             got = self._from_efetch(missing)
             counts["efetch"] = len(got)
             found.update(got)
 
         for h in wanted:
-            h.subject_seq = found.get(_acc_key(h.accession))
-        counts["missing"] = sum(1 for a in accs if _acc_key(a) not in found)
+            h.subject_seq = found.get(acc_key(h.accession))
+        counts["missing"] = sum(1 for a in accs if acc_key(a) not in found)
         logger.info(
             f"BLASTn subjects: {len(accs)} viral accession(s) — "
             f"{counts['blastdbcmd']} from blastdbcmd, {counts['efetch']} from efetch, "
@@ -682,10 +690,7 @@ class BlastnSubjectFetcher:
 
     # -- efetch -----------------------------------------------------------
     def _urlopen(self, params: dict) -> str:
-        data = urlencode(params).encode()
-        req  = Request(NCBI_EFETCH_URL, data, {"User-Agent": f"{self.tool} (E-utilities client)"})
-        with urlopen(req, timeout=120) as resp:
-            return resp.read().decode()
+        return ncbi_efetch(params, self.tool)
 
     def _from_efetch(self, accs: list[str]) -> dict[str, str]:
         found: dict[str, str] = {}
