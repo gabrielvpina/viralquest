@@ -1,6 +1,7 @@
+import pytest
 """Tests for blastn_tax: taxonomy of the best BLASTn hit from the virus name in its title."""
 from viralquest.biodata import BlastnResult, NucSequence
-from viralquest.blastn_tax import BlastnTaxonomyResolver, name_candidates
+from viralquest.blastn_tax import BlastnTaxonomyResolver, is_viral_title, name_candidates
 
 
 def _rec(taxid, name, species=None, family="Rhabdoviridae", genus=None, genome=None):
@@ -94,3 +95,18 @@ def test_exported_shape():
     assert "class" in d["taxonomy"] and "class_" not in d["taxonomy"]
     un = ReportExporter._blastn_taxonomy_to_dict(_resolver().resolve_hit(_hit("PREDICTED: Homo sapiens")))
     assert un["status"] == "unresolved" and un["taxonomy"] is None
+
+
+# ── is_viral_title ──────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("title, expected", [
+    ("Dengue virus 2 isolate X, complete genome", True),
+    ("MAG: Hubei diptera virus 3 strain Y", True),
+    ("Escherichia phage T4, complete genome", True),
+    ("polyprotein [Zika virus]", True),
+    ("Homo sapiens chromosome 1, GRCh38.p14", False),
+    ("Aedes aegypti mRNA for actin", False),
+    ("", False),
+])
+def test_is_viral_title(title, expected):
+    assert is_viral_title(title) is expected

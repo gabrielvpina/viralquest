@@ -114,6 +114,7 @@ class BlastxResult:
     subject_end: int
     e_value: float
     bit_score: float
+    subject_seq: str = ""       # full subject protein (DIAMOND full_sseq); "" when absent
     query_coverage: float = field(init=False, default=0.0)
     species: str = field(init=False, default="")
 
@@ -194,6 +195,7 @@ class BlastnResult:
     accession: str | None = None
     query_start: int | None = None
     query_end: int | None = None
+    subject_seq: str | None = None   # full subject nt sequence (viral-titled hits only)
 
 
 # ---------------------------------------------------------------------------

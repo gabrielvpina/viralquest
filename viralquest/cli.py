@@ -1028,6 +1028,11 @@ def _run_pipeline(args):
         )
         blastn_hits = blastn.run(blastn_seqs)
         BlastnResultAttacher.attach(blastn_hits, seqs)
+        # Full subject sequences of the kept, viral-titled hits (for the
+        # sequence table); blastdbcmd first in local mode, efetch otherwise.
+        subjects = blastn.subject_fetcher().fetch(
+            [h for s in blastn_seqs for h in s.blastn_hits]
+        )
         blastn_info = {
             "run":        True,
             "mode":       blastn.mode.value,
@@ -1035,6 +1040,7 @@ def _run_pipeline(args):
             "queried":    len(blastn_seqs),
             "failed":     len(blastn.failed_ids),
             "failed_ids": blastn.failed_ids,
+            "subjects":   subjects,
         }
         bn_status, bn_msg = "done", None
         if blastn_seqs and len(blastn.failed_ids) == len(blastn_seqs):
@@ -1297,6 +1303,8 @@ def _run_pipeline(args):
         "steps":         workflow,
     }
     ReportExporter.write(report, json_path)
+    from .seq_table import write_tables
+    seq_tsv, seq_xlsx = write_tables(report, outdir, stem)
     yield ("step", step, time.time() - t)
     step += 1
 
@@ -1315,6 +1323,7 @@ def _run_pipeline(args):
     args._result_json         = json_path
     args._result_html         = html_path
     args._result_viral_fasta  = viral_fasta
+    args._result_seq_table    = seq_xlsx
     args._result_diamond_dir  = organizer.diamond_dir
     args._result_blastn_dir   = organizer.blastn_dir if (args.blastn_local or args.blastn_online) else None
     args._result_hmm_dir      = organizer.hmm_dir
@@ -1437,6 +1446,7 @@ def _log_summary(args, timings: dict) -> None:
         ("HMM tables",                getattr(args, "_result_hmm_dir",     None)),
         ("JSON report",               getattr(args, "_result_json",        None)),
         ("HTML report",               getattr(args, "_result_html",        None)),
+        ("Sequence table",            getattr(args, "_result_seq_table",   None)),
         ("Log file",                  Path(args.outdir) / "viralquest.log"),
         ("Total time",                _fmt_step_time(sum(timings.values()))),
     ]
@@ -1483,7 +1493,8 @@ def _find_report_json(target: str) -> Path:
 
 
 def _reload_report(target: str) -> Path:
-    """Rebuild <stem>_viralquest.html next to the JSON with the current components."""
+    """Rebuild <stem>_viralquest.html (and the sequence table) next to the JSON
+    with the current components."""
     import json
     from loguru import logger
     from . import html_report
@@ -1497,6 +1508,8 @@ def _reload_report(target: str) -> Path:
     logger.info(f"--reload: components   → {html_report._COMPONENTS}")
     report = json.loads(json_path.read_text(encoding="utf-8"))
     html_report.write_report(report, html_path)
+    from .seq_table import write_tables
+    write_tables(report, json_path.parent, json_path.stem.removesuffix("_viralquest"))
     logger.log(_COMPLETE_LEVEL, f"HTML report rebuilt → {html_path}  ({time.time() - t:.1f}s)")
     return html_path
 

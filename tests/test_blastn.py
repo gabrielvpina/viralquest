@@ -13,6 +13,7 @@ from viralquest.blastn import (
     BlastnOutputParser,
     BlastnResultAttacher,
     BlastnRunner,
+    BlastnSubjectFetcher,
 )
 
 
@@ -785,3 +786,119 @@ class TestBlastnResultAttacher:
         hits = [self._hit("seq1", float(i)) for i in range(10)]
         BlastnResultAttacher.attach(hits, [seq])
         assert len(seq.blastn_hits) == 5
+
+
+# ---------------------------------------------------------------------------
+# BlastnSubjectFetcher — full subject sequences (blastdbcmd → efetch)
+# ---------------------------------------------------------------------------
+
+def _bn_hit(acc, title="Dengue virus 2, complete genome", slen=10723):
+    return BlastnResult(qseqid="q", qlen=1000, slen=slen, qcovhsp=90, pident=95.0,
+                        evalue=0.0, bit_score=900.0, stitle=title, accession=acc)
+
+
+class _Proc:
+    def __init__(self, stdout="", stderr="", returncode=0):
+        self.stdout, self.stderr, self.returncode = stdout, stderr, returncode
+
+
+class TestBlastnSubjectFetcher:
+
+    def _fetcher(self, run=None, http=None, db="/db/nt", **kw):
+        calls = {"run": [], "http": []}
+
+        def _run(cmd, **_):
+            calls["run"].append(cmd)
+            return run(cmd) if run else _Proc()
+
+        def _http(params):
+            calls["http"].append(params)
+            return http(params) if http else ""
+
+        f = BlastnSubjectFetcher(db_path=db, http=_http, run=_run, sleep=lambda s: None, **kw)
+        return f, calls
+
+    def test_non_viral_titles_are_never_fetched(self):
+        f, calls = self._fetcher()
+        hit = _bn_hit("NC_000001", title="Homo sapiens chromosome 1")
+        counts = f.fetch([hit])
+        assert counts["requested"] == 0
+        assert calls == {"run": [], "http": []}
+        assert hit.subject_seq is None
+
+    def test_oversized_subjects_are_skipped(self):
+        f, calls = self._fetcher(max_len=1000)
+        assert f.fetch([_bn_hit("MN1", slen=5000)])["requested"] == 0
+        assert calls["http"] == []
+
+    def test_blastdbcmd_result_is_used(self):
+        with patch("viralquest.blastn.shutil.which", return_value="/bin/blastdbcmd"):
+            f, calls = self._fetcher(run=lambda cmd: _Proc(">MN908947\nACGT\n"))
+            hit = _bn_hit("MN908947")
+            counts = f.fetch([hit])
+        assert hit.subject_seq == "ACGT"
+        assert counts["blastdbcmd"] == 1 and counts["efetch"] == 0
+        assert calls["http"] == []
+        assert "-entry_batch" in calls["run"][0]
+
+    def test_missing_entries_fall_back_to_efetch(self):
+        # blastdbcmd exits non-zero for a missing entry but prints the found ones.
+        with patch("viralquest.blastn.shutil.which", return_value="/bin/blastdbcmd"):
+            f, calls = self._fetcher(
+                run=lambda cmd: _Proc(">A1\nAAAA\n", "Entry not found: B2", 1),
+                http=lambda p: ">B2.1 Some virus, complete genome\nCC\nGG\n",
+            )
+            a, b = _bn_hit("A1"), _bn_hit("B2")
+            counts = f.fetch([a, b])
+        assert (a.subject_seq, b.subject_seq) == ("AAAA", "CCGG")
+        assert calls["http"][0]["id"] == "B2"
+        assert calls["http"][0]["db"] == "nuccore"
+        assert counts == {"requested": 2, "blastdbcmd": 1, "efetch": 1, "missing": 0}
+
+    def test_missing_blastdbcmd_binary_uses_efetch(self):
+        with patch("viralquest.blastn.shutil.which", return_value=None):
+            f, calls = self._fetcher(http=lambda p: ">A1.2\nTT\n")
+            hit = _bn_hit("A1")
+            f.fetch([hit])
+        assert calls["run"] == []
+        assert hit.subject_seq == "TT"
+
+    def test_online_mode_uses_efetch_only(self):
+        f, calls = self._fetcher(db=None, http=lambda p: ">A1.1\nGG\n", email="me@x.org")
+        hit = _bn_hit("A1")
+        f.fetch([hit])
+        assert calls["run"] == []
+        assert calls["http"][0]["email"] == "me@x.org"
+        assert hit.subject_seq == "GG"
+
+    def test_duplicate_accessions_are_fetched_once(self):
+        f, calls = self._fetcher(db=None, http=lambda p: ">A1.1\nGG\n")
+        hits = [_bn_hit("A1"), _bn_hit("A1")]
+        f.fetch(hits)
+        assert calls["http"][0]["id"] == "A1"
+        assert [h.subject_seq for h in hits] == ["GG", "GG"]
+
+    def test_efetch_is_batched(self):
+        f, calls = self._fetcher(db=None)
+        f.EFETCH_BATCH = 2
+        f.fetch([_bn_hit(f"A{i}") for i in range(5)])
+        assert [p["id"] for p in calls["http"]] == ["A0,A1", "A2,A3", "A4"]
+
+    def test_efetch_failure_does_not_raise(self):
+        def boom(p):
+            raise OSError("network down")
+        f, _ = self._fetcher(db=None, http=boom)
+        hit = _bn_hit("A1")
+        counts = f.fetch([hit])
+        assert hit.subject_seq is None
+        assert counts["missing"] == 1
+
+    def test_runner_builds_fetcher_for_its_mode(self, tmp_path):
+        local = BlastnRunner(mode=BlastnMode.LOCAL, db_path="/db/nt",
+                             blastn_bin="/opt/blast/bin/blastn", outdir=str(tmp_path))
+        f = local.subject_fetcher()
+        assert f.db_path == "/db/nt"
+        assert f.blastdbcmd_bin == "/opt/blast/bin/blastdbcmd"
+        online = BlastnRunner(mode=BlastnMode.ONLINE, outdir=str(tmp_path), email="me@x.org")
+        g = online.subject_fetcher()
+        assert g.db_path is None and g.email == "me@x.org"

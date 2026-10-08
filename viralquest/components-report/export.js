@@ -264,6 +264,264 @@ function vqBuildFasta(seqs) {
   }).join('\n') + '\n';
 }
 
+// ── Sequence table (TSV / XLSX) ─────────────────────────────────────────────
+// One row per sequence. Mirrors viralquest/seq_table.py (the table written to
+// the run's output folder) — keep the columns and rules in sync.
+
+const VQ_TABLE_COLUMNS = [
+  'Sample', 'Order', 'Family', 'Genus', 'Species', 'Genome type',
+  'Sequence (nt)', 'Length', 'Domains',
+  'BLASTn hit', 'BLASTn identity (%)', 'BLASTn coverage (%)',
+  'BLASTn hit ID', 'BLASTn hit sequence', 'BLASTn e-value',
+  'BLASTx hit', 'BLASTx identity (%)', 'BLASTx coverage (%)',
+  'BLASTx hit ID', 'BLASTx hit sequence', 'BLASTx e-value',
+];
+// Accession columns → the NCBI database their record lives in.
+const _TABLE_LINKS = { 'BLASTn hit ID': 'nuccore', 'BLASTx hit ID': 'protein' };
+// Excel refuses longer cells; such values stay complete in the TSV.
+const _XLSX_CELL_LIMIT = 32767;
+
+/** NCBI record URL for a bare accession; null for pipe-packed / local ids. */
+function vqNcbiUrl(accession, db) {
+  if (!accession || !/^[A-Za-z0-9_]+(\.[0-9]+)?$/.test(accession)) return null;
+  return `https://www.ncbi.nlm.nih.gov/${db}/${accession}`;
+}
+
+function _tableBest(hits) {
+  return hits && hits.length
+    ? hits.reduce((a, b) => ((b.bit_score || 0) > (a.bit_score || 0) ? b : a))
+    : null;
+}
+
+function _tableSample(s) {
+  if (s.sample || s.sample_name) return s.sample || s.sample_name;
+  const meta = (typeof VQ_REPORT !== 'undefined' && VQ_REPORT.meta) || {};
+  const name = (meta.input_file && meta.input_file.name) || '';
+  return name.replace(/\.[^.]*$/, '');
+}
+
+function _tableDomains(s) {
+  const seen = [];
+  (s.orfs || []).forEach(o => (o.domains || []).forEach(d => {
+    const label = `${d.target || ''} (${d.database || ''})`;
+    if (!seen.includes(label)) seen.push(label);
+  }));
+  return seen.join('; ');
+}
+
+/** Table rows (column name → value) for exported sequence records. */
+function vqSeqTableRows(seqs) {
+  return seqs.map(s => {
+    const bt  = s.blastn_taxonomy || {};
+    const t   = s.taxonomy || bt.taxonomy || {};
+    const bn  = _tableBest(s.blastn_hits);
+    const bx  = _tableBest(s.blastx_nr_hits && s.blastx_nr_hits.length ? s.blastx_nr_hits : s.blastx_hits);
+    const g   = (h, k) => (h && h[k] != null ? h[k] : null);
+    return {
+      'Sample':              _tableSample(s),
+      'Order':               t.order || '',
+      'Family':              t.family || '',
+      'Genus':               t.genus || '',
+      'Species':             t.species || t.scientific_name || '',
+      'Genome type':         t.genome || '',
+      'Sequence (nt)':       s.sequence || '',
+      'Length':              s.length ?? null,
+      'Domains':             _tableDomains(s),
+      'BLASTn hit':          g(bn, 'stitle') || '',
+      'BLASTn identity (%)': g(bn, 'pident'),
+      'BLASTn coverage (%)': g(bn, 'qcovhsp'),
+      'BLASTn hit ID':       g(bn, 'accession') || '',
+      'BLASTn hit sequence': g(bn, 'subject_seq') || '',
+      'BLASTn e-value':      g(bn, 'evalue'),
+      'BLASTx hit':          g(bx, 'subject_title') || '',
+      'BLASTx identity (%)': g(bx, 'pct_identity'),
+      'BLASTx coverage (%)': g(bx, 'query_coverage'),
+      'BLASTx hit ID':       g(bx, 'subject_id') || '',
+      'BLASTx hit sequence': g(bx, 'subject_seq') || '',
+      'BLASTx e-value':      g(bx, 'e_value'),
+    };
+  });
+}
+
+function vqBuildTSV(rows) {
+  const cell = v => (v == null ? '' : String(v).replace(/[\t\r\n]+/g, ' '));
+  return [VQ_TABLE_COLUMNS.join('\t')]
+    .concat(rows.map(r => VQ_TABLE_COLUMNS.map(c => cell(r[c])).join('\t')))
+    .join('\n') + '\n';
+}
+
+// ── XLSX: minimal SpreadsheetML in an uncompressed ZIP (no library) ─────────
+
+const _xmlEsc = s => String(s)
+  .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
+
+function _xlsxCol(i) {
+  let s = '';
+  for (i += 1; i; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s;
+  return s;
+}
+
+function _xlsxCell(ref, v, style = 0) {
+  const st = style ? ` s="${style}"` : '';
+  if (v == null || v === '') return style ? `<c r="${ref}"${st}/>` : '';
+  if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}"${st}><v>${v}</v></c>`;
+  let text = String(v);
+  if (text.length > _XLSX_CELL_LIMIT) {
+    text = `[${text.length.toLocaleString('en-US')} characters: too long for an Excel cell, see the TSV]`;
+  }
+  return `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${_xmlEsc(text)}</t></is></c>`;
+}
+
+const _XLSX_WIDTHS = {
+  'Sample': 18, 'Species': 30, 'BLASTn hit': 40, 'BLASTx hit': 40, 'Domains': 30,
+  'Sequence (nt)': 30, 'BLASTn hit sequence': 30, 'BLASTx hit sequence': 30,
+  'BLASTn hit ID': 16, 'BLASTx hit ID': 16,
+};
+
+function _xlsxParts(rows, sheet = 'Sequences') {
+  const X   = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const ns  = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+  const rns = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const pkg = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  const ct  = 'application/vnd.openxmlformats-officedocument.spreadsheetml';
+  const last = _xlsxCol(VQ_TABLE_COLUMNS.length - 1);
+  const lastRow = Math.max(1, rows.length + 1);
+
+  const xmlRows = ['<row r="1">' + VQ_TABLE_COLUMNS.map((c, i) => _xlsxCell(`${_xlsxCol(i)}1`, c, 1)).join('') + '</row>'];
+  const links = [];
+  rows.forEach((r, k) => {
+    const n = k + 2;
+    const cells = VQ_TABLE_COLUMNS.map((c, i) => {
+      const ref = `${_xlsxCol(i)}${n}`;
+      const url = _TABLE_LINKS[c] ? vqNcbiUrl(r[c], _TABLE_LINKS[c]) : null;
+      if (url) links.push([ref, url]);
+      return _xlsxCell(ref, r[c], url ? 2 : 0);
+    });
+    xmlRows.push(`<row r="${n}">${cells.join('')}</row>`);
+  });
+
+  const cols = VQ_TABLE_COLUMNS.map((c, i) =>
+    `<col min="${i + 1}" max="${i + 1}" width="${_XLSX_WIDTHS[c] || 12}" customWidth="1"/>`).join('');
+  const hyper = links.length
+    ? '<hyperlinks>' + links.map(([ref], k) => `<hyperlink ref="${ref}" r:id="rId${k + 1}"/>`).join('') + '</hyperlinks>'
+    : '';
+
+  const parts = {
+    '[Content_Types].xml': X +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      `<Override PartName="/xl/workbook.xml" ContentType="${ct}.sheet.main+xml"/>` +
+      `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="${ct}.worksheet+xml"/>` +
+      `<Override PartName="/xl/styles.xml" ContentType="${ct}.styles+xml"/>` +
+      '</Types>',
+    '_rels/.rels': X + `<Relationships xmlns="${pkg}">` +
+      `<Relationship Id="rId1" Type="${rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    'xl/workbook.xml': X + `<workbook ${ns} ${rns}>` +
+      `<sheets><sheet name="${_xmlEsc(sheet)}" sheetId="1" r:id="rId1"/></sheets>` +
+      '<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">' +
+      `'${_xmlEsc(sheet)}'!$A$1:$${last}$${lastRow}</definedName></definedNames></workbook>`,
+    'xl/_rels/workbook.xml.rels': X + `<Relationships xmlns="${pkg}">` +
+      `<Relationship Id="rId1" Type="${rel}/worksheet" Target="worksheets/sheet1.xml"/>` +
+      `<Relationship Id="rId2" Type="${rel}/styles" Target="styles.xml"/></Relationships>`,
+    'xl/styles.xml': X +
+      '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><u/><sz val="11"/><color rgb="FF0563C1"/><name val="Calibri"/></font></fonts>' +
+      '<fills count="2"><fill><patternFill patternType="none"/></fill>' +
+      '<fill><patternFill patternType="gray125"/></fill></fills>' +
+      '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+      '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>' +
+      '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+      '</styleSheet>',
+    'xl/worksheets/sheet1.xml': X + `<worksheet ${ns} ${rns}>` +
+      '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" ' +
+      'activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+      `<cols>${cols}</cols><sheetData>${xmlRows.join('')}</sheetData>` +
+      `<autoFilter ref="A1:${last}${lastRow}"/>${hyper}</worksheet>`,
+  };
+  if (links.length) {
+    parts['xl/worksheets/_rels/sheet1.xml.rels'] = X + `<Relationships xmlns="${pkg}">` +
+      links.map(([, url], k) =>
+        `<Relationship Id="rId${k + 1}" Type="${rel}/hyperlink" Target="${_xmlEsc(url)}" TargetMode="External"/>`
+      ).join('') + '</Relationships>';
+  }
+  return parts;
+}
+
+let _crcTable = null;
+function _crc32(bytes) {
+  if (!_crcTable) {
+    _crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      _crcTable[n] = c >>> 0;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = _crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+/** Uncompressed (stored) ZIP of { name: text } → Uint8Array. */
+function _zipStore(files) {
+  const enc = new TextEncoder();
+  const chunks = [], central = [];
+  let offset = 0;
+  const u16 = (v, o, d) => d.setUint16(o, v, true);
+  const u32 = (v, o, d) => d.setUint32(o, v >>> 0, true);
+  Object.entries(files).forEach(([name, text]) => {
+    const nameB = enc.encode(name), data = enc.encode(text), crc = _crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    u32(0x04034b50, 0, lh); u16(20, 4, lh); u16(0x0800, 6, lh); u16(0, 8, lh);
+    u16(0, 10, lh); u16(0x21, 12, lh); u32(crc, 14, lh);
+    u32(data.length, 18, lh); u32(data.length, 22, lh); u16(nameB.length, 26, lh); u16(0, 28, lh);
+    const ch = new DataView(new ArrayBuffer(46));
+    u32(0x02014b50, 0, ch); u16(20, 4, ch); u16(20, 6, ch); u16(0x0800, 8, ch); u16(0, 10, ch);
+    u16(0, 12, ch); u16(0x21, 14, ch); u32(crc, 16, ch); u32(data.length, 20, ch);
+    u32(data.length, 24, ch); u16(nameB.length, 28, ch); u32(offset, 42, ch);
+    chunks.push(new Uint8Array(lh.buffer), nameB, data);
+    central.push(new Uint8Array(ch.buffer), nameB);
+    offset += 30 + nameB.length + data.length;
+  });
+  const cdSize = central.reduce((a, c) => a + c.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  const n = Object.keys(files).length;
+  u32(0x06054b50, 0, end); u16(n, 8, end); u16(n, 10, end); u32(cdSize, 12, end); u32(offset, 16, end);
+  const all = chunks.concat(central, [new Uint8Array(end.buffer)]);
+  const out = new Uint8Array(all.reduce((a, c) => a + c.length, 0));
+  let p = 0;
+  all.forEach(c => { out.set(c, p); p += c.length; });
+  return out;
+}
+
+function vqBuildXLSX(rows) {
+  return _zipStore(_xlsxParts(rows));
+}
+
+/** Download the sequence table for `seqs` as `<basename>.tsv` / `.xlsx`. */
+function vqExportSeqTable(seqs, basename, fmt = 'xlsx') {
+  if (!seqs || !seqs.length) return;
+  const rows = vqSeqTableRows(seqs);
+  if (fmt === 'tsv') {
+    const blob = new Blob([vqBuildTSV(rows)], { type: 'text/tab-separated-values;charset=utf-8' });
+    _download(URL.createObjectURL(blob), basename + '.tsv');
+    return;
+  }
+  const blob = new Blob([vqBuildXLSX(rows)], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  _download(URL.createObjectURL(blob), basename + '.xlsx');
+}
+
 // ── Tooltip ─────────────────────────────────────────────────────────────────
 
 let _tooltip = null;
@@ -455,6 +713,11 @@ window.VQ = Object.assign(window.VQ || {}, {
   buildCompositeSVG:  vqBuildCompositeSVG,
   downloadText: vqDownloadText,
   buildFasta:   vqBuildFasta,
+  ncbiUrl:        vqNcbiUrl,
+  seqTableRows:   vqSeqTableRows,
+  buildTSV:       vqBuildTSV,
+  buildXLSX:      vqBuildXLSX,
+  exportSeqTable: vqExportSeqTable,
   tooltipShow:  vqTooltipShow,
   tooltipMove:  vqTooltipMove,
   tooltipHide:  vqTooltipHide,

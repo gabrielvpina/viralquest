@@ -37,14 +37,14 @@ class DiamondRunner:
     """
     Runs diamond blastx in batches of up to `batch_size` sequences.
 
-    outfmt columns (13):
+    outfmt columns (14):
         qseqid sseqid stitle pident length mismatch gapopen
-        qstart qend sstart send evalue bitscore
+        qstart qend sstart send evalue bitscore full_sseq
     """
 
     _OUTFMT = (
         "6 qseqid sseqid stitle pident length mismatch gapopen "
-        "qstart qend sstart send evalue bitscore"
+        "qstart qend sstart send evalue bitscore full_sseq"
     )
 
     def __init__(
@@ -162,7 +162,11 @@ class DiamondRunner:
 # ---------------------------------------------------------------------------
 
 class DiamondOutputParser:
-    """Parses Diamond TSV (13-column) into BlastxResult objects."""
+    """
+    Parses Diamond TSV into BlastxResult objects: 13 columns, plus the full
+    subject sequence (full_sseq) as a 14th when present. TSVs from older runs
+    have no 14th column and parse with an empty subject_seq.
+    """
 
     @staticmethod
     def parse(tsv_path: Path) -> list[BlastxResult]:
@@ -190,6 +194,7 @@ class DiamondOutputParser:
                         subject_end=int(row[10]),
                         e_value=float(row[11]),
                         bit_score=float(row[12]),
+                        subject_seq=row[13] if len(row) > 13 else "",
                     ))
                 except (ValueError, IndexError) as exc:
                     logger.warning(f"Skipping malformed row in {tsv_path.name}: {exc}")

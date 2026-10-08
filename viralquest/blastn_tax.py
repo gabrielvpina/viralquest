@@ -46,6 +46,12 @@ def _tokens(title: str) -> list[str]:
     return [w.strip(_EDGE) for w in title.split() if w.strip(_EDGE)]
 
 
+def is_viral_title(title: str) -> bool:
+    """True if a free-text hit title carries a virus-like token (…virus,
+    …viridae, …phage, …).  No taxonomy lookup — a cheap pre-filter."""
+    return any(_ANCHOR_RE.search(w) for w in _tokens(title))
+
+
 def name_candidates(title: str, max_flank: int = MAX_FLANK) -> list[str]:
     """
     Candidate virus names from a free-text hit title, longest first.

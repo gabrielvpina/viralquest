@@ -1,6 +1,7 @@
 import csv
 import io
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -13,6 +14,7 @@ from urllib.request import Request, urlopen
 from loguru import logger
 
 from viralquest.biodata import BlastnResult, NucSequence
+from viralquest.blastn_tax import is_viral_title
 
 
 class BlastnMode(Enum):
@@ -215,6 +217,19 @@ class BlastnRunner:
         self.online_timeout    = float(online_timeout)
         self.online_retries    = max(0, int(online_retries))
         self.ncbi              = NcbiBlastClient(email=email)
+
+    def subject_fetcher(self) -> "BlastnSubjectFetcher":
+        """Subject-sequence fetcher for this run's mode: blastdbcmd (next to the
+        blastn binary) then efetch in LOCAL mode, efetch only in ONLINE mode."""
+        local = self.mode == BlastnMode.LOCAL
+        blastdbcmd = None
+        if local and Path(self.blastn_bin).parent != Path("."):
+            blastdbcmd = str(Path(self.blastn_bin).with_name("blastdbcmd"))
+        return BlastnSubjectFetcher(
+            db_path=self.db_path if local else None,
+            blastdbcmd_bin=blastdbcmd,
+            email=self.email,
+        )
 
     # --- public ---
 
@@ -538,6 +553,155 @@ class BlastnOutputParser:
                 )
 
         return hits
+
+
+# ---------------------------------------------------------------------------
+# Subject sequences  (blastdbcmd → NCBI efetch fallback)
+# ---------------------------------------------------------------------------
+
+NCBI_EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+
+
+def _acc_key(accession: str) -> str:
+    """Accession without its version, so "NC_001477" and "NC_001477.1" meet."""
+    return accession.strip().split(".")[0]
+
+
+def _parse_fasta(text: str) -> dict[str, str]:
+    """Multi-FASTA text → {accession key: sequence}; the key is the first
+    header token (pipe-packed ids like "ref|NC_1.1|" give the accession)."""
+    out: dict[str, str] = {}
+    for block in text.split(">")[1:]:
+        header, _, body = block.partition("\n")
+        token = header.split()[0] if header.split() else ""
+        parts = [p for p in token.split("|") if p]
+        acc   = parts[1] if len(parts) > 1 else (parts[0] if parts else "")
+        seq   = "".join(body.split())
+        if acc and seq:
+            out[_acc_key(acc)] = seq
+    return out
+
+
+class BlastnSubjectFetcher:
+    """
+    Fills ``subject_seq`` with the full subject sequence of BLASTn hits whose
+    title looks viral (blastn_tax.is_viral_title): host chromosomes and other
+    non-viral subjects are never downloaded. Subjects longer than ``max_len``
+    (when the length is known) are skipped as a second guard.
+
+    Source, per unique accession:
+      1. ``blastdbcmd`` against the local BLAST DB (LOCAL mode; needs a DB built
+         with -parse_seqids, otherwise entries are not found);
+      2. NCBI E-utilities efetch (nuccore, FASTA) for whatever is still missing
+         — the only source in ONLINE mode. Requests are batched and spaced to
+         stay under NCBI's 3 requests/s limit without an API key.
+
+    Failures never stop the run: the hit simply keeps ``subject_seq = None``.
+    `http`, `run` and `sleep` are injectable for tests.
+    """
+
+    EFETCH_BATCH = 50
+    EFETCH_GAP   = 0.4
+    MAX_LEN      = 3_000_000   # larger than any known viral genome
+
+    def __init__(self, db_path: str | None = None, blastdbcmd_bin: str | None = None,
+                 email: str | None = None, tool: str = "viralquest",
+                 max_len: int = MAX_LEN, http=None, run=None, sleep=None):
+        self.db_path        = db_path
+        self.blastdbcmd_bin = blastdbcmd_bin or "blastdbcmd"
+        self.email          = email
+        self.tool           = tool
+        self.max_len        = max_len
+        self._http  = http  or self._urlopen
+        self._run   = run   or subprocess.run
+        self._sleep = sleep or (lambda s: time.sleep(s))
+
+    # -- public -----------------------------------------------------------
+    def fetch(self, hits: list[BlastnResult]) -> dict[str, int]:
+        """Fill ``subject_seq`` on eligible hits; returns per-source counts."""
+        wanted = [
+            h for h in hits
+            if h.accession and is_viral_title(h.stitle)
+            and not (h.slen and h.slen > self.max_len)
+        ]
+        accs = list(dict.fromkeys(h.accession for h in wanted))
+        counts = {"requested": len(accs), "blastdbcmd": 0, "efetch": 0, "missing": 0}
+        if not accs:
+            return counts
+
+        found: dict[str, str] = {}
+        if self.db_path:
+            found = self._from_blastdb(accs)
+            counts["blastdbcmd"] = len(found)
+        missing = [a for a in accs if _acc_key(a) not in found]
+        if missing:
+            got = self._from_efetch(missing)
+            counts["efetch"] = len(got)
+            found.update(got)
+
+        for h in wanted:
+            h.subject_seq = found.get(_acc_key(h.accession))
+        counts["missing"] = sum(1 for a in accs if _acc_key(a) not in found)
+        logger.info(
+            f"BLASTn subjects: {len(accs)} viral accession(s) — "
+            f"{counts['blastdbcmd']} from blastdbcmd, {counts['efetch']} from efetch, "
+            f"{counts['missing']} not retrieved."
+        )
+        return counts
+
+    # -- blastdbcmd -------------------------------------------------------
+    def _from_blastdb(self, accs: list[str]) -> dict[str, str]:
+        if not shutil.which(self.blastdbcmd_bin):
+            logger.warning(f"BLASTn subjects: '{self.blastdbcmd_bin}' not found — using efetch.")
+            return {}
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as fh:
+            fh.write("\n".join(accs) + "\n")
+            batch = fh.name
+        try:
+            res = self._run(
+                [self.blastdbcmd_bin, "-db", self.db_path, "-entry_batch", batch,
+                 "-outfmt", ">%a\n%s"],
+                capture_output=True, text=True,
+            )
+        except Exception as exc:
+            logger.warning(f"BLASTn subjects: blastdbcmd failed ({exc}) — using efetch.")
+            return {}
+        finally:
+            Path(batch).unlink(missing_ok=True)
+        # blastdbcmd exits non-zero when any entry is missing but still prints
+        # the ones it found, so stdout is read either way.
+        found = _parse_fasta(res.stdout or "")
+        if res.returncode != 0 and not found:
+            err = (res.stderr or "").strip().splitlines()
+            logger.warning(
+                "BLASTn subjects: blastdbcmd retrieved nothing "
+                f"({err[0] if err else f'exit {res.returncode}'}) — is the DB built "
+                "with -parse_seqids? Using efetch."
+            )
+        return found
+
+    # -- efetch -----------------------------------------------------------
+    def _urlopen(self, params: dict) -> str:
+        data = urlencode(params).encode()
+        req  = Request(NCBI_EFETCH_URL, data, {"User-Agent": f"{self.tool} (E-utilities client)"})
+        with urlopen(req, timeout=120) as resp:
+            return resp.read().decode()
+
+    def _from_efetch(self, accs: list[str]) -> dict[str, str]:
+        found: dict[str, str] = {}
+        for i in range(0, len(accs), self.EFETCH_BATCH):
+            chunk  = accs[i : i + self.EFETCH_BATCH]
+            params = {"db": "nuccore", "id": ",".join(chunk),
+                      "rettype": "fasta", "retmode": "text", "tool": self.tool}
+            if self.email:
+                params["email"] = self.email
+            if i:
+                self._sleep(self.EFETCH_GAP)
+            try:
+                found.update(_parse_fasta(self._http(params)))
+            except Exception as exc:
+                logger.warning(f"BLASTn subjects: efetch of {len(chunk)} accession(s) failed: {exc}")
+        return found
 
 
 # ---------------------------------------------------------------------------

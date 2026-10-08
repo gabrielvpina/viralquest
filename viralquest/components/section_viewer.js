@@ -11,8 +11,8 @@
      • BLASTn / BLASTx-RefSeq / BLASTx-NR hits (subtabs)
      • LLM analysis
      • FASTA preview
-   Export per-card: PNG / SVG / PDF / FASTA
-   Batch export: composite PNG/SVG (proportions kept) + combined FASTA
+   Export per-card: PNG / SVG / PDF / FASTA / table (XLSX, TSV)
+   Batch export: composite PNG/SVG (proportions kept) + combined FASTA + table
    ============================================================ */
 
 const _VW = {
@@ -347,6 +347,12 @@ function vqInitViewer(sequences) {
             </button>
             <button class="vq-menu__item" data-batch="fasta" role="menuitem" type="button">
               FASTA (selected sequences)
+            </button>
+            <button class="vq-menu__item" data-batch="xlsx" role="menuitem" type="button">
+              Table — XLSX (NCBI links)
+            </button>
+            <button class="vq-menu__item" data-batch="tsv" role="menuitem" type="button">
+              Table — TSV
             </button>
           </div>
         </div>
@@ -1341,6 +1347,8 @@ function _seqExportMenu(safeId) {
         <button class="vq-menu__item" data-fmt="svg" role="menuitem" type="button">SVG vector</button>
         <button class="vq-menu__item" data-fmt="pdf" role="menuitem" type="button">PDF (print)</button>
         <button class="vq-menu__item" data-fmt="fasta" role="menuitem" type="button">FASTA sequence</button>
+        <button class="vq-menu__item" data-fmt="xlsx" role="menuitem" type="button">Table — XLSX</button>
+        <button class="vq-menu__item" data-fmt="tsv" role="menuitem" type="button">Table — TSV</button>
       </div>
     </div>`;
 }
@@ -1363,6 +1371,10 @@ function _wireExportMenu(card, menuId, getSvg, seq) {
       const fmt = item.dataset.fmt;
       if (fmt === 'fasta') {
         VQ.downloadText(VQ.buildFasta([seq]), `${seq.id}.fasta`);
+        return;
+      }
+      if (fmt === 'xlsx' || fmt === 'tsv') {
+        VQ.exportSeqTable([seq], `${seq.id}_table`, fmt);
         return;
       }
       // Make sure the card is open & the SVG rendered
@@ -1405,6 +1417,10 @@ async function _runBatch(kind) {
 
   if (kind === 'fasta') {
     VQ.downloadText(VQ.buildFasta(seqs), `viralquest_selected_${seqs.length}.fasta`);
+    return;
+  }
+  if (kind === 'xlsx' || kind === 'tsv') {
+    VQ.exportSeqTable(seqs, `viralquest_selected_${seqs.length}_table`, kind);
     return;
   }
 

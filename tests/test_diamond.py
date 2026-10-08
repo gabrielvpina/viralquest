@@ -246,6 +246,19 @@ class TestDiamondOutputParser:
     def test_nonexistent_file_returns_empty_list(self, tmp_path):
         assert DiamondOutputParser.parse(tmp_path / "ghost.tsv") == []
 
+    def test_outfmt_requests_full_subject_sequence(self):
+        from viralquest.diamond import DiamondRunner
+        assert DiamondRunner._OUTFMT.split()[-1] == "full_sseq"
+
+    def test_parses_full_subject_sequence(self, tmp_tsv):
+        hits = DiamondOutputParser.parse(tmp_tsv([self._row() + ["MKTAYIAKQR"]]))
+        assert hits[0].subject_seq == "MKTAYIAKQR"
+
+    def test_13_column_rows_have_empty_subject_sequence(self, tmp_tsv):
+        # TSVs from runs before full_sseq was requested still parse.
+        hits = DiamondOutputParser.parse(tmp_tsv([self._row()]))
+        assert hits[0].subject_seq == ""
+
     def test_subject_title_with_tabs_in_title_handled(self, tmp_tsv):
         # stitle can contain spaces but not tabs — ensure normal titles parse
         row = self._row(stitle="RNA polymerase [Tobacco mosaic virus] partial")
