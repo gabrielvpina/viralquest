@@ -540,7 +540,8 @@ class RefGenome:
 
 @dataclass(slots=True)
 class SyntenyHit:
-    """One DIAMOND blastp HSP: an input ORF against a reference CDS."""
+    """One DIAMOND blastp HSP: an input ORF against a reference CDS (every HSP
+    is kept, so one ORF/CDS pair may have several, each with its own range)."""
     orf_name: str
     cds_index: int            # index into RefGenome.cds
     pident: float
@@ -560,12 +561,32 @@ class SyntenyHit:
 
 
 @dataclass(slots=True)
+class SyntenyLink:
+    """One DIAMOND blastp HSP between canonical ORFs of two sequences that share
+    a reference (contig ↔ contig correspondence). Every HSP is kept; each pair
+    is stored once, on the sequence whose id sorts first."""
+    orf_name: str
+    other_seq: str
+    other_orf: str
+    pident: float
+    evalue: float
+    bit_score: float
+    q_start: int              # 1-based aa on this ORF
+    q_end: int
+    s_start: int              # 1-based aa on the other ORF
+    s_end: int
+    orf_nt: list[int]         # [start, end) of the aligned stretch on this contig
+    other_nt: list[int]       # [start, end) of the aligned stretch on the other contig
+
+
+@dataclass(slots=True)
 class SyntenyResult:
     """A sequence's synteny with its reference (see synteny.py)."""
     reference: str            # RefGenome.accession
     flipped: bool             # contig is reverse-complemented relative to the reference
     offset: float             # reference position ≈ offset ± contig position (see synteny.py)
     hits: list[SyntenyHit] = field(default_factory=list)
+    links: list[SyntenyLink] = field(default_factory=list)
 
 
 @dataclass(slots=True)

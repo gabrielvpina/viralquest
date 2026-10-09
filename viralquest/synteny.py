@@ -40,6 +40,7 @@ from viralquest.biodata import (
     RefFeature,
     RefGenome,
     SyntenyHit,
+    SyntenyLink,
     SyntenyResult,
 )
 from viralquest.blastn import acc_key, ncbi_efetch
@@ -295,13 +296,18 @@ class SyntenyAligner:
             for rid, aa in records.items():
                 fh.write(f">{rid}\n{aa}\n")
 
-    def align(self, queries: dict[str, str], subjects: dict[str, str]) -> list[dict]:
-        """Rows of the blastp table (dicts keyed by _BLASTP_FIELDS); [] on failure."""
+    def align(self, queries: dict[str, str], subjects: dict[str, str],
+              tag: str = "") -> list[dict]:
+        """
+        Rows of the blastp table (dicts keyed by _BLASTP_FIELDS); [] on failure.
+        *tag* prefixes the work files, so several searches share one folder.
+        """
         if not queries or not subjects:
             return []
         self.workdir.mkdir(parents=True, exist_ok=True)
-        q, s = self.workdir / "orfs.faa", self.workdir / "refs.faa"
-        db, out = self.workdir / "refs", self.workdir / "blastp.tsv"
+        pre = f"{tag}_" if tag else ""
+        q, s = self.workdir / f"{pre}orfs.faa", self.workdir / f"{pre}refs.faa"
+        db, out = self.workdir / f"{pre}refs", self.workdir / f"{pre}blastp.tsv"
         self._write_faa(queries, q)
         self._write_faa(subjects, s)
 
@@ -309,7 +315,7 @@ class SyntenyAligner:
             [self.diamond_bin, "makedb", "--in", str(s), "--db", str(db), "--quiet"],
             [self.diamond_bin, "blastp", "--db", str(db), "--query", str(q), "--out", str(out),
              "--outfmt", "6", *_BLASTP_FIELDS, "--evalue", str(self.e_value),
-             "--more-sensitive", "--max-target-seqs", "0",
+             "--more-sensitive", "--max-target-seqs", "0", "--max-hsps", "0",
              "--threads", str(self.threads), "--quiet"],
         ]
         for cmd in cmds:
@@ -426,21 +432,20 @@ class SyntenyAnalyzer:
 
         rows = self.aligner.align(queries, subjects)
 
-        # Best HSP per (ORF, CDS), restricted to the sequence's own reference.
-        best: dict[tuple[str, str], dict] = {}
+        # Every HSP (each with its own start/end on both proteins), restricted
+        # to the sequence's own reference.
+        kept: list[dict] = []
         for r in rows:
             seq, _orf = qmap.get(r["qseqid"], (None, None))
             if seq is None:
                 continue
             key, _, _ = r["sseqid"].rpartition("|")
-            if key != acc_key(picked[seq.id].accession):
-                continue
-            k = (r["qseqid"], r["sseqid"])
-            if k not in best or r["bitscore"] > best[k]["bitscore"]:
-                best[k] = r
+            if key == acc_key(picked[seq.id].accession):
+                kept.append(r)
 
         hits_by_seq: dict[str, list[SyntenyHit]] = defaultdict(list)
-        for (qid, sid), r in best.items():
+        for r in kept:
+            qid, sid = r["qseqid"], r["sseqid"]
             seq, orf = qmap[qid]
             key, _, idx = sid.rpartition("|")
             ref, ci = refs[key], int(idx)
@@ -474,13 +479,64 @@ class SyntenyAnalyzer:
                                         flipped=flipped, offset=round(offset, 1), hits=hits)
             used[parsed.genome.accession] = parsed.genome
 
+        n_links = self._link_members(seqs)
         self._write_table(seqs, used)
         n_seq = sum(1 for s in seqs if s.synteny and s.synteny.hits)
         logger.success(
             f"Synteny: {len(used)} reference(s); {n_seq} sequence(s) with ORFs matching "
-            f"their reference ({sum(len(v) for v in hits_by_seq.values())} ORF↔CDS pair(s))."
+            f"their reference ({sum(len(v) for v in hits_by_seq.values())} ORF↔CDS pair(s), "
+            f"{n_links} contig↔contig ORF link(s))."
         )
         return used
+
+    def _link_members(self, seqs: list[NucSequence]) -> int:
+        """
+        Contig ↔ contig correspondence: one blastp of the canonical ORFs of every
+        sequence against each other, kept only between different sequences of
+        the same reference (best HSP per ORF pair, stored once per pair).
+        """
+        members = [s for s in seqs if s.synteny and s.synteny.hits]
+        by_ref: dict[str, list[NucSequence]] = defaultdict(list)
+        for s in members:
+            by_ref[s.synteny.reference].append(s)
+        queries: dict[str, str] = {}
+        qmap:    dict[str, tuple[NucSequence, object]] = {}
+        for group in by_ref.values():
+            if len(group) < 2:
+                continue
+            for s in group:
+                canon = {h.orf_name for h in s.synteny.hits}
+                for orf in s.orfs:
+                    aa = (orf.aa_sequence or "").rstrip("*").replace("*", "X")
+                    if orf.name in canon and aa:
+                        qid = f"o{len(queries)}"
+                        queries[qid], qmap[qid] = aa, (s, orf)
+        rows = self.aligner.align(queries, queries, tag="contigs")
+
+        # Every HSP between ORFs of different sequences of one reference; the
+        # reverse search (B vs A) repeats A vs B, so only qseq < sseq is kept.
+        kept: list[dict] = []
+        for r in rows:
+            a, b = qmap.get(r["qseqid"]), qmap.get(r["sseqid"])
+            if not a or not b:
+                continue
+            (sa, oa), (sb, ob) = a, b
+            if sa.id < sb.id and sa.synteny.reference == sb.synteny.reference:
+                kept.append(r)
+
+        for r in kept:
+            sa, oa = qmap[r["qseqid"]]
+            sb, ob = qmap[r["sseqid"]]
+            sa.synteny.links.append(SyntenyLink(
+                orf_name=oa.name, other_seq=sb.id, other_orf=ob.name,
+                pident=r["pident"], evalue=r["evalue"], bit_score=r["bitscore"],
+                q_start=r["qstart"], q_end=r["qend"], s_start=r["sstart"], s_end=r["send"],
+                orf_nt=orf_aa_to_contig(oa.start_position, oa.stop_position, oa.strand,
+                                        r["qstart"], r["qend"]),
+                other_nt=orf_aa_to_contig(ob.start_position, ob.stop_position, ob.strand,
+                                          r["sstart"], r["send"]),
+            ))
+        return len(kept)
 
     def _write_table(self, seqs: list[NucSequence], refs: dict[str, RefGenome]) -> None:
         self.outdir.mkdir(parents=True, exist_ok=True)

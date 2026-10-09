@@ -141,7 +141,10 @@ class _FakeAligner:
     def __init__(self, rows=None):
         self.rows, self.queries, self.subjects = rows, None, None
 
-    def align(self, queries, subjects):
+    def align(self, queries, subjects, tag=""):
+        if tag == "contigs":                      # contig ↔ contig search
+            self.contig_queries = queries
+            return []
         self.queries, self.subjects = queries, subjects
         if self.rows is not None:
             return self.rows
@@ -232,3 +235,22 @@ def test_real_diamond_blastp(tmp_path):
     OrfAnalyzer(150).find_n_save_orfs(s)
     SyntenyAnalyzer(tmp_path, fetcher=GenBankFetcher(MOCK, http=_offline)).run([s])
     assert s.synteny.hits and s.synteny.hits[0].pident > 95
+
+
+@pytest.mark.skipif(shutil.which("diamond") is None, reason="diamond not installed")
+def test_real_diamond_links_overlapping_contigs(tmp_path):
+    """Two contigs covering the same reference stretch get contig ↔ contig links."""
+    from Bio import SeqIO
+    from viralquest.orfs import OrfAnalyzer
+    den = str(SeqIO.read(str(DENGUE), "genbank").seq)
+    seqs = []
+    for sid, (a, b) in {"a": (1000, 4000), "b": (2500, 5500)}.items():
+        s = NucSequence(id=sid, sequence=den[a:b])
+        s.blastn_hits = [_hit()]
+        OrfAnalyzer(150).find_n_save_orfs(s)
+        seqs.append(s)
+    SyntenyAnalyzer(tmp_path, fetcher=GenBankFetcher(MOCK, http=_offline)).run(seqs)
+    links = seqs[0].synteny.links
+    assert links and all(l.other_seq == "b" for l in links)
+    assert seqs[1].synteny.links == []          # stored once per pair
+    assert max(l.pident for l in links) > 99
