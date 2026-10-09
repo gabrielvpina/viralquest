@@ -4,32 +4,40 @@
 
 /* ============================================================
    section_synteny.js — Synteny with the BLASTn reference genome
-   One synteny cluster at a time (picked from a list):
-     • reference genome on top — its GenBank CDS (+ mat_peptides)
-     • every member sequence below, placed where it aligns on the
-       reference, with ONLY the ORFs that DIAMOND blastp matched to a
-       reference CDS (the canonical ones) and their HMM domains
-     • ribbons joining each aligned ORF stretch to its CDS stretch,
-       shaded by amino-acid identity
+   One synteny cluster (one reference accession) at a time, picked from a
+   list grouped by organism, so the segments of a segmented virus sit
+   together:
+     • summary card — reference, taxonomy tags, KPIs (genome covered, CDS
+       matched, canonical ORFs, identity) and one row per member sequence
+       with its span on the reference; links to the other segments
+     • map (gggenomes-style) — the reference genome and the member
+       sequences as stacked tracks on the reference axis, genes coloured by
+       reference gene family (CDS, or mature peptide), straight link bands
+       between tracks: reference ↔ member (ORF ↔ CDS hits) and member ↔
+       member (contig ↔ contig ORF blastp). Only canonical ORFs — those that
+       matched a reference CDS — are drawn unless asked otherwise
      • a table of the ORF ↔ CDS pairs
    Data: report.synteny = { references: {acc: RefGenome}, clusters:
    [{reference, members}] } and sequence.synteny (see viralquest/synteny.py).
-   Drawing blocks (ORF arrows, domain lanes, domain colours) come from the
-   viewer via VQ.genome, so both tabs look alike.
+   ORF arrows, domain lanes and domain colours come from the viewer via
+   VQ.genome, so both tabs look alike.
    ============================================================ */
 
 const _SY = {
-  refs:     {},
-  clusters: [],
-  seqById:  {},
-  idx:      0,
-  showAll:  false,   // also draw the ORFs with no reference match (greyed)
-  el:       null,
+  refs:       {},
+  clusters:   [],
+  seqById:    {},
+  idx:        0,
+  showAll:    false,   // also draw the ORFs with no reference match (greyed)
+  identShade: false,   // links shaded by aa identity instead of a flat tint
+  refAxis:    false,   // tracks on the reference axis; default: each on its own, left-aligned
 };
 
-const PAD_L = 16, PAD_R = 16;
-const ORF_H = 14, DOM_H = 6, DOM_G = 1.5, LANE_G = 6;
-const PEP_H = 6, RIB_H = 64, LABEL_H = 16;
+
+// HMM banks used only to call a sequence viral; the pairs table lists Pfam.
+const _FILTER_DBS = new Set(['RVDB', 'Vfam', 'EggNOG']);
+
+const _fmt = n => (n == null || isNaN(n)) ? '—' : Math.round(n).toLocaleString('en-US');
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
@@ -37,7 +45,6 @@ function vqInitSynteny(report, mountId) {
   const el = document.getElementById(mountId || 'section-synteny');
   if (!el) return;
   const syn = (report && report.synteny) || {};
-  _SY.el       = el;
   _SY.refs     = syn.references || {};
   _SY.clusters = (syn.clusters || []).filter(c => _SY.refs[c.reference]);
   _SY.seqById  = {};
@@ -53,16 +60,17 @@ function vqInitSynteny(report, mountId) {
   }
 
   const n = _SY.clusters.length;
+  const nOrg = new Set(_SY.clusters.map(c => _orgKey(_SY.refs[c.reference]))).size;
   el.innerHTML = `
     <div class="vq-section-header">
       <div class="vq-section-title">
         Synteny
-        <span class="vq-count-label">${n} reference${n !== 1 ? 's' : ''}</span>
+        <span class="vq-count-label">${n} reference${n !== 1 ? 's' : ''} · ${nOrg} virus${nOrg !== 1 ? 'es' : ''}</span>
       </div>
       <div class="vq-section-actions">
-        <label class="vq-filter-check">
-          <input type="checkbox" id="syn-show-all"> Show non-canonical ORFs
-        </label>
+        <label class="vq-filter-check"><input type="checkbox" id="syn-show-all"> Non-canonical ORFs</label>
+        <label class="vq-filter-check"><input type="checkbox" id="syn-refaxis"> Align tracks to reference</label>
+        <label class="vq-filter-check"><input type="checkbox" id="syn-ident"> Shade links by identity</label>
         <div class="vq-menu" id="syn-export-menu">
           <button class="vq-btn vq-btn--ghost vq-btn--sm" data-menu-toggle type="button">
             Export
@@ -102,40 +110,51 @@ function vqInitSynteny(report, mountId) {
   document.getElementById('syn-prev').addEventListener('click', () => _step(-1));
   document.getElementById('syn-next').addEventListener('click', () => _step(1));
   document.getElementById('syn-show-all').addEventListener('change', e => {
-    _SY.showAll = e.target.checked;
-    _render();
+    _SY.showAll = e.target.checked; _render();
+  });
+  document.getElementById('syn-ident').addEventListener('change', e => {
+    _SY.identShade = e.target.checked; _drawMap();
+  });
+  document.getElementById('syn-refaxis').addEventListener('change', e => {
+    _SY.refAxis = e.target.checked; _drawMap();
   });
   _wireExport();
   _show(0);
   VQ.redrawOnResize(el, () => _drawMap());
 }
 
-function _clusterLabel(c) {
-  const ref = _SY.refs[c.reference];
-  const n   = c.members.length;
-  return `${ref.organism || ref.title} — ${ref.accession} (${n} seq${n !== 1 ? 's' : ''})`;
-}
+const _orgKey = ref => (ref.organism || ref.title || ref.accession).toLowerCase();
 
-/* The list keeps every cluster index as its value; the filter only hides. */
+/* Options grouped by organism (segments of one virus together); the value is
+   always the cluster index, the filter only hides. */
 function _fillSelect(query) {
   const sel = document.getElementById('syn-select');
   const q   = query.trim().toLowerCase();
-  const opts = _SY.clusters.map((c, i) => {
+  const groups = new Map();
+  _SY.clusters.forEach((c, i) => {
     const ref = _SY.refs[c.reference];
     const hay = [ref.organism, ref.title, ref.accession, ...c.members].join(' ').toLowerCase();
-    return (!q || hay.includes(q)) ? `<option value="${i}">${VQ.esc(_clusterLabel(c))}</option>` : '';
-  }).join('');
-  sel.innerHTML = opts || '<option disabled>No reference matches the filter</option>';
-  if (opts && !sel.querySelector(`option[value="${_SY.idx}"]`)) {
-    _show(+sel.options[0].value);
+    if (q && !hay.includes(q)) return;
+    const key = _orgKey(ref);
+    if (!groups.has(key)) groups.set(key, { label: ref.organism || ref.title, opts: [] });
+    const n = c.members.length;
+    groups.get(key).opts.push(`<option value="${i}">${VQ.esc(
+      `${ref.accession} · ${_fmt(ref.length)} nt · ${n} seq${n !== 1 ? 's' : ''}`)}</option>`);
+  });
+  sel.innerHTML = groups.size
+    ? [...groups.values()].map(g =>
+        `<optgroup label="${VQ.esc(g.label)}">${g.opts.join('')}</optgroup>`).join('')
+    : '<option disabled>No reference matches the filter</option>';
+  if (groups.size && !sel.querySelector(`option[value="${_SY.idx}"]`)) {
+    _show(+sel.querySelector('option').value);
   } else {
     sel.value = String(_SY.idx);
   }
 }
 
 function _step(dir) {
-  const sel  = document.getElementById('syn-select');
-  const vals = [...sel.options].filter(o => !o.disabled).map(o => +o.value);
+  const vals = [...document.querySelectorAll('#syn-select option')]
+    .filter(o => !o.disabled).map(o => +o.value);
   if (!vals.length) return;
   const at = vals.indexOf(_SY.idx);
   _show(vals[(at + dir + vals.length) % vals.length]);
@@ -152,39 +171,46 @@ function _show(i) {
 
 // ── Cluster model ──────────────────────────────────────────────────────────
 
-/* Members of the current cluster, with their ORFs split into matched / not. */
+/* Contig position → reference position, from the placement in synteny.py. */
+function _toRef(syn, x) { return syn.flipped ? syn.offset - x : x + syn.offset; }
+function _ivToRef(syn, a, b) {
+  const p = _toRef(syn, a), q = _toRef(syn, b);
+  return [Math.min(p, q), Math.max(p, q)];
+}
+
+/* Members of the current cluster, left to right along the reference. */
 function _current() {
   const c   = _SY.clusters[_SY.idx];
   const ref = _SY.refs[c.reference];
   const members = c.members.map(id => _SY.seqById[id]).filter(s => s && s.synteny).map(seq => {
     const syn  = seq.synteny;
     const hits = syn.hits || [];
-    const matched = new Set(hits.map(h => h.orf_name));
+    const names = new Set(hits.map(h => h.orf_name));
+    const bits  = hits.reduce((a, h) => a + h.bit_score, 0);
     return {
       seq, syn, hits,
-      orfs:  (seq.orfs || []).filter(o => matched.has(o.name)),
-      other: (seq.orfs || []).filter(o => !matched.has(o.name)),
+      orfs:   (seq.orfs || []).filter(o => names.has(o.name)),
+      other:  (seq.orfs || []).filter(o => !names.has(o.name)),
+      span:   _ivToRef(syn, 0, seq.length || 0),
+      ident:  bits ? hits.reduce((a, h) => a + h.pident * h.bit_score, 0) / bits : null,
     };
-  });
+  }).sort((a, b) => a.span[0] - b.span[0] || (b.seq.length || 0) - (a.seq.length || 0));
   return { c, ref, members };
 }
 
-/* Contig position → reference position, from the placement in synteny.py. */
-function _toRef(m, x) {
-  return m.syn.flipped ? m.syn.offset - x : x + m.syn.offset;
-}
-function _ivToRef(m, a, b) {
-  const p = _toRef(m, a), q = _toRef(m, b);
-  return [Math.min(p, q), Math.max(p, q)];
-}
-function _shownStrand(m, strand) {
-  return m.syn.flipped ? (strand === '-' ? '+' : '-') : strand;
+/* Total length of the union of [start, end) intervals. */
+function _unionLen(ivs) {
+  let total = 0, cur = null;
+  [...ivs].sort((a, b) => a[0] - b[0]).forEach(([a, b]) => {
+    if (!cur || a > cur[1]) { if (cur) total += cur[1] - cur[0]; cur = [a, b]; }
+    else cur[1] = Math.max(cur[1], b);
+  });
+  return cur ? total + cur[1] - cur[0] : 0;
 }
 
-/* aa range on an ORF → [start, end) on the contig (strand-aware). */
-function _orfAaToNt(orf, a, b) {
-  if (orf.strand === '-') return [orf.stop_position - 3 * b, orf.stop_position - 3 * (a - 1)];
-  return [orf.start_position + 3 * (a - 1), orf.start_position + 3 * b];
+/* Domains listed for an ORF in the pairs table: Pfam (architecture) only. */
+function _shownDomains(orf) {
+  return VQ.genome.bestDomainPerDatabase(orf.domains || []).filter(d => !_FILTER_DBS.has(d.database));
 }
 
 /* Greedy lane packing of [start, end) items. */
@@ -198,39 +224,27 @@ function _lanes(items) {
   });
 }
 
+/* Ribbon / identity shading: 50 % → faint, 100 % → strong. */
+const _identOpacity = p => 0.14 + 0.56 * Math.max(0, Math.min(1, (p - 50) / 50));
+
 // ── Render ─────────────────────────────────────────────────────────────────
 
 function _render() {
   const body = document.getElementById('syn-body');
   if (!body) return;
-  const { ref, members } = _current();
-  const esc  = VQ.esc;
-  const matchedCds = new Set(members.flatMap(m => m.hits.map(h => h.cds_index)));
-  const noMatch    = members.filter(m => !m.hits.length).map(m => m.seq.id);
-  const refUrl     = VQ.ncbiUrl(ref.accession, 'nuccore');
-  const accHtml    = refUrl
-    ? `<a class="vq-acc-link" href="${esc(refUrl)}" target="_blank" rel="noopener noreferrer">${esc(ref.accession)}</a>`
-    : esc(ref.accession);
-
+  const cur = _current();
   body.innerHTML = `
-    <div class="vq-card vq-syn-summary">
-      <div class="vq-syn-summary__title">${esc(ref.organism || ref.title)}</div>
-      <div class="vq-syn-summary__sub">${esc(ref.title)}</div>
-      <div class="vq-syn-kv">
-        <span>Reference</span><span>${accHtml}</span>
-        <span>Length</span><span>${ref.length.toLocaleString()} nt</span>
-        <span>CDS matched</span><span>${matchedCds.size} / ${ref.cds.length}</span>
-        <span>Sequences</span><span>${members.length}</span>
-      </div>
-      ${noMatch.length ? `<div class="vq-syn-note">No ORF matched the reference proteins in:
-        ${noMatch.map(id => `<code>${esc(id)}</code>`).join(', ')}</div>` : ''}
-    </div>
+    ${_summaryCard(cur)}
     <div class="vq-card vq-syn-map"><div class="vq-genome-wrap" id="syn-map"></div></div>
-    <div class="vq-card vq-syn-pairs">${_pairsTable(ref, members)}</div>`;
+    <div class="vq-card vq-syn-pairs">${_pairsTable(cur.ref, cur.members)}</div>`;
 
   body.querySelectorAll('[data-jump]').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
     VQ.jumpToViewer(a.dataset.jump);
+  }));
+  body.querySelectorAll('[data-cluster]').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    _show(+a.dataset.cluster);
   }));
   _drawMap();
 }
@@ -242,266 +256,598 @@ function _drawMap() {
   wrap.appendChild(_syntenySVG(_current(), wrap.clientWidth));
 }
 
-// ── SVG ────────────────────────────────────────────────────────────────────
+// ── Summary card ───────────────────────────────────────────────────────────
+
+function _summaryCard({ ref, members }) {
+  const esc = VQ.esc;
+  const allHits    = members.flatMap(m => m.hits);
+  const matchedCds = new Set(allHits.map(h => h.cds_index));
+  const covered    = _unionLen(allHits.map(h => h.ref_nt));
+  const bits       = allHits.reduce((a, h) => a + h.bit_score, 0);
+  const ident      = bits ? allHits.reduce((a, h) => a + h.pident * h.bit_score, 0) / bits : null;
+  const nCanon     = members.reduce((a, m) => a + m.orfs.length, 0);
+  const nOrfs      = members.reduce((a, m) => a + m.orfs.length + m.other.length, 0);
+
+  // Taxonomy of the reference: the members' BLASTn-hit taxonomy names it.
+  const tax = members.map(m => (m.seq.blastn_taxonomy || {}).taxonomy || m.seq.taxonomy)
+    .find(t => t && (t.family || t.genus)) || {};
+  const refUrl = VQ.ncbiUrl(ref.accession, 'nuccore');
+
+  // Other references of the same organism (segments of a segmented virus).
+  const siblings = _SY.clusters
+    .map((c, i) => ({ c, i, r: _SY.refs[c.reference] }))
+    .filter(x => x.i !== _SY.idx && _orgKey(x.r) === _orgKey(ref));
+
+  const tags = [
+    refUrl ? `<a class="vq-tag" href="${esc(refUrl)}" target="_blank" rel="noopener noreferrer"
+                 title="Open the GenBank record at NCBI">${esc(ref.accession)} ↗</a>`
+           : `<span class="vq-tag">${esc(ref.accession)}</span>`,
+    tax.family ? `<span class="vq-tag vq-tag--plain">${esc(tax.family)}</span>` : '',
+    tax.genus  ? `<span class="vq-tag vq-tag--plain"><i>${esc(tax.genus)}</i></span>` : '',
+    tax.genome ? `<span class="vq-tag vq-tag--plain">${esc(tax.genome)}</span>` : '',
+  ].join('');
+
+  const chip = VQ.statChip;
+  const kpis = [
+    chip('Reference', `${_fmt(ref.length)} nt`, 'accent',
+         `${ref.cds.length} CDS${ref.peptides.length ? ` · ${ref.peptides.length} mature peptides` : ''}`),
+    chip('Genome covered', ref.length ? `${(100 * covered / ref.length).toFixed(1)}%` : '—', 'success',
+         `${_fmt(covered)} nt aligned by ORFs`),
+    chip('CDS matched', `${matchedCds.size} / ${ref.cds.length}`, '',
+         matchedCds.size < ref.cds.length ? `${ref.cds.length - matchedCds.size} without a matching ORF` : 'every CDS matched'),
+    chip('Canonical ORFs', `${nCanon} / ${nOrfs}`, '',
+         `${nOrfs - nCanon} non-canonical ${_SY.showAll ? 'shown in grey' : 'hidden'}`),
+    chip('aa identity', ident != null ? `${ident.toFixed(1)}%` : '—', '', 'bit-score weighted mean'),
+  ].join('');
+
+  const rows = members.map(m => {
+    const L  = ref.length || 1;
+    const pc = v => `${(100 * Math.max(0, Math.min(L, v)) / L).toFixed(2)}%`;
+    const span  = `left:${pc(m.span[0])};width:calc(${pc(m.span[1])} - ${pc(m.span[0])})`;
+    const marks = m.hits.map(h =>
+      `<span class="vq-syn-span__hit" style="left:${pc(h.ref_nt[0])};width:calc(${pc(h.ref_nt[1])} - ${pc(h.ref_nt[0])});opacity:${_identOpacity(h.pident) + 0.25}"></span>`
+    ).join('');
+    return `
+      <div class="vq-syn-member">
+        <a class="vq-syn-member__id" href="#" data-jump="${esc(m.seq.id)}" title="Open in the Sequence Viewer">${esc(m.seq.id)}</a>
+        <span class="vq-syn-member__meta">${_fmt(m.seq.length)} nt</span>
+        <span class="vq-badge ${m.syn.flipped ? 'vq-syn-badge--rc' : 'vq-badge--cluster'}"
+              title="${m.syn.flipped ? 'Reverse-complemented relative to the reference (drawn flipped)' : 'Same orientation as the reference'}">
+          ${m.syn.flipped ? '⇄ rev. comp.' : '→ forward'}</span>
+        <span class="vq-syn-span" title="Placed at ${_fmt(Math.max(0, m.span[0]) + 1)}–${_fmt(Math.min(L, m.span[1]))} on the reference">
+          <span class="vq-syn-span__extent" style="${span}"></span>${marks}
+        </span>
+        <span class="vq-syn-member__meta">${m.hits.length ? `${m.orfs.length} ORF${m.orfs.length !== 1 ? 's' : ''} · ${m.ident.toFixed(1)}%` : 'no matching ORF'}</span>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="vq-card vq-syn-head">
+      <div class="vq-syn-head__top">
+        <div class="vq-syn-head__id">
+          <div class="vq-syn-head__eyebrow">Reference genome · best viral BLASTn hit</div>
+          <div class="vq-syn-head__title">${esc(ref.organism || ref.title)}</div>
+          <div class="vq-syn-head__sub">${esc(ref.title)}</div>
+          <div class="vq-tag-row">${tags}</div>
+        </div>
+        ${siblings.length ? `
+        <div class="vq-syn-head__sib">
+          <div class="vq-syn-head__eyebrow">Other references of this virus</div>
+          <div class="vq-tag-row">${siblings.map(x => `
+            <a class="vq-tag" href="#" data-cluster="${x.i}"
+               title="${esc(x.r.title)}">${esc(x.r.accession)} · ${_fmt(x.r.length)} nt</a>`).join('')}</div>
+        </div>` : ''}
+      </div>
+      <div class="vq-stats-row vq-stats-row--top vq-syn-kpis">${kpis}</div>
+      <div class="vq-syn-members">
+        <div class="vq-syn-head__eyebrow">Sequences on this reference (${members.length})</div>
+        ${rows}
+      </div>
+    </div>`;
+}
+
+// ── SVG (gggenomes-style: stacked tracks + curved links) ──────────────────
+//
+// Every track (the reference, then the member sequences) is drawn on the
+// reference coordinate axis — members flipped / shifted by their placement.
+// A link is drawn for EVERY blastp HSP between two drawn genes: reference
+// CDS ↔ member ORF, and member ORF ↔ member ORF (the contig blastp of
+// synteny.py; older reports derive these from the shared reference). Each
+// link leaves its upper gene exactly at the HSP's start/end, runs straight
+// behind any track in between, bends in the gaps and lands on the lower
+// gene at that HSP's start/end there. Links are near-invisible until hovered.
+// Genes are coloured by "gene family": the reference CDS, or its mature
+// peptides when it has them, so a polyprotein reads as capsid · E · NS1…
+
+const GENE_PALETTE = [
+  '#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02',
+  '#1f78b4', '#a6761d', '#b2abd2', '#fb8072', '#80b1d3', '#b3de69',
+];
+const NA_FILL     = '#d9d2c3';   // part of a gene with no family (gap between peptides, …)
+const GENE_STROKE = '#3b3b3b';
+const LINK_OPACITY = 0.1;        // resting opacity — links show on hover
+
+/* Gene families of a reference: one per mature peptide of a CDS that has them,
+   else one per CDS. Coloured in genome order. */
+function _families(ref) {
+  const fams = [];
+  ref.cds.forEach((c, i) => {
+    const peps = (ref.peptides || []).filter(p => p.parent === i).sort((a, b) => a.start - b.start);
+    if (peps.length) {
+      peps.forEach(p => fams.push({ cds: i, start: p.start, end: p.end,
+        name: _shortPeptide(p.product), full: p.product }));
+    } else {
+      fams.push({ cds: i, start: c.start, end: c.end, name: c.product, full: c.product });
+    }
+  });
+  fams.sort((a, b) => a.start - b.start);
+  // Same name twice (e.g. three "hypothetical protein" CDS) → number them.
+  const seen = {};
+  fams.forEach(f => { seen[f.name] = (seen[f.name] || 0) + 1; });
+  const k = {};
+  fams.forEach((f, i) => {
+    if (seen[f.name] > 1) { k[f.name] = (k[f.name] || 0) + 1; f.name = `${f.name} ${k[f.name]}`; }
+    f.color = GENE_PALETTE[i % GENE_PALETTE.length];
+  });
+  return fams;
+}
+
+/* Family sections of the reference range [r0, r1] of CDS `cds`, carried onto
+   the displayed range [d0, d1] (linear). Returns [{f, r:[a,b], d:[a,b]}]. */
+function _sections(fams, cds, r0, r1, d0, d1) {
+  const span = r1 - r0 || 1;
+  const at = x => d0 + (x - r0) / span * (d1 - d0);
+  return fams.filter(f => f.cds === cds && f.end > r0 && f.start < r1).map(f => {
+    const a = Math.max(r0, f.start), b = Math.min(r1, f.end);
+    return { f, r: [a, b], d: [at(a), at(b)] };
+  });
+}
+
+/* Order the members so consecutive tracks share as much reference as possible. */
+function _trackOrder(ref, members) {
+  const ov = (a, b) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]));
+  const left = [...members];
+  const out  = [];
+  let prev = [0, ref.length];
+  while (left.length) {
+    let best = 0, score = -1;
+    left.forEach((m, i) => {
+      const s = ov(prev, m.span);
+      if (s > score || (s === score && m.span[0] < left[best].span[0])) { best = i; score = s; }
+    });
+    const m = left.splice(best, 1)[0];
+    out.push(m);
+    prev = m.span;
+  }
+  return out;
+}
+
+const GUT = 172, PAD_R2 = 24;
+const GENE_H = 16, LANE_GAP = 5;
+const LINK_H = 58, REF_LABEL_H = 48;
 
 function _syntenySVG({ ref, members }, containerWidth) {
-  const G   = VQ.genome;
   const esc = VQ.esc;
-  const W   = Math.max(containerWidth || 0, 720);
+  const W   = Math.max(containerWidth || 0, 760);
+  const fams = _families(ref);
+  const order = _trackOrder(ref, members);
 
-  // Common scale: the reference plus every member's placed extent.
+  // Two layouts. Reference axis: every track at its placement on the
+  // reference. Own coordinates (default): every track starts at the left
+  // edge, on one shared nt scale, so links stretch and bend between the
+  // aligned stretches. Either way a member keeps the reference's orientation.
+  // Gene / HSP positions stay in reference coordinates; each track's px()
+  // turns them into pixels.
   let lo = 0, hi = ref.length;
-  members.forEach(m => {
-    const [a, b] = _ivToRef(m, 0, m.seq.length || 0);
-    lo = Math.min(lo, a); hi = Math.max(hi, b);
-  });
-  const X = d3.scaleLinear([lo, hi], [PAD_L, W - PAD_R]);
+  order.forEach(m => { lo = Math.min(lo, m.span[0]); hi = Math.max(hi, m.span[1]); });
+  const maxLen = Math.max(ref.length, ...order.map(m => m.span[1] - m.span[0]));
+  const X = _SY.refAxis
+    ? d3.scaleLinear([lo, hi], [GUT, W - PAD_R2])
+    : d3.scaleLinear([0, maxLen], [GUT, W - PAD_R2]);
+  const pxOf = span => _SY.refAxis ? (v => X(v)) : (v => X(v - span[0]));
 
-  // Reference CDS lanes and the peptide row under each lane.
-  const cdsItems = _lanes(ref.cds.map((c, i) => ({ start: c.start, end: c.end, c, i })));
-  const nCdsLanes = Math.max(1, ...cdsItems.map(it => it.lane + 1));
-  const pepByCds  = {};
-  (ref.peptides || []).forEach(p => {
-    if (p.parent != null) (pepByCds[p.parent] = pepByCds[p.parent] || []).push(p);
-  });
-  const REF_LANE_H = ORF_H + PEP_H + 3 + LANE_G;
-  const matchedCds = new Set(members.flatMap(m => m.hits.map(h => h.cds_index)));
+  // ── Tracks: genes (display coords on the reference axis) packed in lanes ──
+  const refGenes = ref.cds.map((c, i) => ({
+    start: c.start, end: c.end, strand: c.strand, key: `ref__${i}`, c, i,
+    secs: _sections(fams, i, c.start, c.end, c.start, c.end),
+  }));
+  const tracks = [{ kind: 'ref', ref, genes: _lanes(refGenes), span: [0, ref.length],
+                   px: pxOf([0, ref.length]) }];
 
-  // Member layouts.
-  const AXIS_Y = 24;
-  let y = AXIS_Y + 10 + LABEL_H;
-  const refY = y;
-  y += nCdsLanes * REF_LANE_H;
-
-  const layouts = members.map(m => {
-    const item = (o, matched) => {
-      const [a, b] = _ivToRef(m, o.start_position, o.stop_position);
-      const doms = G.assignDomainLanes(G.bestDomainPerDatabase(o.domains || []));
-      return { start: a, end: b, orf: o, doms, matched };
+  order.forEach(m => {
+    const hitsBy = {};
+    m.hits.forEach(h => { (hitsBy[h.orf_name] = hitsBy[h.orf_name] || []).push(h); });
+    const gene = (o, canon) => {
+      const [a, b] = _ivToRef(m.syn, o.start_position, o.stop_position);
+      const secs = canon ? (hitsBy[o.name] || []).flatMap(h => {
+        const d = _ivToRef(m.syn, h.orf_nt[0], h.orf_nt[1]);
+        return _sections(fams, h.cds_index, h.ref_nt[0], h.ref_nt[1], d[0], d[1]);
+      }) : [];
+      return {
+        start: a, end: b, orf: o, canon, key: _linkKey(m, o.name),
+        strand: m.syn.flipped ? (o.strand === '-' ? '+' : '-') : o.strand, secs,
+      };
     };
-    // Matched ORFs take the top lanes, where the ribbons land; non-canonical
-    // ones, when shown, are packed in the lanes below.
-    const top   = _lanes(m.orfs.map(o => item(o, true)));
-    const nTop  = Math.max(0, ...top.map(it => it.lane + 1));
+    const top   = _lanes(m.orfs.map(o => gene(o, true)));
+    const nTop  = Math.max(0, ...top.map(g => g.lane + 1));
     const below = _SY.showAll
-      ? _lanes(m.other.map(o => item(o, false))).map(it => ({ ...it, lane: it.lane + nTop }))
+      ? _lanes(m.other.map(o => gene(o, false))).map(g => ({ ...g, lane: g.lane + nTop }))
       : [];
-    const items = top.concat(below);
-    const laneDom = [];
-    items.forEach(it => {
-      const nd = Math.max(0, ...it.doms.map(d => d.lane + 1));
-      laneDom[it.lane] = Math.max(laneDom[it.lane] || 0, nd);
-    });
-    const nLanes = Math.max(1, laneDom.length);
-    const laneY = [];
-    const ribTop = y;
-    let ly = y + RIB_H + LABEL_H;
-    for (let l = 0; l < nLanes; l++) {
-      laneY.push(ly);
-      ly += ORF_H + (laneDom[l] || 0) * (DOM_H + DOM_G) + LANE_G;
-    }
-    const layout = { m, items, laneY, ribTop, labelY: ribTop + RIB_H + 11 };
-    y = ly + 4;
-    return layout;
+    tracks.push({ kind: 'seq', m, genes: top.concat(below), span: m.span, px: pxOf(m.span) });
   });
-  const totalH = y + 30;
+
+  // ── Vertical layout ──
+  let y = 22 + REF_LABEL_H;
+  tracks.forEach((t, i) => {
+    if (i) y += LINK_H;
+    const nL = Math.max(1, ...t.genes.map(g => g.lane + 1));
+    t.top = y;
+    t.laneY = [];
+    for (let l = 0; l < nL; l++) { t.laneY.push(y); y += GENE_H + (l < nL - 1 ? LANE_GAP : 0); }
+    t.bottom = y;
+  });
+  const axisY   = y + 26;
+  const legendY = axisY + 34;
+  const legend  = _legendItems(fams);
+  const colW    = Math.min(300, Math.max(140, 40 + 6 * Math.max(...legend.map(it => it.label.length))));
+  const perRow  = Math.max(1, Math.floor((W - GUT - PAD_R2) / colW));
+  const totalH  = legendY + Math.ceil(legend.length / perRow) * 18 + 16;
 
   const svg = d3.create('svg')
-    .attr('class', 'vq-genome-svg vq-genome-svg--fluid')
+    .attr('class', 'vq-genome-svg vq-genome-svg--fluid vq-syn-svg')
     .attr('viewBox', `0 0 ${W} ${totalH}`)
     .attr('preserveAspectRatio', 'xMinYMin meet')
     .style('width', '100%').style('height', 'auto');
+  svg.append('rect').attr('width', W).attr('height', totalH).attr('fill', 'var(--vq-surface)');
+  const defs = svg.append('defs');
+  const uid  = `syn${Math.random().toString(36).slice(2, 8)}`;
 
-  // Axis (reference coordinates).
-  const axisG = svg.append('g').attr('transform', `translate(0, ${AXIS_Y})`)
-    .call(d3.axisTop(X).ticks(Math.min(14, Math.max(4, Math.round(W / 120)))).tickSize(0)
-      .tickFormat(hi - lo > 50000 ? d3.format(',') : null));
-  axisG.selectAll('.tick line').attr('y1', 0).attr('y2', totalH - AXIS_Y - 26)
-    .attr('stroke', 'var(--vq-border)').attr('stroke-dasharray', '3,3');
-  axisG.select('.domain').attr('stroke', 'var(--vq-border-dark)');
-  axisG.selectAll('.tick text').style('font-size', '9.5px').style('fill', 'var(--vq-text-3)');
+  // Links first, so the tracks paint over the stretches that run behind them.
+  const linkG = svg.append('g').attr('class', 'vq-syn-links');
+  _collectLinks(tracks, fams, ref, esc).forEach(l => _drawLink(linkG, svg, tracks, l));
 
-  const label = (x, yy, text, bold) => svg.append('text')
-    .attr('x', x).attr('y', yy).attr('font-size', 10.5)
-    .attr('font-weight', bold ? 600 : 400).attr('fill', 'var(--vq-text-2)').text(text);
+  tracks.forEach((t, i) => _drawTrack(svg, defs, `${uid}_${i}`, t, esc));
+  _drawRefLabels(svg, tracks[0], fams);
 
-  // ── Ribbons (behind the tracks) ──
-  const ribG = svg.append('g').attr('class', 'vq-syn-ribbons');
-  const refLaneOf = {};
-  cdsItems.forEach(it => { refLaneOf[it.i] = it.lane; });
-  const refBottom = refY + nCdsLanes * REF_LANE_H - LANE_G;
+  // ── Axis ──
+  const kb = (_SY.refAxis ? hi - lo : maxLen) > 5000;
+  const axisG = svg.append('g').attr('transform', `translate(0, ${axisY})`)
+    .call(d3.axisBottom(X).ticks(Math.min(12, Math.max(4, Math.round((W - GUT) / 110))))
+      .tickFormat(d => kb ? `${d3.format(',')(d / 1000)}k` : d3.format(',')(d)));
+  axisG.select('.domain').attr('stroke', 'var(--vq-text-2)');
+  axisG.selectAll('.tick line').attr('stroke', 'var(--vq-text-2)');
+  axisG.selectAll('.tick text').style('font-size', '10px').style('fill', 'var(--vq-text-2)');
+  svg.append('text').attr('x', GUT - 12).attr('y', axisY + 14).attr('text-anchor', 'end')
+    .attr('font-size', 9.5).attr('fill', 'var(--vq-text-3)')
+    .text(_SY.refAxis ? 'reference position' : 'position from track start');
 
-  layouts.forEach(L => {
-    const laneOfOrf = {};
-    L.items.forEach(it => { laneOfOrf[it.orf.name] = it.lane; });
-    L.m.hits.forEach(h => {
-      if (laneOfOrf[h.orf_name] == null) return;
-      const yTop = refBottom;
-      const yBot = L.laneY[0] - 2;
-      const cds  = ref.cds[h.cds_index];
-      const op   = 0.12 + 0.55 * Math.max(0, Math.min(1, (h.pident - 30) / 70));
-      // One ribbon per CDS part (exon) the alignment spans; reports without
-      // segments fall back to the envelope.
-      const segs = (h.segments && h.segments.length)
-        ? h.segments : [[h.ref_nt[0], h.ref_nt[1], h.orf_nt[0], h.orf_nt[1]]];
-      segs.forEach(([r0, r1, o0, o1]) => {
-      const [c0, c1] = _ivToRef(L.m, o0, o1);
-      ribG.append('polygon')
-        .attr('points', `${X(r0)},${yTop} ${X(r1)},${yTop} ${X(c1)},${yBot} ${X(c0)},${yBot}`)
-        .attr('fill', 'var(--vq-accent)').attr('opacity', op)
-        .attr('stroke', 'var(--vq-accent-dark)').attr('stroke-width', 0.4).attr('stroke-opacity', 0.5)
-        .on('mousemove', evt => VQ.tooltipShow(`
-          <div class="vq-tooltip__title">${esc(h.orf_name)} ↔ ${esc(cds.product)}</div>
-          <div class="vq-tooltip__row">
-            <span class="vq-tooltip__key">Identity</span><span>${h.pident.toFixed(1)}%</span>
-            <span class="vq-tooltip__key">E-value</span><span>${h.evalue.toExponential(1)}</span>
-            <span class="vq-tooltip__key">ORF cov</span><span>${h.q_cov}% (aa ${h.q_start}–${h.q_end})</span>
-            <span class="vq-tooltip__key">CDS cov</span><span>${h.s_cov}% (aa ${h.s_start}–${h.s_end})</span>
-            <span class="vq-tooltip__key">Protein</span><span>${esc(cds.protein_id || '—')}</span>
-          </div>`, evt))
-        .on('mouseleave', VQ.tooltipHide);
-      });
-    });
-  });
-
-  // ── Reference track ──
-  label(PAD_L, refY - 6, `Reference · ${ref.accession}`, true);
-  svg.append('line').attr('x1', X(0)).attr('x2', X(ref.length))
-    .attr('y1', refY + ORF_H / 2).attr('y2', refY + ORF_H / 2)
-    .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1.5);
-  cdsItems.forEach(it => {
-    const c  = it.c;
-    const yy = refY + it.lane * REF_LANE_H;
-    const x1 = X(c.start), x2 = Math.max(X(c.end), x1 + 4);
-    const hit = matchedCds.has(it.i);
-    const g  = svg.append('g');
-    g.append('polygon')
-      .attr('points', G.orfArrowPoints(x1, x2, yy, ORF_H, c.strand))
-      .attr('fill', hit ? 'var(--vq-primary-light)' : 'var(--vq-surface-2)')
-      .attr('stroke', hit ? 'none' : 'var(--vq-border-dark)')
-      .attr('stroke-dasharray', hit ? null : '3,2')
-      .attr('opacity', hit ? 0.9 : 1)
-      .on('mousemove', evt => VQ.tooltipShow(`
-        <div class="vq-tooltip__title">${esc(c.product)}</div>
-        <div class="vq-tooltip__row">
-          <span class="vq-tooltip__key">Protein</span><span>${esc(c.protein_id || '—')}</span>
-          <span class="vq-tooltip__key">Position</span><span>${c.start + 1}–${c.end} (${c.strand})</span>
-          <span class="vq-tooltip__key">Length</span><span>${c.length_aa} aa</span>
-          <span class="vq-tooltip__key">Matched</span><span>${hit ? 'yes' : 'no ORF of these sequences'}</span>
-        </div>`, evt))
-      .on('mouseleave', VQ.tooltipHide);
-    if (x2 - x1 > c.product.length * 5.6 + 14) {
-      g.append('text').attr('x', (x1 + x2) / 2).attr('y', yy + ORF_H / 2 + 3.5)
-        .attr('text-anchor', 'middle').attr('font-size', 9.5).attr('pointer-events', 'none')
-        .attr('fill', hit ? 'rgba(255,255,255,.95)' : 'var(--vq-text-2)').text(c.product);
-    }
-    (pepByCds[it.i] || []).forEach((p, k) => {
-      const px1 = X(p.start), px2 = Math.max(X(p.end), px1 + 2);
-      svg.append('rect').attr('x', px1).attr('width', px2 - px1)
-        .attr('y', yy + ORF_H + 2).attr('height', PEP_H).attr('rx', 1)
-        .attr('fill', k % 2 ? 'var(--vq-text-3)' : 'var(--vq-border-dark)').attr('opacity', 0.75)
-        .on('mousemove', evt => VQ.tooltipShow(`
-          <div class="vq-tooltip__title">${esc(p.product)}</div>
-          <div class="vq-tooltip__row">
-            <span class="vq-tooltip__key">Mature peptide</span><span>${p.start + 1}–${p.end}</span>
-            <span class="vq-tooltip__key">Length</span><span>~${p.length_aa} aa</span>
-          </div>`, evt))
-        .on('mouseleave', VQ.tooltipHide);
-    });
-  });
-
-  // ── Member tracks ──
-  layouts.forEach(L => {
-    const { m } = L;
-    const [e0, e1] = _ivToRef(m, 0, m.seq.length || 0);
-    label(PAD_L, L.labelY,
-      `${m.seq.id} · ${(m.seq.length || 0).toLocaleString()} nt${m.syn.flipped ? ' · reverse complement' : ''}`
-      + (m.hits.length ? '' : ' · no matching ORF'), true)
-      .style('cursor', 'pointer').on('click', () => VQ.jumpToViewer(m.seq.id));
-    svg.append('line').attr('x1', X(e0)).attr('x2', X(e1))
-      .attr('y1', L.laneY[0] + ORF_H / 2).attr('y2', L.laneY[0] + ORF_H / 2)
-      .attr('stroke', 'var(--vq-border-dark)').attr('stroke-width', 1.5).attr('stroke-dasharray', '2,3');
-
-    L.items.forEach(it => {
-      const o  = it.orf;
-      const yy = L.laneY[it.lane];
-      const x1 = X(it.start), x2 = Math.max(X(it.end), x1 + 4);
-      const st = _shownStrand(m, o.strand);
-      const col = !it.matched ? 'var(--vq-muted)' : (st === '-' ? 'var(--vq-warning)' : 'var(--vq-accent)');
-      const g = svg.append('g').attr('opacity', it.matched ? 1 : 0.45);
-      g.append('polygon')
-        .attr('points', G.orfArrowPoints(x1, x2, yy, ORF_H, st))
-        .attr('fill', col).attr('opacity', .88).style('cursor', 'pointer')
-        .on('mousemove', evt => VQ.tooltipShow(`
-          <div class="vq-tooltip__title">${esc(o.name)}</div>
-          <div class="vq-tooltip__row">
-            <span class="vq-tooltip__key">Frame</span><span>${esc(o.frame)}</span>
-            <span class="vq-tooltip__key">Length</span><span>${o.length_aa} aa</span>
-            <span class="vq-tooltip__key">Position</span><span>${o.start_position}–${o.stop_position} (${esc(o.strand)})</span>
-            <span class="vq-tooltip__key">Reference</span><span>${it.matched ? 'matched' : 'no match (non-canonical)'}</span>
-          </div>
-          <div style="margin-top:5px;font-size:10px;color:rgba(255,255,255,.55)">Click to open in the Sequence Viewer</div>`, evt))
-        .on('mouseleave', VQ.tooltipHide)
-        .on('click', () => VQ.jumpToViewer(m.seq.id));
-
-      it.doms.forEach(d => {
-        const [a, b] = _orfAaToNt(o, d.dom.start, d.dom.stop);
-        const [ra, rb] = _ivToRef(m, a, b);
-        const dx1 = X(ra), dw = Math.max(X(rb) - dx1, 3);
-        g.append('rect').attr('x', dx1).attr('width', dw)
-          .attr('y', yy + ORF_H + d.lane * (DOM_H + DOM_G) + 1).attr('height', DOM_H).attr('rx', 2)
-          .attr('fill', G.domainColor(d.dom.target)).attr('opacity', .9)
-          .on('mousemove', evt => VQ.tooltipShow(`
-            <div class="vq-tooltip__title">${esc(d.dom.target)}</div>
-            <div class="vq-tooltip__row">
-              <span class="vq-tooltip__key">Database</span><span>${esc(d.dom.database)}</span>
-              <span class="vq-tooltip__key">Score</span><span>${d.dom.score}</span>
-              <span class="vq-tooltip__key">E-value</span><span>${d.dom.e_value?.toExponential(2) ?? '—'}</span>
-              <span class="vq-tooltip__key">aa range</span><span>${d.dom.start}–${d.dom.stop}</span>
-            </div>`, evt))
-          .on('mouseleave', VQ.tooltipHide);
-      });
-    });
-  });
-
-  // ── Legend ──
-  const lg = svg.append('g').attr('transform', `translate(${PAD_L}, ${totalH - 18})`);
-  const txt = (x, t) => lg.append('text').attr('x', x).attr('y', 8.5)
-    .style('font-size', '9.5px').style('fill', 'var(--vq-text-3)').text(t);
-  lg.append('polygon').attr('points', G.orfArrowPoints(0, 18, 0, 9, '+')).attr('fill', 'var(--vq-primary-light)');
-  txt(24, 'Reference CDS');
-  lg.append('polygon').attr('points', G.orfArrowPoints(104, 122, 0, 9, '+'))
-    .attr('fill', 'var(--vq-surface-2)').attr('stroke', 'var(--vq-border-dark)').attr('stroke-dasharray', '3,2');
-  txt(128, 'CDS without match');
-  lg.append('polygon').attr('points', G.orfArrowPoints(226, 244, 0, 9, '+')).attr('fill', 'var(--vq-accent)');
-  txt(250, 'Matched ORF');
-  lg.append('rect').attr('x', 322).attr('width', 12).attr('height', 5).attr('y', 2).attr('rx', 1)
-    .attr('fill', 'var(--vq-dom-1)');
-  txt(340, 'HMM domain');
-  [0.15, 0.4, 0.67].forEach((op, k) => lg.append('rect').attr('x', 416 + k * 12).attr('width', 12)
-    .attr('height', 9).attr('fill', 'var(--vq-accent)').attr('opacity', op));
-  txt(456, 'aa identity 30% → 100%');
-
+  _drawLegend(svg, legend, legendY, perRow, colW);
   return svg.node();
+}
+
+function _drawTrack(svg, defs, id, t, esc) {
+  const X = t.px;
+  const G = VQ.genome;
+  const isRef = t.kind === 'ref';
+  const g = svg.append('g').attr('class', 'vq-syn-track');
+  const yMid = t.laneY[0] + GENE_H / 2;
+
+  // Name in the left gutter.
+  const name = isRef ? t.ref.accession : t.m.seq.id;
+  const sub  = isRef ? `reference · ${_fmt(t.ref.length)} nt`
+    : `${_fmt(t.m.seq.length)} nt${t.m.syn.flipped ? ' · rev. comp.' : ''}`;
+  const lbl = g.append('text').attr('x', GUT - 14).attr('y', yMid - 1).attr('text-anchor', 'end');
+  lbl.append('tspan').attr('font-size', 11.5).attr('font-weight', 600)
+    .attr('fill', isRef ? 'var(--vq-primary)' : 'var(--vq-text)')
+    .text(name.length > 24 ? name.slice(0, 23) + '…' : name);
+  lbl.append('tspan').attr('x', GUT - 14).attr('dy', 13).attr('font-size', 9.5)
+    .attr('fill', 'var(--vq-text-3)').text(sub);
+  if (!isRef) lbl.style('cursor', 'pointer').on('click', () => VQ.jumpToViewer(t.m.seq.id))
+    .append('title').text('Open in the Sequence Viewer');
+
+  // Backbone with end caps.
+  const x0 = X(t.span[0]), x1 = X(t.span[1]);
+  g.append('line').attr('x1', x0).attr('x2', x1).attr('y1', yMid).attr('y2', yMid)
+    .attr('stroke', GENE_STROKE).attr('stroke-width', 1.2);
+  [x0, x1].forEach((x, k) => g.append('rect')
+    .attr('x', k ? x : x - 5).attr('width', 5).attr('y', yMid - GENE_H / 2 - 3).attr('height', GENE_H + 6)
+    .attr('fill', isRef ? 'var(--vq-primary-light)' : 'var(--vq-text-3)').attr('opacity', 0.8));
+
+  t.genes.forEach((gn, n) => {
+    const gy  = t.laneY[gn.lane];
+    const gx1 = X(gn.start), gx2 = Math.max(X(gn.end), gx1 + 4);
+    const pts = G.orfArrowPoints(gx1, gx2, gy, GENE_H, gn.strand);
+    const cid = `${id}_${n}`;
+    const gg  = g.append('g').attr('opacity', isRef || gn.canon ? 1 : 0.55);
+    defs.append('clipPath').attr('id', cid).append('polygon').attr('points', pts);
+    gg.append('polygon').attr('points', pts).attr('fill', NA_FILL);
+    const body = gg.append('g').attr('clip-path', `url(#${cid})`);
+    gn.secs.forEach(s => body.append('rect')
+      .attr('x', X(Math.min(s.d[0], s.d[1]))).attr('width', Math.abs(X(s.d[1]) - X(s.d[0])))
+      .attr('y', gy).attr('height', GENE_H).attr('fill', s.f.color));
+    gg.append('polygon').attr('points', pts)
+      .attr('class', 'vq-syn-gene').attr('data-link', gn.key)
+      .attr('fill', 'transparent').attr('stroke', GENE_STROKE).attr('stroke-width', 0.9)
+      .style('cursor', isRef ? 'default' : 'pointer')
+      .on('mouseenter', () => _highlight(svg, [gn.key], true))
+      .on('mousemove', evt => VQ.tooltipShow(_geneTip(t, gn, esc), evt))
+      .on('mouseleave', () => { _highlight(svg, [gn.key], false); VQ.tooltipHide(); })
+      .on('click', () => { if (!isRef) VQ.jumpToViewer(t.m.seq.id); });
+  });
+}
+
+function _geneTip(t, gn, esc) {
+  const fams = [...new Set(gn.secs.map(s => s.f.full))];
+  if (t.kind === 'ref') {
+    const c = gn.c;
+    return `
+      <div class="vq-tooltip__title">${esc(c.product)}</div>
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Protein</span><span>${esc(c.protein_id || '—')}</span>
+        <span class="vq-tooltip__key">Position</span><span>${_fmt(c.start + 1)}–${_fmt(c.end)} (${c.strand})</span>
+        <span class="vq-tooltip__key">Length</span><span>${_fmt(c.length_aa)} aa</span>
+      </div>
+      ${fams.length > 1 ? `<div style="margin-top:5px;font-size:10px;color:rgba(255,255,255,.72)">${fams.map(esc).join(' · ')}</div>` : ''}`;
+  }
+  const o = gn.orf;
+  return `
+    <div class="vq-tooltip__title">${esc(o.name)}</div>
+    <div class="vq-tooltip__row">
+      <span class="vq-tooltip__key">Frame</span><span>${esc(o.frame)}</span>
+      <span class="vq-tooltip__key">Length</span><span>${_fmt(o.length_aa)} aa</span>
+      <span class="vq-tooltip__key">Position</span><span>${_fmt(o.start_position)}–${_fmt(o.stop_position)} (${esc(o.strand)})</span>
+      <span class="vq-tooltip__key">Reference</span><span>${gn.canon ? esc(fams.join(' · ') || 'matched') : 'no match (non-canonical)'}</span>
+    </div>
+    <div style="margin-top:5px;font-size:10px;color:rgba(255,255,255,.55)">Click to open in the Sequence Viewer</div>`;
+}
+
+/* Gene-family names above the reference: level when the name fits over its
+   gene, else rotated (skipping ones that would collide). Overlapping genes
+   sit in lower lanes, so their names are left to the legend. */
+function _drawRefLabels(svg, refTrack, fams) {
+  const X = refTrack.px;
+  const y = refTrack.top - 6;
+  const lane0 = new Set(refTrack.genes.filter(g => g.lane === 0).map(g => g.i));
+  let lastX = -Infinity;
+  fams.filter(f => lane0.has(f.cds)).forEach(f => {
+    const x1 = X(f.start), x2 = X(f.end), xm = (x1 + x2) / 2;
+    if (x2 - x1 < 4) return;
+    const t = svg.append('text').attr('font-size', 10).attr('fill', 'var(--vq-text)');
+    if (x2 - x1 > f.name.length * 6 + 12) {
+      t.attr('x', xm).attr('y', y).attr('text-anchor', 'middle').text(f.name);
+      lastX = x2;
+    } else {
+      if (xm - lastX < 12) { t.remove(); return; }
+      t.attr('transform', `translate(${xm},${y}) rotate(-35)`)
+        .text(f.name.length > 18 ? f.name.slice(0, 17) + '…' : f.name);
+      lastX = xm;
+    }
+    t.append('title').text(f.full);
+  });
+}
+
+// ── Links ──────────────────────────────────────────────────────────────────
+
+/* Every link to draw: {up:{t, key, iv}, down:{t, key, iv}, color, pident, tip}
+   where iv is the HSP's [start, end) on that gene in display coordinates. */
+function _collectLinks(tracks, fams, ref, esc) {
+  const links = [];
+  const where = new Map();             // gene key → track index, for drawn genes
+  tracks.forEach((t, ti) => t.genes.forEach(g => {
+    if (t.kind === 'ref' || g.canon) where.set(g.key, ti);
+  }));
+  const add = (ka, ia, kb, ib, color, pident, tip) => {
+    const ta = where.get(ka), tb = where.get(kb);
+    if (ta == null || tb == null || ta === tb) return;
+    const [u, d] = ta < tb ? [[ta, ka, ia], [tb, kb, ib]] : [[tb, kb, ib], [ta, ka, ia]];
+    // `r`: the link's stretch in reference coordinates, used to route it
+    // through the homologous stretch of any track it crosses.
+    links.push({ up: { t: u[0], key: u[1], iv: u[2] }, down: { t: d[0], key: d[1], iv: d[2] },
+                 r: [Math.min(...ia), Math.max(...ia)], color, pident, tip });
+  };
+
+  const members = tracks.slice(1).map(t => t.m);
+
+  // Reference CDS ↔ member ORF: every HSP, per CDS part, split by family.
+  members.forEach(m => m.hits.forEach(h => {
+    const cds  = ref.cds[h.cds_index];
+    const tip  = `
+      <div class="vq-tooltip__title">${esc(h.orf_name)} ↔ ${esc(cds.product)}</div>
+      <div class="vq-tooltip__row">
+        <span class="vq-tooltip__key">Identity</span><span>${h.pident.toFixed(1)}%</span>
+        <span class="vq-tooltip__key">E-value</span><span>${h.evalue.toExponential(1)}</span>
+        <span class="vq-tooltip__key">ORF aa</span><span>${h.q_start}–${h.q_end} (${h.q_cov}%)</span>
+        <span class="vq-tooltip__key">CDS aa</span><span>${h.s_start}–${h.s_end} (${h.s_cov}%)</span>
+      </div>`;
+    const segs = (h.segments && h.segments.length)
+      ? h.segments : [[h.ref_nt[0], h.ref_nt[1], h.orf_nt[0], h.orf_nt[1]]];
+    segs.forEach(([r0, r1, o0, o1]) => {
+      const d = _ivToRef(m.syn, o0, o1);
+      const secs = _sections(fams, h.cds_index, r0, r1, d[0], d[1]);
+      (secs.length ? secs : [{ f: { color: NA_FILL }, r: [r0, r1], d }]).forEach(s =>
+        add(`ref__${h.cds_index}`, s.r, _linkKey(m, h.orf_name), s.d, s.f.color, h.pident, tip));
+    });
+  }));
+
+  // Member ORF ↔ member ORF: every contig blastp HSP, for every pair of members.
+  const hasLinks = members.some(m => Array.isArray(m.syn.links));
+  const bestHit = (m, orf) => m.hits.filter(h => h.orf_name === orf)
+    .sort((p, q) => q.bit_score - p.bit_score)[0];
+  for (let i = 0; i < members.length; i++) {
+    for (let j = i + 1; j < members.length; j++) {
+      const a = members[i], b = members[j];
+      const pairs = [];
+      if (hasLinks) {
+        (a.syn.links || []).filter(l => l.other_seq === b.seq.id).forEach(l => pairs.push(
+          { a, b, oa: l.orf_name, ob: l.other_orf, na: l.orf_nt, nb: l.other_nt, l }));
+        (b.syn.links || []).filter(l => l.other_seq === a.seq.id).forEach(l => pairs.push(
+          { a, b, oa: l.other_orf, ob: l.orf_name, na: l.other_nt, nb: l.orf_nt, l,
+            swap: true }));
+      } else {
+        // Older reports: the reference stretch two hits on one CDS share.
+        a.hits.forEach(ha => b.hits.forEach(hb => {
+          if (ha.cds_index !== hb.cds_index) return;
+          const s = Math.max(ha.ref_nt[0], hb.ref_nt[0]), e = Math.min(ha.ref_nt[1], hb.ref_nt[1]);
+          if (e <= s) return;
+          const sub = (h, x) => h.orf_nt[0] + (x - h.ref_nt[0]) / ((h.ref_nt[1] - h.ref_nt[0]) || 1) * (h.orf_nt[1] - h.orf_nt[0]);
+          pairs.push({ a, b, oa: ha.orf_name, ob: hb.orf_name, derived: true,
+            na: [sub(ha, s), sub(ha, e)].sort((p, q) => p - q),
+            nb: [sub(hb, s), sub(hb, e)].sort((p, q) => p - q),
+            l: { pident: Math.min(ha.pident, hb.pident) } });
+        }));
+      }
+      pairs.forEach(p => {
+        const da = _ivToRef(a.syn, p.na[0], p.na[1]);
+        const db = _ivToRef(b.syn, p.nb[0], p.nb[1]);
+        const ha = bestHit(a, p.oa);
+        let secs = ha ? _sections(fams, ha.cds_index, da[0], da[1], db[0], db[1]) : [];
+        if (!secs.length) secs = [{ f: { color: NA_FILL }, r: da, d: db }];
+        const l = p.l;
+        const aa = p.derived ? '' : (p.swap
+          ? `<span class="vq-tooltip__key">aa</span><span>${l.s_start ?? '?'}–${l.s_end ?? '?'} ↔ ${l.q_start ?? '?'}–${l.q_end ?? '?'}</span>`
+          : `<span class="vq-tooltip__key">aa</span><span>${l.q_start ?? '?'}–${l.q_end ?? '?'} ↔ ${l.s_start ?? '?'}–${l.s_end ?? '?'}</span>`);
+        const tip = `
+          <div class="vq-tooltip__title">${esc(p.oa)} ↔ ${esc(p.ob)}</div>
+          <div class="vq-tooltip__row">
+            ${p.derived
+              ? `<span class="vq-tooltip__key">Via</span><span>shared reference stretch</span>`
+              : `<span class="vq-tooltip__key">Identity</span><span>${l.pident.toFixed(1)}%</span>
+                 <span class="vq-tooltip__key">E-value</span><span>${l.evalue.toExponential(1)}</span>${aa}`}
+          </div>`;
+        secs.forEach(s => add(_linkKey(a, p.oa), s.r, _linkKey(b, p.ob), s.d,
+          s.f.color, l.pident ?? 100, tip));
+      });
+    }
+  }
+  return links;
+}
+
+/* One link as a band: it leaves the upper gene at the HSP's start/end, runs
+   straight behind every track in between (at a position eased from one end
+   to the other), bends in each gap with vertical tangents, and lands on the
+   lower gene at that gene's HSP start/end. */
+function _drawLink(g, svg, tracks, l) {
+  const U = tracks[l.up.t], D = tracks[l.down.t];
+  const gU = U.genes.find(x => x.key === l.up.key);
+  const gD = D.genes.find(x => x.key === l.down.key);
+  if (!gU || !gD) return;
+  const ends = (t, iv) => { const p = [t.px(iv[0]), t.px(iv[1])]; return [Math.min(...p), Math.max(...p)]; };
+  const a = ends(U, l.up.iv);
+  const b = ends(D, l.down.iv);
+
+  // Vertical levels the band passes straight through.
+  const yStart = U.laneY[gU.lane] + GENE_H;      // bottom of the upper gene
+  const yEnd   = D.laneY[gD.lane];               // top of the lower gene
+  const levels = [{ y0: yStart, y1: U.bottom + 3 }];
+  for (let k = l.up.t + 1; k < l.down.t; k++) {
+    levels.push({ y0: tracks[k].top - 3, y1: tracks[k].bottom + 3 });
+  }
+  levels.push({ y0: D.top - 3, y1: yEnd });
+  const span = levels[levels.length - 1].y0 - levels[0].y1 || 1;
+  const ease = t => t * t * (3 - 2 * t);
+  levels.forEach((lv, i) => {
+    // A track in between that also covers this reference stretch: pass
+    // through its homologous stretch. Otherwise ease from one end to the other.
+    const T = tracks[l.up.t + i];
+    const ov = T ? Math.min(l.r[1], T.span[1]) - Math.max(l.r[0], T.span[0]) : 0;
+    if (i > 0 && i < levels.length - 1 && ov >= 0.5 * (l.r[1] - l.r[0])) {
+      [lv.l, lv.r] = ends(T, l.r);
+      return;
+    }
+    const t = ease(Math.max(0, Math.min(1, ((lv.y0 + lv.y1) / 2 - levels[0].y1) / span)));
+    lv.l = a[0] + (b[0] - a[0]) * t;
+    lv.r = a[1] + (b[1] - a[1]) * t;
+  });
+  levels[0].l = a[0]; levels[0].r = a[1];
+  const last = levels[levels.length - 1];
+  last.l = b[0]; last.r = b[1];
+
+  let d = `M${levels[0].l},${levels[0].y0} L${levels[0].l},${levels[0].y1}`;
+  for (let i = 1; i < levels.length; i++) {
+    const p = levels[i - 1], q = levels[i], ym = (p.y1 + q.y0) / 2;
+    d += ` C${p.l},${ym} ${q.l},${ym} ${q.l},${q.y0} L${q.l},${q.y1}`;
+  }
+  d += ` L${last.r},${last.y1} L${last.r},${last.y0}`;
+  for (let i = levels.length - 2; i >= 0; i--) {
+    const p = levels[i], q = levels[i + 1], ym = (p.y1 + q.y0) / 2;
+    d += ` C${q.r},${ym} ${p.r},${ym} ${p.r},${p.y1} L${p.r},${p.y0}`;
+  }
+  d += ' Z';
+
+  const keys = [l.up.key, l.down.key];
+  const op = _SY.identShade ? 0.03 + 0.17 * Math.max(0, Math.min(1, (l.pident - 50) / 50)) : LINK_OPACITY;
+  g.append('path').attr('d', d)
+    .attr('class', 'vq-syn-link').attr('data-a', keys[0]).attr('data-b', keys[1])
+    .attr('fill', l.color).attr('fill-opacity', op)
+    .on('mouseenter', function () { d3.select(this).classed('vq-syn-hl', true); _highlight(svg, keys, true); })
+    .on('mousemove', evt => VQ.tooltipShow(l.tip, evt))
+    .on('mouseleave', function () {
+      d3.select(this).classed('vq-syn-hl', false);
+      _highlight(svg, keys, false);
+      VQ.tooltipHide();
+    });
+}
+
+function _legendItems(fams) {
+  const items = fams.map(f => ({ color: f.color, label: f.name, title: f.full }));
+  items.push({ color: NA_FILL, label: 'no reference family' });
+  return items;
+}
+
+function _drawLegend(svg, items, y0, perRow, colW) {
+  items.forEach((it, i) => {
+    const x = GUT + (i % perRow) * colW;
+    const y = y0 + Math.floor(i / perRow) * 18;
+    svg.append('polygon').attr('points', VQ.genome.orfArrowPoints(x, x + 20, y, 11, '+'))
+      .attr('fill', it.color).attr('stroke', GENE_STROKE).attr('stroke-width', 0.8);
+    svg.append('text').attr('x', x + 26).attr('y', y + 9.5).attr('font-size', 10.5)
+      .attr('fill', 'var(--vq-text-2)')
+      .text(it.label.length > 42 ? it.label.slice(0, 41) + '…' : it.label)
+      .append('title').text(it.title || it.label);
+  });
+  svg.append('text').attr('x', GUT - 14).attr('y', y0 + 9.5).attr('text-anchor', 'end')
+    .attr('font-size', 10.5).attr('font-weight', 600).attr('fill', 'var(--vq-text-2)').text('Genes');
+}
+
+/* Short gene-family name: "nonstructural protein NS5" → "NS5",
+   "envelope protein E" → "E", "2K protein" → "2K", "capsid protein" → "capsid". */
+const _GENERIC_WORDS = /^(protein|peptide|polypeptide|polyprotein|precursor|glycoprotein|mature|putative)$/i;
+function _shortPeptide(product) {
+  const words = String(product || '').trim().split(/\s+/).filter(Boolean);
+  while (words.length > 1 && _GENERIC_WORDS.test(words[words.length - 1])) words.pop();
+  const last = words[words.length - 1] || '';
+  if (/^[A-Za-z0-9'_-]{1,8}$/.test(last)) return last;
+  return words.join(' ') || product || '';
+}
+
+/* One key per (sequence, ORF): ties an ORF to its links. */
+const _linkKey = (m, orfName) => VQ.safeId(`${m.seq.id}__${orfName}`);
+
+/* Hovering a gene lights up it, every link touching it and the genes at the
+   other ends; hovering a link lights up that link and its two genes. */
+function _highlight(svg, keys, on) {
+  const genes = new Set(keys);
+  if (keys.length === 1) {
+    svg.selectAll(`[data-a="${keys[0]}"],[data-b="${keys[0]}"]`).each(function () {
+      d3.select(this).classed('vq-syn-hl', on);
+      genes.add(this.dataset.a); genes.add(this.dataset.b);
+    });
+  }
+  genes.forEach(k => svg.selectAll(`[data-link="${k}"]`).classed('vq-syn-hl', on));
+  svg.classed('vq-syn-dim', on);
 }
 
 // ── Pairs table ────────────────────────────────────────────────────────────
 
+function _orfDomainNames(orf) {
+  return [...new Set(_shownDomains(orf).map(d => d.target))];
+}
+
 function _pairRows(ref, members) {
   return members.flatMap(m => m.hits.map(h => {
     const orf = (m.seq.orfs || []).find(o => o.name === h.orf_name) || {};
-    const cds = ref.cds[h.cds_index];
-    const doms = _orfDomainNames(orf);
-    return { m, h, orf, cds, doms };
+    return { m, h, orf, cds: ref.cds[h.cds_index], doms: _orfDomainNames(orf) };
   }));
-}
-
-function _orfDomainNames(orf) {
-  const seen = [];
-  VQ.genome.bestDomainPerDatabase(orf.domains || []).forEach(d => {
-    if (!seen.includes(d.target)) seen.push(d.target);
-  });
-  return seen;
 }
 
 function _pairsTable(ref, members) {
@@ -515,7 +861,7 @@ function _pairsTable(ref, members) {
       <td class="vq-td--mono"><a href="#" data-jump="${esc(m.seq.id)}">${esc(m.seq.id)}</a></td>
       <td class="vq-td--mono">${esc(h.orf_name)}</td>
       <td class="vq-td--num">${esc(orf.frame ?? '—')}</td>
-      <td class="vq-td--num">${orf.length_aa ?? '—'}</td>
+      <td class="vq-td--num">${_fmt(orf.length_aa)}</td>
       <td>${esc(cds.product)}</td>
       <td class="vq-td--mono">${url
         ? `<a class="vq-acc-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(cds.protein_id)}</a>`
@@ -531,7 +877,8 @@ function _pairsTable(ref, members) {
     <table class="vq-table">
       <thead><tr>
         <th>Sequence</th><th>ORF</th><th>Frame</th><th>aa</th><th>Reference CDS</th>
-        <th>Protein</th><th>Identity</th><th>ORF cov</th><th>CDS cov</th><th>E-value</th><th>Domains</th>
+        <th>Protein</th><th>Identity</th><th>ORF cov</th><th>CDS cov</th><th>E-value</th>
+        <th>Pfam domains</th>
       </tr></thead>
       <tbody>${body}</tbody>
     </table>`;
