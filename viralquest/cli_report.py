@@ -30,7 +30,7 @@ from viralquest.report_data import build_report_data
 from viralquest.report_db import output_paths, validate_dataset_name, write_json, write_sqlite
 from viralquest.report_loader import load_samples
 
-__version__ = "3.0.12"
+__version__ = "3.0.13"
 
 HTML_NAME = "viralquest_report.html"
 
