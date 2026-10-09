@@ -29,9 +29,6 @@ function vqInitClusters(clusters) {
           members shown as alignments to representative sequence
         </div>
       </div>
-      <div class="vq-section-actions">
-        ${_identityLegend()}
-      </div>
     </div>
     <div id="clusters-list"></div>
   `;
@@ -220,7 +217,7 @@ function _clusterSVG(cluster, repLen, containerWidth) {
   cluster.members.forEach((m, i) => {
     const offsetNt = offsets[i];
     const y        = 30 + i * (ROW_H + GAP);
-    const col      = _identityColor(m.identity);
+    const col      = _barColor(m);
     const g        = svg.append('g').attr('transform', `translate(${PAD_L}, ${y})`);
 
     // Label
@@ -307,28 +304,12 @@ function _clusterSVG(cluster, repLen, containerWidth) {
   return svg.node();
 }
 
-// ── Colour scale (RdYlGn) ──────────────────────────────────────────────────
-
-function _identityColor(pct) {
-  const t = Math.max(0, Math.min(1, pct / 100));
-  return d3.interpolateRdYlGn(t);
+/* Alignment bar colour: one colour, not an identity gradient — members are
+   already filtered by minimum identity and coverage, so a 0–100 scale would
+   never reach its red end. Identity is in the bar label and the tooltip. */
+function _barColor(m) {
+  return m.is_representative ? 'var(--vq-primary-light)' : 'var(--vq-accent)';
 }
-
-// ── Continuous gradient legend ─────────────────────────────────────────────
-
-function _identityLegend() {
-  return `
-    <div class="vq-gradient-legend" title="Alignment identity (%)">
-      <span>% identity</span>
-      <div>
-        <div class="vq-gradient-legend__bar"></div>
-        <div class="vq-gradient-legend__ticks">
-          <span>0</span><span>50</span><span>100</span>
-        </div>
-      </div>
-    </div>`;
-}
-
 
 window.vqInitClusters = vqInitClusters;
 })();

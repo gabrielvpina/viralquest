@@ -1177,17 +1177,35 @@ body {
   box-shadow:        var(--vq-shadow);
 }
 
-/* Highlight flash when jumped-to from another section. */
+/* Highlight when jumped-to from another section (VQ.jumpToViewer): a ring
+   around the whole card plus a tint laid OVER its content — the panels inside
+   are opaque, so a background tint alone would only show on the header.
+   Holds for most of its 6 s, then fades. */
 .vq-seq-card--highlight {
+  position:          relative;
   border-left-color: var(--vq-accent);
-  box-shadow:        0 0 0 3px rgba(47,134,214,.18), var(--vq-shadow);
-  animation:         vq-flash 2s var(--vq-ease);
+  box-shadow:        0 0 0 3px var(--vq-accent), var(--vq-shadow);
+  animation:         vq-ring 6s var(--vq-ease) forwards;
+}
+.vq-seq-card--highlight::after {
+  content:        '';
+  position:       absolute;
+  inset:          0;
+  border-radius:  inherit;
+  background:     rgba(47,134,214,.14);
+  mix-blend-mode: multiply;          /* tints the white panels, keeps text crisp */
+  pointer-events: none;
+  animation:      vq-tint 6s var(--vq-ease) forwards;
 }
 
-@keyframes vq-flash {
-  0%   { background: rgba(47,134,214,.10); }
-  60%  { background: rgba(47,134,214,.04); }
-  100% { background: var(--vq-surface); }
+@keyframes vq-ring {
+  0%, 75% { box-shadow: 0 0 0 3px var(--vq-accent), var(--vq-shadow); }
+  100%    { box-shadow: 0 0 0 3px rgba(47,134,214,0), var(--vq-shadow); }
+}
+@keyframes vq-tint {
+  0%, 10% { opacity: 1; }
+  75%     { opacity: .6; }
+  100%    { opacity: 0; }
 }
 
 .vq-seq-card__head {
@@ -1292,30 +1310,6 @@ body {
 }
 
 /* Continuous gradient legend (used for % identity). */
-.vq-gradient-legend {
-  display:     inline-flex;
-  align-items: center;
-  gap:         var(--vq-space-2);
-  font-size:   var(--vq-text-xs);
-  color:       var(--vq-text-3);
-}
-
-.vq-gradient-legend__bar {
-  width:         140px;
-  height:        8px;
-  border-radius: 4px;
-  background:    linear-gradient(to right,
-                  #a50026 0%, #d73027 12%, #f46d43 25%, #fdae61 37%,
-                  #fee08b 50%, #d9ef8b 62%, #a6d96a 75%, #66bd63 87%, #1a9850 100%);
-}
-
-.vq-gradient-legend__ticks {
-  display:        flex;
-  justify-content: space-between;
-  width:          140px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* ============================================================
    Tooltip
    ============================================================ */

@@ -57,7 +57,7 @@ function _initRunTab(report) {
           <div class="vq-chart-card__sub">sequences at each filtering step</div>
         </div>
       </div>
-      <div class="vq-chart-card__body" style="padding:6px 14px 10px">
+      <div class="vq-chart-card__body" style="padding:10px 14px 4px;justify-content:flex-start">
         <div id="stats-funnel-svg" style="width:100%"></div>
       </div>
     </div>
@@ -69,7 +69,7 @@ function _initRunTab(report) {
         </div>
         <div class="vq-chart-card__big" id="stats-hmm-total">${_fmtNum(hmmTotal)}</div>
       </div>
-      <div class="vq-chart-card__body">
+      <div class="vq-chart-card__body" style="padding-top:6px;justify-content:flex-start">
         <div id="stats-hmm-svg" style="width:100%"></div>
       </div>
     </div>`;
@@ -87,9 +87,9 @@ function _initRunTab(report) {
       <div class="vq-chart-card__body" style="padding-top:8px;justify-content:flex-start;gap:0">
         <div id="stats-heur-gauge" style="width:100%;margin-bottom:10px"></div>
         ${_miniRow('Scored',        _fmtNum(heur.scored))}
-        ${_miniRow('Viral known',   _fmtNum(heur.viral_known))}
-        ${_miniRow('Viral unknown', _fmtNum(heur.viral_unknown))}
-        ${heur.non_viral ? _miniRow('Non-viral', _fmtNum(heur.non_viral)) : ''}
+        ${_miniRow('Viral known',   _fmtNum(heur.viral_known),   _HEUR_COLORS.known)}
+        ${_miniRow('Viral unknown', _fmtNum(heur.viral_unknown), _HEUR_COLORS.unknown)}
+        ${heur.non_viral ? _miniRow('Non-viral', _fmtNum(heur.non_viral), _HEUR_COLORS.nonviral) : ''}
       </div>
     </div>` : ''}
     ${llm.present ? `
@@ -211,12 +211,14 @@ function _initRunTab(report) {
 //  Mini-row helper (label · value line inside a card)
 // ────────────────────────────────────────────────────────────────────────
 
-function _miniRow(label, value) {
+function _miniRow(label, value, dot) {
   return `
     <div style="display:flex;justify-content:space-between;align-items:baseline;
                 padding:6px 0;border-bottom:1px dashed var(--vq-border);font-size:12px;
                 gap:12px;min-width:0">
-      <span style="color:var(--vq-text-3);flex-shrink:0">${VQ.esc(label)}</span>
+      <span style="color:var(--vq-text-3);flex-shrink:0">${dot
+        ? `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${dot}"></span>`
+        : ''}${VQ.esc(label)}</span>
       <span style="color:var(--vq-text);font-weight:600;font-variant-numeric:tabular-nums;
                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${value}</span>
     </div>`;
@@ -774,23 +776,31 @@ function _renderFunnel(blast) {
 //  Heuristic score gauge — stacked classification bar + avg score track
 // ────────────────────────────────────────────────────────────────────────
 
+/* Classification colours — shared by the stacked bar and the rows under it
+   (which double as its legend). */
+const _HEUR_COLORS = {
+  known:    'var(--vq-success)',
+  unknown:  'var(--vq-accent)',
+  nonviral: 'var(--vq-warning)',
+};
+
+/* Two labelled rows: how the scored sequences were classified (stacked), and
+   the average score on a 0–100 track. Each row has its caption above it, so
+   neither bar can be read as the other's. */
 function _renderHeuristicGauge(heur) {
   const wrap = document.getElementById('stats-heur-gauge');
   if (!wrap) return;
   wrap.innerHTML = '';
 
   const total   = heur.scored || 1;
-  const known   = heur.viral_known   || 0;
-  const unknown = heur.viral_unknown || 0;
-  const nonvir  = heur.non_viral     || 0;
-  const avg     = heur.avg_score     ?? 0;
+  const avg     = heur.avg_score ?? 0;
+  const W       = Math.max(wrap.clientWidth || 0, 180);
+  const BAR_H   = 10;
+  const CAP_H   = 13;                 // caption line above each bar
+  const ROW1_Y  = CAP_H;              // classification bar
+  const ROW2_Y  = ROW1_Y + BAR_H + 12 + CAP_H;   // average-score track
+  const H       = ROW2_Y + BAR_H + 14;
 
-  const W    = Math.max(wrap.clientWidth || 0, 180);
-  const H    = 62;
-  const BAR_Y = 6;
-  const BAR_H = 10;
-
-  // Colour-code the avg-score track
   const scoreColor = avg >= 70 ? 'var(--vq-success)'
                    : avg >= 40 ? 'var(--vq-accent)'
                                : 'var(--vq-warning)';
@@ -800,32 +810,35 @@ function _renderHeuristicGauge(heur) {
     .attr('preserveAspectRatio', 'xMinYMin meet')
     .style('width', '100%').style('height', 'auto');
 
-  // ── Top: stacked classification bar ──────────────────────────────────
+  const caption = (y, left, right) => {
+    svg.append('text').attr('x', 0).attr('y', y - 3)
+      .attr('font-size', 9.5).attr('fill', 'var(--vq-text-3)').text(left);
+    if (right) svg.append('text').attr('x', W).attr('y', y - 3).attr('text-anchor', 'end')
+      .attr('font-size', 9.5).attr('fill', 'var(--vq-text-2)').attr('font-weight', 600).text(right);
+  };
+  const track = y => svg.append('rect').attr('x', 0).attr('y', y)
+    .attr('width', W).attr('height', BAR_H).attr('rx', BAR_H / 2).attr('fill', 'var(--vq-bg)');
+
+  // ── Row 1: classification of the scored sequences (stacked) ──
   const segments = [
-    { label: 'Viral known',   n: known,   color: 'var(--vq-success)'      },
-    { label: 'Viral unknown', n: unknown, color: 'var(--vq-accent)'       },
-    { label: 'Non-viral',     n: nonvir,  color: 'var(--vq-warning)'      },
-  ].filter(s => s.n > 0);
-
-  // Clip segments to a rounded rect so the stacked fill gets rounded caps
-  // without square corners poking out behind an overlay stroke.
+    { label: 'Viral known',   n: heur.viral_known   || 0, color: _HEUR_COLORS.known    },
+    { label: 'Viral unknown', n: heur.viral_unknown || 0, color: _HEUR_COLORS.unknown  },
+    { label: 'Non-viral',     n: heur.non_viral     || 0, color: _HEUR_COLORS.nonviral },
+  ].filter(x => x.n > 0);
+  caption(ROW1_Y, 'classification', `${_fmtNum(heur.scored)} scored`);
+  track(ROW1_Y);
+  // Clip to a rounded rect so the stacked fill gets rounded caps.
   const clipId = `vq-heur-bar-clip-${Math.random().toString(36).slice(2)}`;
-  svg.append('defs').append('clipPath')
-    .attr('id', clipId)
-    .append('rect')
-      .attr('x', 0).attr('y', BAR_Y)
-      .attr('width', W).attr('height', BAR_H)
-      .attr('rx', BAR_H / 2);
-
+  svg.append('defs').append('clipPath').attr('id', clipId)
+    .append('rect').attr('x', 0).attr('y', ROW1_Y)
+    .attr('width', W).attr('height', BAR_H).attr('rx', BAR_H / 2);
   const barG = svg.append('g').attr('clip-path', `url(#${clipId})`);
-
   let cx = 0;
   segments.forEach(seg => {
     const segW = Math.max((seg.n / total) * W, 2);
     barG.append('rect')
-      .attr('x', cx).attr('y', BAR_Y)
-      .attr('width', segW).attr('height', BAR_H)
-      .attr('fill', seg.color).attr('opacity', 0.85)
+      .attr('x', cx).attr('y', ROW1_Y).attr('width', segW).attr('height', BAR_H)
+      .attr('fill', seg.color).attr('opacity', 0.9)
       .on('mousemove', evt => VQ.tooltipShow(`
         <div class="vq-tooltip__title">${VQ.esc(seg.label)}</div>
         <div class="vq-tooltip__row">
@@ -837,27 +850,12 @@ function _renderHeuristicGauge(heur) {
     cx += segW;
   });
 
-  // ── Bottom: avg score track ───────────────────────────────────────────
-  const TRACK_Y = BAR_Y + BAR_H + 10;
-  const fillW   = Math.max((avg / 100) * W, 3);
-
-  svg.append('text')
-    .attr('x', 0).attr('y', TRACK_Y - 2)
-    .attr('font-size', 9).attr('fill', 'var(--vq-text-3)')
-    .text('avg score');
-
-  // Track background
+  // ── Row 2: average score on a 0–100 track ──
+  caption(ROW2_Y, 'average score', avg.toFixed(1));
+  track(ROW2_Y);
   svg.append('rect')
-    .attr('x', 0).attr('y', TRACK_Y + 4)
-    .attr('width', W).attr('height', BAR_H)
-    .attr('rx', BAR_H / 2)
-    .attr('fill', 'var(--vq-bg)');
-
-  // Fill
-  svg.append('rect')
-    .attr('x', 0).attr('y', TRACK_Y + 4)
-    .attr('width', fillW).attr('height', BAR_H)
-    .attr('rx', BAR_H / 2)
+    .attr('x', 0).attr('y', ROW2_Y)
+    .attr('width', Math.max((avg / 100) * W, 3)).attr('height', BAR_H).attr('rx', BAR_H / 2)
     .attr('fill', scoreColor).attr('opacity', 0.9)
     .on('mousemove', evt => VQ.tooltipShow(`
       <div class="vq-tooltip__title">Average heuristic score</div>
@@ -865,15 +863,10 @@ function _renderHeuristicGauge(heur) {
         <span class="vq-tooltip__key">Score</span><span>${avg.toFixed(1)}</span>
       </div>`, evt))
     .on('mouseleave', VQ.tooltipHide);
-
-  // End labels
-  svg.append('text')
-    .attr('x', 0).attr('y', TRACK_Y + BAR_H + 14)
+  svg.append('text').attr('x', 0).attr('y', ROW2_Y + BAR_H + 11)
     .attr('font-size', 9).attr('fill', 'var(--vq-text-3)').text('0');
-  svg.append('text')
-    .attr('x', W).attr('y', TRACK_Y + BAR_H + 14)
-    .attr('text-anchor', 'end').attr('font-size', 9)
-    .attr('fill', 'var(--vq-text-3)').text('100');
+  svg.append('text').attr('x', W).attr('y', ROW2_Y + BAR_H + 11).attr('text-anchor', 'end')
+    .attr('font-size', 9).attr('fill', 'var(--vq-text-3)').text('100');
 
   wrap.appendChild(svg.node());
 }

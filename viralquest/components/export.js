@@ -559,14 +559,33 @@ function vqTooltipHide() {
 function vqJumpToViewer(seqId) {
   const tab = document.querySelector('[data-section="viewer"]');
   if (tab) tab.click();
-  setTimeout(() => {
-    const target = document.getElementById('seq-card-' + vqSafeId(seqId));
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      target.classList.add('vq-seq-card--highlight');
-      setTimeout(() => target.classList.remove('vq-seq-card--highlight'), 2000);
-    }
-  }, 150);
+  // Two frames: the viewer panel must be shown (laid out) before measuring.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    // The viewer opens the card (and lifts filters hiding it) when it can.
+    const card = window.VQ?.viewerFocus
+      ? window.VQ.viewerFocus(seqId)
+      : document.getElementById('seq-card-' + vqSafeId(seqId));
+    if (!card) return;
+
+    // Land the card just below the fixed nav bar, which scrollIntoView ignores.
+    const gap  = (document.querySelector('.vq-nav')?.offsetHeight || 0) + 16;
+    const goTo = () => window.scrollTo({
+      top: Math.max(0, card.getBoundingClientRect().top + window.scrollY - gap),
+      behavior: 'smooth',
+    });
+    goTo();
+    // Content above may still settle while scrolling (lazy charts): correct once.
+    setTimeout(() => {
+      if (Math.abs(card.getBoundingClientRect().top - gap) > 8) goTo();
+    }, 750);
+
+    // Highlight the whole card for 6 s (restart if it is already highlighted).
+    card.classList.remove('vq-seq-card--highlight');
+    void card.offsetWidth;
+    card.classList.add('vq-seq-card--highlight');
+    clearTimeout(card._vqHighlight);
+    card._vqHighlight = setTimeout(() => card.classList.remove('vq-seq-card--highlight'), 6000);
+  }));
 }
 
 // ── Internal helpers ────────────────────────────────────────────────────────
@@ -641,7 +660,8 @@ function vqPct(a, b) {
 
 /** Titled group of cards on a grid. `slots` = grid columns the cards fill
     (a span-2 card counts as 2): 1–2 slots use a 2-column grid so a short group
-    does not leave an empty third column. Empty groups vanish. */
+    does not leave an empty third column, and 4 slots a 2 × 2 grid rather than
+    3 + 1 (a lone card on its own row). Empty groups vanish. */
 function vqCardGroup(title, hint, cardsHtml, slots = 3) {
   if (!cardsHtml.trim() || !slots) return '';
   return `
@@ -650,7 +670,7 @@ function vqCardGroup(title, hint, cardsHtml, slots = 3) {
         <h3 class="vq-group__title">${vqEsc(title)}</h3>
         ${hint ? `<span class="vq-group__hint">${vqEsc(hint)}</span>` : ''}
       </div>
-      <div class="vq-grid${slots <= 2 ? ' vq-grid--2' : ''}">${cardsHtml}</div>
+      <div class="vq-grid${slots <= 2 || slots === 4 ? ' vq-grid--2' : ''}">${cardsHtml}</div>
     </section>`;
 }
 

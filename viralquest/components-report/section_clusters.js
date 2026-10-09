@@ -574,9 +574,8 @@ function _renderDetail() {
 
     <div class="clu-block">
       <div class="clu-block__title">Alignment against the representative
-        <span>bar = aligned region, coloured by identity · outline = full contig</span></div>
+        <span>bar = aligned region · outline = full contig</span></div>
       <div class="vq-genome-wrap" id="clu-wrap-${safe}"></div>
-      ${_identityLegend()}
     </div>`;
 
   host.querySelector('#clu-prev')?.addEventListener('click', () => _select(_view[idx - 1]?.gid));
@@ -894,7 +893,7 @@ function _clusterSVG(cluster, repLen, containerWidth) {
   cluster.members.forEach((m, i) => {
     const offsetNt = offsets[i];
     const y = 30 + i * (ROW_H + GAP);
-    const col = _identityColor(m.identity);
+    const col = _barColor(m);
     const g = svg.append('g').attr('transform', `translate(${PAD_L}, ${y})`);
 
     // Label = sample::seq_id (cross-sample needs the sample to disambiguate).
@@ -958,20 +957,11 @@ function _clusterSVG(cluster, repLen, containerWidth) {
   return svg.node();
 }
 
-function _identityColor(pct) {
-  const t = Math.max(0, Math.min(1, pct / 100));
-  return d3.interpolateRdYlGn(t);
-}
-
-function _identityLegend() {
-  return `
-    <div class="vq-gradient-legend" title="Alignment identity (%)">
-      <span>% identity</span>
-      <div>
-        <div class="vq-gradient-legend__bar"></div>
-        <div class="vq-gradient-legend__ticks"><span>0</span><span>50</span><span>100</span></div>
-      </div>
-    </div>`;
+/* Alignment bar colour: one colour, not an identity gradient — members are
+   already filtered by minimum identity and coverage, so a 0–100 scale would
+   never reach its red end. Identity is in the bar label and the tooltip. */
+function _barColor(m) {
+  return m.is_representative ? 'var(--vq-primary-light)' : 'var(--vq-accent)';
 }
 
 window.vqInitClusters = vqInitClusters;
