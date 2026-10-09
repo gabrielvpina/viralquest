@@ -997,6 +997,7 @@ function _seqCard(seq) {
   const blastnCount  = (seq.blastn_hits || []).length;
   const refseqCount  = (seq.blastx_hits || []).length;
   const nrCount      = (seq.blastx_nr_hits || []).length;
+  const blastKind    = _defaultBlastKind(seq);
 
   // Per-sequence low-complexity toggle — only offered when this sequence has
   // dust-masked regions of its own.
@@ -1129,13 +1130,13 @@ function _seqCard(seq) {
       <div class="vq-body-label">BLAST hits</div>
       <div class="vq-panel">
         <div class="vq-subtabs" role="tablist" aria-label="BLAST hit sources">
-          <button class="vq-subtab active" type="button" data-blast="blastn" role="tab">
+          <button class="vq-subtab${blastKind === 'blastn' ? ' active' : ''}" type="button" data-blast="blastn" role="tab">
             BLASTn<span class="vq-subtab__count">${blastnCount}</span>
           </button>
-          <button class="vq-subtab" type="button" data-blast="refseq" role="tab">
+          <button class="vq-subtab${blastKind === 'refseq' ? ' active' : ''}" type="button" data-blast="refseq" role="tab">
             BLASTx · RefSeq<span class="vq-subtab__count">${refseqCount}</span>
           </button>
-          <button class="vq-subtab" type="button" data-blast="nr" role="tab">
+          <button class="vq-subtab${blastKind === 'nr' ? ' active' : ''}" type="button" data-blast="nr" role="tab">
             BLASTx · NR<span class="vq-subtab__count">${nrCount}</span>
           </button>
         </div>
@@ -1203,11 +1204,7 @@ function _seqCard(seq) {
   const subtabs   = card.querySelectorAll('.vq-subtab');
   const blastBody = card.querySelector('#blast-body-' + safe);
   const renderBlast = (kind) => {
-    let hits = [];
-    if      (kind === 'blastn') hits = seq.blastn_hits        || [];
-    else if (kind === 'refseq') hits = seq.blastx_hits || [];
-    else                        hits = seq.blastx_nr_hits     || [];
-    blastBody.innerHTML = _blastTable(hits, kind);
+    blastBody.innerHTML = _blastTable(_blastHits(seq, kind), kind);
   };
   subtabs.forEach(t => t.addEventListener('click', () => {
     subtabs.forEach(s => s.classList.toggle('active', s === t));
@@ -1226,6 +1223,20 @@ function _seqCard(seq) {
   });
 
   return card;
+}
+
+/* Hits behind one BLAST subtab. */
+function _blastHits(seq, kind) {
+  if (kind === 'blastn') return seq.blastn_hits    || [];
+  if (kind === 'refseq') return seq.blastx_hits    || [];
+  return                        seq.blastx_nr_hits || [];
+}
+
+/* Subtab a card opens on: BLASTn when it has hits, else the first BLASTx
+   source with hits (NR — the characterisation search — before RefSeq), else
+   BLASTn, so a run without BLASTn never opens on an empty table. */
+function _defaultBlastKind(seq) {
+  return ['blastn', 'nr', 'refseq'].find(k => _blastHits(seq, k).length) || 'blastn';
 }
 
 function _openCard(card) {
@@ -1255,10 +1266,11 @@ function _toggleCard(card, seq, forceOpen = false) {
     }
   }
 
-  // Render the default BLASTn table
+  // Render the default BLAST table (the subtab marked active at build time)
   const blastBody = card.querySelector('#blast-body-' + safe);
   if (blastBody && !blastBody.innerHTML) {
-    blastBody.innerHTML = _blastTable(seq.blastn_hits || [], 'blastn');
+    const kind = _defaultBlastKind(seq);
+    blastBody.innerHTML = _blastTable(_blastHits(seq, kind), kind);
   }
 
   // Measured only now: the body is display:none until the card opens, so
@@ -2370,9 +2382,25 @@ function _signalsInfoHTML() {
 
 window.vqInitViewer = vqInitViewer;
 
+/* Make one sequence's card visible and open (for links from other tabs).
+   A card hidden by the current filters is brought back by searching for its
+   id. Returns the card, or null when the sequence is not in this viewer. */
+function _focusSeq(seqId) {
+  const safe = VQ.safeId(seqId);
+  let card = document.getElementById('seq-card-' + safe);
+  if (!card && _VW.sequences.some(s => s.id === seqId)) {
+    const box = document.getElementById('viewer-search');
+    if (box) { box.value = seqId; _applyFilters(); }
+    card = document.getElementById('seq-card-' + safe);
+  }
+  if (card) _openCard(card);
+  return card;
+}
+
 // Genome-map building blocks shared with the Synteny tab, so both draw ORFs
 // and domains the same way — and one domain keeps one colour across tabs.
 window.VQ = Object.assign(window.VQ || {}, {
+  viewerFocus: _focusSeq,
   genome: {
     orfArrowPoints:        _orfArrowPoints,
     bestDomainPerDatabase: _bestDomainPerDatabase,
