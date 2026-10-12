@@ -558,6 +558,8 @@ function _drawTrack(svg, defs, id, t, esc) {
     const gx1 = X(gn.start), gx2 = Math.max(X(gn.end), gx1 + 4);
     const pts = G.orfArrowPoints(gx1, gx2, gy, GENE_H, gn.strand);
     const cid = `${id}_${n}`;
+    // Opaque backing so links ending under a faded gene stay hidden.
+    g.append('polygon').attr('points', pts).attr('fill', 'var(--vq-surface)');
     const gg  = g.append('g').attr('opacity', isRef || gn.canon ? 1 : 0.55);
     defs.append('clipPath').attr('id', cid).append('polygon').attr('points', pts);
     gg.append('polygon').attr('points', pts).attr('fill', NA_FILL);
@@ -736,8 +738,9 @@ function _drawLink(g, svg, tracks, l) {
   const b = ends(D, l.down.iv);
 
   // Vertical levels the band passes straight through.
-  const yStart = U.laneY[gU.lane] + GENE_H;      // bottom of the upper gene
-  const yEnd   = D.laneY[gD.lane];               // top of the lower gene
+  // Ends sit on the genes' centre line, hidden behind them, so the band meets the arrow tips.
+  const yStart = U.laneY[gU.lane] + GENE_H / 2;  // centre of the upper gene
+  const yEnd   = D.laneY[gD.lane] + GENE_H / 2;  // centre of the lower gene
   const levels = [{ y0: yStart, y1: U.bottom + 3 }];
   for (let k = l.up.t + 1; k < l.down.t; k++) {
     levels.push({ y0: tracks[k].top - 3, y1: tracks[k].bottom + 3 });
