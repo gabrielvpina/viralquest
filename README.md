@@ -247,6 +247,11 @@ SAMPLE_output/
 ├── seq_quality/                 # sequence-quality signals (unless --skip-seq-quality)
 │   ├── <seq_id>.tsv             #   per-feature: low-complexity + self-repeats
 │   └── summary.tsv              #   per-sequence scalars (low-cx frac, k-mer score…)
+├── synteny/                     # synteny vs each best viral BLASTn reference (unless --no-synteny)
+│   ├── refs/<accession>.gb      #   cached GenBank records
+│   └── synteny.tsv              #   ORF ↔ reference CDS blastp hits
+├── SAMPLE_sequences.tsv         # per-sequence table (taxonomy, domains, BLASTn/BLASTx best hits)
+├── SAMPLE_sequences.xlsx        #   same table as a spreadsheet, accessions linked to NCBI
 ├── SAMPLE_viral_contigs.fasta   # confirmed viral sequences
 ├── SAMPLE_viralquest.json       # full structured report (JSON)
 ├── SAMPLE_viralquest.html       # self-contained interactive HTML report
@@ -255,17 +260,25 @@ SAMPLE_output/
 
 The HTML report is fully self-contained (single file, no external dependencies) and includes:
 
-- **Statistics dashboard** — pipeline summary, BLAST/HMM counts, LLM score distribution
+- **Run** — pipeline workflow (status and time per step, run options), detection funnel, HMM hits, heuristic and LLM scoring
+- **Virome** — detected viruses per contig with novelty tiers and match quality, family / genome-type / classification summaries
 - **Cluster analysis** — sequence grouping with representative sequences and member alignment stats
-- **Sequence viewer** — per-sequence genome map with lane-packed ORF frames (+1/+2/+3/−1/−2/−3), HMM domain overlays, a two-sided read-coverage track (sense up / antisense down, coloured by base quality), tabbed BLAST hit tables (BLASTn / BLASTx-RefSeq / BLASTx-NR), sequence-quality panels (low-complexity bands + repeat dot plot), LLM analysis text, and FASTA export
+- **Sequence viewer** — per-sequence genome map with lane-packed ORF frames (+1/+2/+3/−1/−2/−3), HMM domain overlays, a two-sided read-coverage track (sense up / antisense down, coloured by base quality), tabbed BLAST hit tables (BLASTn / BLASTx-RefSeq / BLASTx-NR), sequence-quality panels (low-complexity bands + repeat dot plot), LLM analysis text, and FASTA / sequence-table (TSV, XLSX) export
+- **Synteny** — gggenomes-style map of the contigs against their best viral BLASTn reference: ORFs coloured by reference gene (or mature peptide), blastp links between reference and contigs and between contigs, segmented viruses grouped by organism, large genomes zoomed to the covered region
 - **Taxonomy tree** — D3 radial tree built from phylum → order → family → genus → sequence
 - **Salmon quantification** — viral expression boxplots grouped by cluster, housekeeping gene bar charts per kingdom, host–viral similarity table (EVE detection)
 
 ### Screenshots
 
-![General Stats panel](data/screenshots/stats.png)
+![Run tab - pipeline workflow, detection funnel and scoring](data/screenshots/stats.png)
 
-![Sequence Viewer - With ORFs, HMM Domains, Read Coverage, BLAST results and Scores](data/screenshots/seq.png)
+![Virome - detected viruses, novelty tiers and taxonomy summaries](data/screenshots/virome.png)
+
+![Sequence Viewer - read coverage, ORF frames, HMM domains, top hits and FASTA](data/screenshots/seq.png)
+
+![Synteny - contigs against their reference genome, coloured by mature peptide](data/screenshots/synteny.png)
+
+![Salmon quantification - viral TPM and housekeeping genes per kingdom](data/screenshots/salmon.png)
 
 
 ---
@@ -378,8 +391,8 @@ INSERT INTO sequences    SELECT * FROM b.sequences;
 
 ### Screenshots
 
-![General statistics from multiple samples in one report](data/screenshots/report-stats.png)
+![Overview - pipeline workflow of every sample in one report](data/screenshots/report-stats.png)
 
-![Viral clusters over all samples](data/screenshots/report-clusters.png)
+![General clusters - viral clusters shared across samples](data/screenshots/report-clusters.png)
 
-![Cross-sample cluster align](data/screenshots/report-aligns.png)
+![RNA quantification - viral load per sample against the host baseline](data/screenshots/report-quant.png)
