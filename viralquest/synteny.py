@@ -145,8 +145,24 @@ def _offset_to_genome(parts: list[tuple[int, int, int]], offset: int) -> int:
     return end - 1 if strand == 1 else start
 
 
+def wraps_origin(parts: list[tuple[int, int, int]]) -> bool:
+    """True when consecutive parts (5'→3') jump back across the origin of a
+    circular genome, e.g. join(96908..97065,1..100) — not a spliced gene."""
+    for (s0, _, st), (s1, _, _) in zip(parts, parts[1:]):
+        if (st == 1 and s1 < s0) or (st == -1 and s1 > s0):
+            return True
+    return False
+
+
 def cds_aa_to_genome(parts, codon_start: int, aa_from: int, aa_to: int) -> list[int]:
-    """1-based aa range on a CDS → [start, end) envelope on the genome."""
+    """1-based aa range on a CDS → [start, end) envelope on the genome. On a
+    CDS across the origin the envelope would span the whole genome, so the
+    longest piece of the range is returned instead."""
+    if wraps_origin(parts):
+        pieces = aligned_segments(parts, codon_start, aa_from, aa_to, [0, 10 ** 12], "+")
+        if pieces:
+            a, b = max(pieces, key=lambda p: p[1] - p[0])[:2]
+            return [a, b]
     shift = codon_start - 1
     a = _offset_to_genome(parts, shift + 3 * (aa_from - 1))
     b = _offset_to_genome(parts, shift + 3 * aa_to - 1)
@@ -235,17 +251,24 @@ def parse_genbank(path: str | Path) -> ParsedReference | None:
         aa = aa.rstrip("*").replace("*", "X")
         if not aa:
             continue
-        loc = f.location
+        loc   = f.location
+        parts = _parts(loc)
+        start, end, gparts = int(loc.start), int(loc.end), []
+        if wraps_origin(parts):
+            # Across the origin: draw each part, place it by the longest one.
+            gparts = sorted([a, b] for a, b, _ in parts)
+            start, end = max(gparts, key=lambda p: p[1] - p[0])
         genome.cds.append(RefFeature(
             kind="CDS",
             product=_q(f, "product") or _q(f, "gene") or _q(f, "note") or f"CDS {len(genome.cds) + 1}",
             protein_id=_q(f, "protein_id") or None,
-            start=int(loc.start), end=int(loc.end),
+            start=start, end=end,
             strand="-" if loc.strand == -1 else "+",
             length_aa=len(aa),
+            parts=gparts,
         ))
         proteins.append(aa)
-        parts_l.append(_parts(loc))
+        parts_l.append(parts)
         codons.append(int(_q(f, "codon_start") or 1))
 
     seen: set[tuple[int, int, str]] = set()

@@ -525,6 +525,9 @@ class RefFeature:
     strand: str               # "+" | "-"
     length_aa: int
     parent: int | None = None # mat_peptide → index of the CDS it lies in
+    # Genome-ordered [start, end) parts of a CDS that runs across the origin
+    # of a circular genome; start/end then hold its longest part.
+    parts: list[list[int]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

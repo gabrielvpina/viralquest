@@ -17,6 +17,7 @@ from viralquest.synteny import (
     orf_aa_to_contig,
     parse_genbank,
     placement,
+    wraps_origin,
 )
 
 MOCK = Path(__file__).parent / "mock" / "synteny"
@@ -123,6 +124,34 @@ def test_aligned_segments_split_across_exons():
     parts = [(0, 30, 1), (100, 130, 1)]        # 10 aa + 10 aa
     segs = aligned_segments(parts, 1, 6, 15, [500, 530], "+")
     assert segs == [[15, 30, 500, 515], [100, 115, 515, 530]]
+
+
+def test_wraps_origin_tells_circular_join_from_splicing():
+    assert wraps_origin([(96907, 97065, 1), (0, 100, 1)])
+    assert wraps_origin([(0, 100, -1), (96907, 97065, -1)])
+    assert not wraps_origin([(100, 400, 1), (600, 900, 1)])     # spliced
+    assert not wraps_origin([(600, 900, -1), (100, 400, -1)])   # spliced, minus strand
+
+
+def test_cds_aa_to_genome_across_the_origin_keeps_the_longest_piece():
+    parts = [(96907, 97065, 1), (0, 100, 1)]                    # 158 nt + 100 nt
+    assert cds_aa_to_genome(parts, 1, 1, 85) == [96907, 97065]
+    assert cds_aa_to_genome(parts, 1, 60, 85) == [19, 97]
+
+
+def test_parse_genbank_cds_across_the_origin(tmp_path):
+    from Bio.Seq import Seq
+    from Bio.SeqFeature import CompoundLocation, FeatureLocation, SeqFeature
+    from Bio.SeqRecord import SeqRecord
+    from Bio import SeqIO
+    rec = SeqRecord(Seq("A" * 1000), id="X1.1", description="circular phage",
+                    annotations={"molecule_type": "DNA", "organism": "phage"})
+    loc = CompoundLocation([FeatureLocation(900, 1000, 1), FeatureLocation(0, 50, 1)])
+    rec.features.append(SeqFeature(loc, type="CDS", qualifiers={"translation": ["M" * 49]}))
+    SeqIO.write(rec, tmp_path / "x.gb", "genbank")
+    c = parse_genbank(tmp_path / "x.gb").genome.cds[0]
+    assert c.parts == [[0, 50], [900, 1000]]
+    assert (c.start, c.end) == (900, 1000)
 
 
 def test_placement_detects_reverse_complement():

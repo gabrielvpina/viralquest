@@ -31,6 +31,7 @@ const _SY = {
   showAll:    false,   // also draw the ORFs with no reference match (greyed)
   identShade: false,   // links shaded by aa identity instead of a flat tint
   refAxis:    false,   // tracks on the reference axis; default: each on its own, left-aligned
+  fullRef:    false,   // draw the whole reference even when the members cover a sliver of it
 };
 
 
@@ -364,6 +365,8 @@ const GENE_PALETTE = [
   '#1f78b4', '#a6761d', '#b2abd2', '#fb8072', '#80b1d3', '#b3de69',
 ];
 const NA_FILL     = '#d9d2c3';   // part of a gene with no family (gap between peptides, …)
+const UNMATCHED_FILL = '#e6e9ee'; // reference gene no member ORF matches
+const CROP_BELOW  = 0.3;         // members cover < 30 % of the reference → show their region only
 const GENE_STROKE = '#3b3b3b';
 const LINK_OPACITY = 0.1;        // resting opacity — links show on hover
 
@@ -377,7 +380,8 @@ function _families(ref) {
       peps.forEach(p => fams.push({ cds: i, start: p.start, end: p.end,
         name: _shortPeptide(p.product), full: p.product }));
     } else {
-      fams.push({ cds: i, start: c.start, end: c.end, name: c.product, full: c.product });
+      fams.push({ cds: i, start: c.start, end: c.end, name: c.product, full: c.product,
+                  ivs: c.parts && c.parts.length ? c.parts : null });
     }
   });
   fams.sort((a, b) => a.start - b.start);
@@ -392,15 +396,31 @@ function _families(ref) {
   return fams;
 }
 
+/* A family's [start, end) intervals: its parts when its CDS runs across the
+   origin of a circular genome, else its single extent. */
+const _famIvs = f => f.ivs || [[f.start, f.end]];
+
+/* Recolour the families: the ones some member ORF matches take the palette in
+   genome order, the rest go grey, so colours stay distinct on big genomes. */
+function _colourMatched(fams, matched) {
+  let k = 0;
+  fams.forEach(f => {
+    f.matched = matched.has(f);
+    f.color = f.matched ? GENE_PALETTE[k++ % GENE_PALETTE.length] : UNMATCHED_FILL;
+  });
+}
+
 /* Family sections of the reference range [r0, r1] of CDS `cds`, carried onto
    the displayed range [d0, d1] (linear). Returns [{f, r:[a,b], d:[a,b]}]. */
 function _sections(fams, cds, r0, r1, d0, d1) {
   const span = r1 - r0 || 1;
   const at = x => d0 + (x - r0) / span * (d1 - d0);
-  return fams.filter(f => f.cds === cds && f.end > r0 && f.start < r1).map(f => {
-    const a = Math.max(r0, f.start), b = Math.min(r1, f.end);
-    return { f, r: [a, b], d: [at(a), at(b)] };
-  });
+  return fams.filter(f => f.cds === cds).flatMap(f => _famIvs(f)
+    .filter(([s0, s1]) => s1 > r0 && s0 < r1)
+    .map(([s0, s1]) => {
+      const a = Math.max(r0, s0), b = Math.min(r1, s1);
+      return { f, r: [a, b], d: [at(a), at(b)] };
+    }));
 }
 
 /* Order the members so consecutive tracks share as much reference as possible. */
@@ -438,21 +458,32 @@ function _syntenySVG({ ref, members }, containerWidth) {
   // aligned stretches. Either way a member keeps the reference's orientation.
   // Gene / HSP positions stay in reference coordinates; each track's px()
   // turns them into pixels.
-  let lo = 0, hi = ref.length;
+  // Big references the members cover only a sliver of: show the members'
+  // region (plus a margin) instead of the whole genome, unless asked to.
+  const win  = _refWindow(ref, order);
+  const crop = !_SY.fullRef && win.crop;
+  const view = crop ? win.iv : [0, ref.length];
+  let lo = view[0], hi = view[1];
   order.forEach(m => { lo = Math.min(lo, m.span[0]); hi = Math.max(hi, m.span[1]); });
-  const maxLen = Math.max(ref.length, ...order.map(m => m.span[1] - m.span[0]));
+  const maxLen = Math.max(view[1] - view[0], ...order.map(m => m.span[1] - m.span[0]));
   const X = _SY.refAxis
     ? d3.scaleLinear([lo, hi], [GUT, W - PAD_R2])
     : d3.scaleLinear([0, maxLen], [GUT, W - PAD_R2]);
   const pxOf = span => _SY.refAxis ? (v => X(v)) : (v => X(v - span[0]));
 
   // ── Tracks: genes (display coords on the reference axis) packed in lanes ──
-  const refGenes = ref.cds.map((c, i) => ({
-    start: c.start, end: c.end, strand: c.strand, key: `ref__${i}`, c, i,
-    secs: _sections(fams, i, c.start, c.end, c.start, c.end),
-  }));
-  const tracks = [{ kind: 'ref', ref, genes: _lanes(refGenes), span: [0, ref.length],
-                   px: pxOf([0, ref.length]) }];
+  // One gene per part for a CDS across the origin; genes cut by the view
+  // are clipped to it (`cut` drops the arrow head at a clipped end).
+  const refGenes = ref.cds.flatMap((c, i) => (c.parts && c.parts.length ? c.parts : [[c.start, c.end]])
+    .filter(([a, b]) => b > view[0] && a < view[1])
+    .map(([a, b]) => {
+      const s0 = Math.max(a, view[0]), s1 = Math.min(b, view[1]);
+      return { start: s0, end: s1, strand: c.strand, key: `ref__${i}`, c, i,
+               cut: (c.strand === '-' ? a < view[0] : b > view[1]),
+               secs: _sections(fams, i, s0, s1, s0, s1) };
+    }));
+  const tracks = [{ kind: 'ref', ref, genes: _lanes(refGenes), span: view, crop,
+                   px: pxOf(view) }];
 
   order.forEach(m => {
     const hitsBy = {};
@@ -476,8 +507,12 @@ function _syntenySVG({ ref, members }, containerWidth) {
     tracks.push({ kind: 'seq', m, genes: top.concat(below), span: m.span, px: pxOf(m.span) });
   });
 
+  const matched = new Set(tracks.slice(1).flatMap(t => t.genes.flatMap(g => g.secs.map(x => x.f))));
+  _colourMatched(fams, matched);
+
   // ── Vertical layout ──
-  let y = 22 + REF_LABEL_H;
+  const OVERVIEW_H = win.crop ? 30 : 0;
+  let y = 22 + OVERVIEW_H + REF_LABEL_H;
   tracks.forEach((t, i) => {
     if (i) y += LINK_H;
     const nL = Math.max(1, ...t.genes.map(g => g.lane + 1));
@@ -488,7 +523,7 @@ function _syntenySVG({ ref, members }, containerWidth) {
   });
   const axisY   = y + 26;
   const legendY = axisY + 34;
-  const legend  = _legendItems(fams);
+  const legend  = _legendItems(fams, crop);
   const colW    = Math.min(300, Math.max(140, 40 + 6 * Math.max(...legend.map(it => it.label.length))));
   const perRow  = Math.max(1, Math.floor((W - GUT - PAD_R2) / colW));
   const totalH  = legendY + Math.ceil(legend.length / perRow) * 18 + 16;
@@ -508,6 +543,7 @@ function _syntenySVG({ ref, members }, containerWidth) {
 
   tracks.forEach((t, i) => _drawTrack(svg, defs, `${uid}_${i}`, t, esc));
   _drawRefLabels(svg, tracks[0], fams);
+  if (win.crop) _drawOverview(svg, ref, win.iv, crop, W);
 
   // ── Axis ──
   const kb = (_SY.refAxis ? hi - lo : maxLen) > 5000;
@@ -545,18 +581,25 @@ function _drawTrack(svg, defs, id, t, esc) {
   if (!isRef) lbl.style('cursor', 'pointer').on('click', () => VQ.jumpToViewer(t.m.seq.id))
     .append('title').text('Open in the Sequence Viewer');
 
-  // Backbone with end caps.
+  // Backbone with end caps; a reference cut by the view gets a dashed,
+  // capless end where the genome goes on.
   const x0 = X(t.span[0]), x1 = X(t.span[1]);
-  g.append('line').attr('x1', x0).attr('x2', x1).attr('y1', yMid).attr('y2', yMid)
-    .attr('stroke', GENE_STROKE).attr('stroke-width', 1.2);
-  [x0, x1].forEach((x, k) => g.append('rect')
+  const open = isRef && t.crop ? [t.span[0] > 0, t.span[1] < t.ref.length] : [false, false];
+  g.append('line').attr('x1', x0 + (open[0] ? 14 : 0)).attr('x2', x1 - (open[1] ? 14 : 0))
+    .attr('y1', yMid).attr('y2', yMid).attr('stroke', GENE_STROKE).attr('stroke-width', 1.2);
+  open.forEach((o, k) => o && g.append('line')
+    .attr('x1', k ? x1 - 14 : x0).attr('x2', k ? x1 : x0 + 14).attr('y1', yMid).attr('y2', yMid)
+    .attr('stroke', GENE_STROKE).attr('stroke-width', 1.2).attr('stroke-dasharray', '2 3'));
+  [x0, x1].forEach((x, k) => !open[k] && g.append('rect')
     .attr('x', k ? x : x - 5).attr('width', 5).attr('y', yMid - GENE_H / 2 - 3).attr('height', GENE_H + 6)
     .attr('fill', isRef ? 'var(--vq-primary-light)' : 'var(--vq-text-3)').attr('opacity', 0.8));
 
   t.genes.forEach((gn, n) => {
     const gy  = t.laneY[gn.lane];
     const gx1 = X(gn.start), gx2 = Math.max(X(gn.end), gx1 + 4);
-    const pts = G.orfArrowPoints(gx1, gx2, gy, GENE_H, gn.strand);
+    const pts = gn.cut   // clipped by the view at its 3' end: no arrow head
+      ? `${gx1},${gy} ${gx2},${gy} ${gx2},${gy + GENE_H} ${gx1},${gy + GENE_H}`
+      : G.orfArrowPoints(gx1, gx2, gy, GENE_H, gn.strand);
     const cid = `${id}_${n}`;
     // Opaque backing so links ending under a faded gene stay hidden.
     g.append('polygon').attr('points', pts).attr('fill', 'var(--vq-surface)');
@@ -586,7 +629,8 @@ function _geneTip(t, gn, esc) {
       <div class="vq-tooltip__title">${esc(c.product)}</div>
       <div class="vq-tooltip__row">
         <span class="vq-tooltip__key">Protein</span><span>${esc(c.protein_id || '—')}</span>
-        <span class="vq-tooltip__key">Position</span><span>${_fmt(c.start + 1)}–${_fmt(c.end)} (${c.strand})</span>
+        <span class="vq-tooltip__key">Position</span><span>${(c.parts && c.parts.length ? c.parts : [[c.start, c.end]])
+          .map(p => `${_fmt(p[0] + 1)}–${_fmt(p[1])}`).join(' + ')} (${c.strand})${c.parts && c.parts.length ? ' · across the origin' : ''}</span>
         <span class="vq-tooltip__key">Length</span><span>${_fmt(c.length_aa)} aa</span>
       </div>
       ${fams.length > 1 ? `<div style="margin-top:5px;font-size:10px;color:rgba(255,255,255,.72)">${fams.map(esc).join(' · ')}</div>` : ''}`;
@@ -610,11 +654,15 @@ function _drawRefLabels(svg, refTrack, fams) {
   const X = refTrack.px;
   const y = refTrack.top - 6;
   const lane0 = new Set(refTrack.genes.filter(g => g.lane === 0).map(g => g.i));
+  const [v0, v1] = refTrack.span;
   let lastX = -Infinity;
-  fams.filter(f => lane0.has(f.cds)).forEach(f => {
-    const x1 = X(f.start), x2 = X(f.end), xm = (x1 + x2) / 2;
+  // Crowded references (big phages, …): name only the matched families.
+  const crowded = fams.filter(f => f.end > v0 && f.start < v1).length > 30;
+  fams.filter(f => lane0.has(f.cds) && f.end > v0 && f.start < v1 && (f.matched || !crowded)).forEach(f => {
+    const x1 = X(Math.max(v0, f.start)), x2 = X(Math.min(v1, f.end)), xm = (x1 + x2) / 2;
     if (x2 - x1 < 4) return;
-    const t = svg.append('text').attr('font-size', 10).attr('fill', 'var(--vq-text)');
+    const t = svg.append('text').attr('font-size', 10)
+      .attr('fill', f.matched ? 'var(--vq-text)' : 'var(--vq-text-3)');
     if (x2 - x1 > f.name.length * 6 + 12) {
       t.attr('x', xm).attr('y', y).attr('text-anchor', 'middle').text(f.name);
       lastX = x2;
@@ -730,8 +778,8 @@ function _collectLinks(tracks, fams, ref, esc) {
    lower gene at that gene's HSP start/end. */
 function _drawLink(g, svg, tracks, l) {
   const U = tracks[l.up.t], D = tracks[l.down.t];
-  const gU = U.genes.find(x => x.key === l.up.key);
-  const gD = D.genes.find(x => x.key === l.down.key);
+  const gU = _geneAt(U, l.up.key, l.up.iv);
+  const gD = _geneAt(D, l.down.key, l.down.iv);
   if (!gU || !gD) return;
   const ends = (t, iv) => { const p = [t.px(iv[0]), t.px(iv[1])]; return [Math.min(...p), Math.max(...p)]; };
   const a = ends(U, l.up.iv);
@@ -791,10 +839,51 @@ function _drawLink(g, svg, tracks, l) {
     });
 }
 
-function _legendItems(fams) {
-  const items = fams.map(f => ({ color: f.color, label: f.name, title: f.full }));
+/* Legend: only the families some member ORF matches, then the greys. */
+function _legendItems(fams, crop) {
+  const items = fams.filter(f => f.matched).map(f => ({ color: f.color, label: f.name, title: f.full }));
+  if (fams.some(f => !f.matched)) {
+    items.push({ color: UNMATCHED_FILL, label: 'reference gene, no matching ORF',
+                 title: crop ? 'Reference genes in view with no matching ORF' : undefined });
+  }
   items.push({ color: NA_FILL, label: 'no reference family' });
   return items;
+}
+
+/* The reference region to show: the members' extent plus a margin, cropped
+   only when that extent covers less than CROP_BELOW of the reference. */
+function _refWindow(ref, members) {
+  const L = ref.length || 1;
+  if (!members.length) return { crop: false, iv: [0, L] };
+  const a = Math.max(0, Math.min(...members.map(m => m.span[0])));
+  const b = Math.min(L, Math.max(...members.map(m => m.span[1])));
+  if (b <= a || (b - a) / L >= CROP_BELOW) return { crop: false, iv: [0, L] };
+  const pad = Math.max(500, 0.15 * (b - a));
+  return { crop: true, iv: [Math.max(0, Math.floor(a - pad)), Math.min(L, Math.ceil(b + pad))] };
+}
+
+/* Whole-genome strip above the map: where the shown region sits on the
+   reference, with a toggle between that region and the whole genome. */
+function _drawOverview(svg, ref, iv, crop, W) {
+  const BTN_W = 170;   // room for the toggle at the strip's right end
+  const x = d3.scaleLinear([0, ref.length], [GUT, W - PAD_R2 - BTN_W]);
+  const y = 16;
+  const kb = v => (v / 1000).toFixed(v >= 100000 ? 0 : 1);
+  const g = svg.append('g').attr('class', 'vq-syn-overview');
+  g.append('rect').attr('x', x(0)).attr('width', x(ref.length) - x(0)).attr('y', y - 2).attr('height', 4)
+    .attr('rx', 2).attr('fill', 'var(--vq-border)');
+  g.append('rect').attr('x', x(iv[0])).attr('width', Math.max(3, x(iv[1]) - x(iv[0])))
+    .attr('y', y - 5).attr('height', 10).attr('rx', 2)
+    .attr('fill', 'var(--vq-primary-light)').attr('stroke', 'var(--vq-primary)').attr('stroke-width', 1);
+  g.append('text').attr('x', GUT - 14).attr('y', y + 3.5).attr('text-anchor', 'end')
+    .attr('font-size', 9.5).attr('fill', 'var(--vq-text-3)')
+    .text(crop ? `${kb(iv[0])}–${kb(iv[1])} of ${kb(ref.length)} kb` : `whole genome · ${kb(ref.length)} kb`);
+  const btn = g.append('text').attr('x', W - PAD_R2).attr('y', y + 3.5).attr('text-anchor', 'end')
+    .attr('font-size', 10).attr('font-weight', 600).attr('fill', 'var(--vq-primary)')
+    .style('cursor', 'pointer')
+    .text(crop ? 'Show whole reference ↔' : 'Zoom to the sequences ↦')
+    .on('click', () => { _SY.fullRef = crop; _drawMap(); });
+  btn.append('title').text(crop ? 'Draw the whole reference genome' : 'Show only the region the sequences cover');
 }
 
 function _drawLegend(svg, items, y0, perRow, colW) {
@@ -825,6 +914,13 @@ function _shortPeptide(product) {
 
 /* One key per (sequence, ORF): ties an ORF to its links. */
 const _linkKey = (m, orfName) => VQ.safeId(`${m.seq.id}__${orfName}`);
+
+/* The gene of `key` on track t holding interval iv (a CDS across the origin
+   has one gene per part); falls back to any gene of that key. */
+function _geneAt(t, key, iv) {
+  const gs = t.genes.filter(x => x.key === key);
+  return gs.find(x => x.end > Math.min(...iv) && x.start < Math.max(...iv)) || gs[0];
+}
 
 /* Hovering a gene lights up it, every link touching it and the genes at the
    other ends; hovering a link lights up that link and its two genes. */
