@@ -268,6 +268,80 @@ The **results workbook** (`SAMPLE_viralquest.xlsx`) has one sheet per table: *Se
 
 The **SQLite file** uses the schema of the multi-sample report's `.sqlite` (`sequences`, `blastx_hits`, `blastn_hits`, `blastn_taxonomy`, `orfs`, `domains`, `clusters`, `cluster_members`, `coverage`, `seq_quality`, `synteny_hits`, `quantification`, `host_viral_hits`) without the dataset and sample tables and columns: rows are keyed by `seq_id`.
 
+### Exploring the results with SQLite
+
+The `.sqlite` file is a small database: each table works like a spreadsheet tab, and you ask questions with **SQL** queries instead of filtering by hand. Tables are linked by `seq_id` (the contig name), so information from different tables can be combined.
+
+**Open it.** No server or installation beyond the `sqlite3` command (bundled with macOS and most Linux distributions; on conda: `conda install sqlite`). For a point-and-click view, [DB Browser for SQLite](https://sqlitebrowser.org/) opens the same file.
+
+```bash
+sqlite3 -header -column SAMPLE_viralquest.sqlite
+```
+
+Inside the prompt, `.tables` lists the tables, `.schema sequences` shows a table's columns, and `.quit` exits. Every query ends with `;`.
+
+**Example questions:**
+
+```sql
+-- The five highest-scoring sequences
+SELECT seq_id, family, species, novelty, heuristic_score
+FROM sequences
+ORDER BY heuristic_score DESC
+LIMIT 5;
+
+-- How many sequences per viral family
+SELECT family, COUNT(*) AS n_sequences
+FROM sequences
+GROUP BY family
+ORDER BY n_sequences DESC;
+
+-- Best BLASTx hit of each sequence (JOIN combines two tables through seq_id)
+SELECT s.seq_id, s.species, b.subject_title, b.pct_identity
+FROM sequences AS s
+JOIN blastx_hits AS b ON b.seq_id = s.seq_id
+WHERE b.rank = 1 AND b.source = 'refseq';
+
+-- Putative new viruses and how well the reads cover them
+SELECT s.seq_id, s.novelty, c.mean_depth, ROUND(c.breadth_1x * 100, 1) AS breadth_pct
+FROM sequences AS s
+JOIN coverage AS c ON c.seq_id = s.seq_id
+WHERE s.novelty IN ('novel-species', 'divergent', 'highly-divergent')
+ORDER BY c.mean_depth DESC;
+
+-- Strongest Pfam domains
+SELECT seq_id, orf, target, e_value
+FROM domains
+WHERE database = 'Pfam'
+ORDER BY e_value
+LIMIT 10;
+```
+
+To save a result as a spreadsheet-friendly file, add `.mode csv` and `.output families.csv` before the query (`.output` alone switches back to the screen).
+
+**From Python or R** the same queries return a data frame:
+
+```python
+import sqlite3, pandas as pd
+con = sqlite3.connect("SAMPLE_viralquest.sqlite")
+families = pd.read_sql("SELECT family, COUNT(*) AS n FROM sequences GROUP BY family", con)
+```
+
+```r
+library(DBI)
+con <- dbConnect(RSQLite::SQLite(), "SAMPLE_viralquest.sqlite")
+families <- dbGetQuery(con, "SELECT family, COUNT(*) AS n FROM sequences GROUP BY family")
+```
+
+The multi-sample report's database has the same tables plus `samples` and a `sample` column, so the questions can be asked across samples (there, tables are linked by `gid`, written `sample::seq_id`):
+
+```sql
+-- Viruses found in more than one sample, with their total abundance (reads per million)
+SELECT species, COUNT(DISTINCT sample) AS n_samples, ROUND(SUM(rpm), 1) AS total_rpm
+FROM sequences
+GROUP BY species
+ORDER BY n_samples DESC, total_rpm DESC;
+```
+
 The HTML report is fully self-contained (single file, no external dependencies) and includes:
 
 - **Run** — pipeline workflow (status and time per step, run options), detection funnel, HMM hits, heuristic and LLM scoring
