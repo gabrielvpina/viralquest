@@ -237,6 +237,55 @@ def _ranked(hits: list[dict], key: str) -> list[tuple[int, dict]]:
     return list(enumerate(sorted(hits or [], key=lambda h: -(h.get(key) or 0)), 1))
 
 
+def _sequence_fields(q: dict, tpm, reads, input_reads) -> tuple:
+    """A sequence's columns after its key: length … sequence (shared by both schemas)."""
+    t = q.get("taxonomy") or {}
+    h = q.get("heuristic_output") or {}
+    llm = q.get("llm_output") or {}
+    return (
+        q.get("length"), _num(q.get("gc_content")), q.get("n_count"),
+        int(bool(q.get("is_viral"))), t.get("tax_id"), t.get("clade"), t.get("kingdom"), t.get("phylum"),
+        t.get("class"), t.get("order"), t.get("family"), t.get("subfamily"), t.get("genus"),
+        t.get("species") or t.get("scientific_name"), t.get("genome"),
+        _num(h.get("vq_score")), h.get("classification"), h.get("novelty"),
+        ";".join(h.get("novelty_flags") or []) or None,
+        _num(llm.get("vq_score")), llm.get("classification"),
+        _num(tpm), _num(reads),
+        (reads / input_reads * 1e6) if reads is not None and input_reads else None,
+        q.get("sequence"),
+    )
+
+
+def _child_rows(q: dict) -> dict[str, list[tuple]]:
+    """Hit / taxonomy / ORF / domain rows of one sequence, without their key columns."""
+    out: dict[str, list[tuple]] = {"blastx": [], "blastn": [], "blastn_taxonomy": [],
+                                   "orfs": [], "domains": []}
+    for source, key in (("refseq", "blastx_hits"), ("nr", "blastx_nr_hits")):
+        for rank, x in _ranked(q.get(key), "bit_score"):
+            out["blastx"].append((source, rank, x.get("subject_id"), x.get("subject_title"),
+                                  x.get("species"), _num(x.get("pct_identity")), _num(x.get("query_coverage")),
+                                  _num(x.get("e_value")), _num(x.get("bit_score")),
+                                  x.get("query_start"), x.get("query_end")))
+    for rank, x in _ranked(q.get("blastn_hits"), "bit_score"):
+        out["blastn"].append((rank, x.get("accession"), x.get("stitle"), _num(x.get("pident")),
+                              _num(x.get("qcovhsp")), _num(x.get("evalue")), _num(x.get("bit_score")),
+                              x.get("query_start"), x.get("query_end")))
+    bt = q.get("blastn_taxonomy")
+    if bt:
+        bt_t = bt.get("taxonomy") or {}
+        out["blastn_taxonomy"].append((bt.get("status"), bt.get("method"), bt.get("accession"), bt.get("taxid"),
+                                       bt.get("matched_name"), bt.get("synonym_of"), bt_t.get("family"),
+                                       bt_t.get("genus"), bt_t.get("species") or bt_t.get("scientific_name")))
+    for o in q.get("orfs") or []:
+        name = o.get("name")
+        out["orfs"].append((name, o.get("start_position"), o.get("stop_position"), o.get("strand"),
+                            o.get("frame"), o.get("orf_type"), o.get("length_aa")))
+        for d in o.get("domains") or []:
+            out["domains"].append((name, d.get("database"), d.get("target"), _text(d.get("description")),
+                                   _num(d.get("score")), _num(d.get("e_value")), d.get("start"), d.get("stop")))
+    return out
+
+
 def write_sqlite(report: dict, path: Path) -> Path:
     meta = report.get("meta", {})
     ds = validate_dataset_name(meta.get("dataset"))
@@ -268,45 +317,16 @@ def write_sqlite(report: dict, path: Path) -> Path:
         seq_rows, bx_rows, bn_rows, bnt_rows, orf_rows, dom_rows = [], [], [], [], [], []
         for q in report.get("sequences", []) or []:
             gid, sample = q.get("gid"), q.get("sample")
-            t = q.get("taxonomy") or {}
-            h = q.get("heuristic_output") or {}
-            llm = q.get("llm_output") or {}
             reads, inp = q.get("reads"), input_reads.get(sample)
-            seq_rows.append((
-                ds, gid, sample, q.get("id"), q.get("length"), _num(q.get("gc_content")), q.get("n_count"),
-                int(bool(q.get("is_viral"))), t.get("tax_id"), t.get("clade"), t.get("kingdom"), t.get("phylum"),
-                t.get("class"), t.get("order"), t.get("family"), t.get("subfamily"), t.get("genus"),
-                t.get("species") or t.get("scientific_name"), t.get("genome"),
-                _num(h.get("vq_score")), h.get("classification"), h.get("novelty"),
-                ";".join(h.get("novelty_flags") or []) or None,
-                _num(llm.get("vq_score")), llm.get("classification"),
-                _num(q.get("tpm")), _num(reads),
-                (reads / inp * 1e6) if reads is not None and inp else None,
-                q.get("sequence"),
-            ))
-            for source, key in (("refseq", "blastx_hits"), ("nr", "blastx_nr_hits")):
-                for rank, x in _ranked(q.get(key), "bit_score"):
-                    bx_rows.append((ds, gid, source, rank, x.get("subject_id"), x.get("subject_title"),
-                                    x.get("species"), _num(x.get("pct_identity")), _num(x.get("query_coverage")),
-                                    _num(x.get("e_value")), _num(x.get("bit_score")),
-                                    x.get("query_start"), x.get("query_end")))
-            for rank, x in _ranked(q.get("blastn_hits"), "bit_score"):
-                bn_rows.append((ds, gid, rank, x.get("accession"), x.get("stitle"), _num(x.get("pident")),
-                                _num(x.get("qcovhsp")), _num(x.get("evalue")), _num(x.get("bit_score")),
-                                x.get("query_start"), x.get("query_end")))
-            bt = q.get("blastn_taxonomy")
-            if bt:
-                bt_t = bt.get("taxonomy") or {}
-                bnt_rows.append((ds, gid, bt.get("status"), bt.get("method"), bt.get("accession"), bt.get("taxid"),
-                                 bt.get("matched_name"), bt.get("synonym_of"), bt_t.get("family"), bt_t.get("genus"),
-                                 bt_t.get("species") or bt_t.get("scientific_name")))
-            for o in q.get("orfs") or []:
-                name = o.get("name")
-                orf_rows.append((ds, gid, name, o.get("start_position"), o.get("stop_position"), o.get("strand"),
-                                 o.get("frame"), o.get("orf_type"), o.get("length_aa")))
-                for d in o.get("domains") or []:
-                    dom_rows.append((ds, gid, name, d.get("database"), d.get("target"), _text(d.get("description")),
-                                     _num(d.get("score")), _num(d.get("e_value")), d.get("start"), d.get("stop")))
+            seq_rows.append((ds, gid, sample, q.get("id"))
+                            + _sequence_fields(q, q.get("tpm"), reads, inp))
+            rows = _child_rows(q)
+            key = (ds, gid)
+            bx_rows  += [key + r for r in rows["blastx"]]
+            bn_rows  += [key + r for r in rows["blastn"]]
+            bnt_rows += [key + r for r in rows["blastn_taxonomy"]]
+            orf_rows += [key + r for r in rows["orfs"]]
+            dom_rows += [key + r for r in rows["domains"]]
 
         con.executemany(f"INSERT INTO sequences VALUES ({','.join('?' * 29)})", seq_rows)
         con.executemany("INSERT OR IGNORE INTO blastx_hits VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", bx_rows)
@@ -325,6 +345,184 @@ def write_sqlite(report: dict, path: Path) -> Path:
                 [(ds, c.get("gid"), m.get("gid"), m.get("sample"), _num(m.get("identity")),
                   _num(m.get("coverage")), int(bool(m.get("is_representative"))),
                   _num(m.get("tpm")), _num(m.get("reads"))) for m in members])
+        con.commit()
+    finally:
+        con.close()
+    tmp.replace(path)
+    return path
+
+
+# ── Single-sample SQLite ────────────────────────────────────────────────────
+#
+# The tables of the consolidated report for one ``viralquest`` run: no
+# dataset / sample tables or columns, sequences keyed by their own id.
+
+SAMPLE_SCHEMA = """
+CREATE TABLE sequences (
+    seq_id             TEXT NOT NULL,
+    length             INTEGER,
+    gc_content         REAL,
+    n_count            INTEGER,
+    is_viral           INTEGER,
+    tax_id             INTEGER,           -- taxonomy of the best BLASTx hit
+    realm              TEXT,
+    kingdom            TEXT,
+    phylum             TEXT,
+    class              TEXT,
+    "order"            TEXT,
+    family             TEXT,
+    subfamily          TEXT,
+    genus              TEXT,
+    species            TEXT,
+    genome             TEXT,
+    heuristic_score    REAL,
+    classification     TEXT,
+    novelty            TEXT,
+    novelty_flags      TEXT,              -- ";"-separated
+    llm_score          REAL,
+    llm_classification TEXT,
+    tpm                REAL,
+    reads              REAL,
+    rpm                REAL,              -- reads per million input reads (Salmon)
+    sequence           TEXT,
+    PRIMARY KEY (seq_id)
+);
+CREATE TABLE blastx_hits (
+    seq_id             TEXT NOT NULL,
+    source             TEXT NOT NULL,     -- refseq | nr
+    rank               INTEGER NOT NULL,  -- 1 = best by bit score
+    subject_id         TEXT,
+    subject_title      TEXT,
+    species            TEXT,
+    pct_identity       REAL,
+    query_coverage     REAL,
+    e_value            REAL,
+    bit_score          REAL,
+    query_start        INTEGER,
+    query_end          INTEGER,
+    PRIMARY KEY (seq_id, source, rank)
+);
+CREATE TABLE blastn_hits (
+    seq_id             TEXT NOT NULL,
+    rank               INTEGER NOT NULL,
+    accession          TEXT,
+    title              TEXT,
+    pct_identity       REAL,
+    query_coverage     REAL,
+    e_value            REAL,
+    bit_score          REAL,
+    query_start        INTEGER,
+    query_end          INTEGER,
+    PRIMARY KEY (seq_id, rank)
+);
+CREATE TABLE blastn_taxonomy (
+    seq_id             TEXT NOT NULL,
+    status             TEXT,
+    method             TEXT,
+    accession          TEXT,
+    tax_id             INTEGER,
+    matched_name       TEXT,
+    synonym_of         TEXT,
+    family             TEXT,
+    genus              TEXT,
+    species            TEXT,
+    PRIMARY KEY (seq_id)
+);
+CREATE TABLE orfs (
+    seq_id             TEXT NOT NULL,
+    orf                TEXT NOT NULL,
+    start              INTEGER,
+    stop               INTEGER,
+    strand             TEXT,
+    frame              INTEGER,
+    orf_type           TEXT,
+    length_aa          INTEGER,
+    PRIMARY KEY (seq_id, orf)
+);
+CREATE TABLE domains (
+    seq_id             TEXT NOT NULL,
+    orf                TEXT NOT NULL,
+    database           TEXT,
+    target             TEXT,
+    description        TEXT,
+    score              REAL,
+    e_value            REAL,
+    start              INTEGER,
+    stop               INTEGER
+);
+CREATE TABLE clusters (
+    cluster_id         TEXT NOT NULL,     -- VQ_CLU_####
+    species            TEXT,
+    species_db         TEXT,
+    representative     TEXT,              -- seq_id
+    n_members          INTEGER,
+    homogeneous        INTEGER,
+    PRIMARY KEY (cluster_id)
+);
+CREATE TABLE cluster_members (
+    cluster_id         TEXT NOT NULL,
+    seq_id             TEXT NOT NULL,
+    identity           REAL,
+    coverage           REAL,
+    is_representative  INTEGER,
+    tpm                REAL,
+    reads              REAL,
+    PRIMARY KEY (cluster_id, seq_id)
+);
+CREATE INDEX idx_sequences_family  ON sequences (family);
+CREATE INDEX idx_sequences_species ON sequences (species);
+CREATE INDEX idx_domains_seq       ON domains (seq_id);
+CREATE INDEX idx_members_seq       ON cluster_members (seq_id);
+"""
+
+
+def write_sample_sqlite(report: dict, path: Path) -> Path:
+    """
+    One ``viralquest`` run as ``<stem>_viralquest.sqlite``: the consolidated
+    report's sequences / hits / ORFs / domains / clusters tables for a single
+    sample (no dataset or sample columns; rows keyed by ``seq_id``).
+    """
+    path = Path(path)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    if tmp.exists():
+        tmp.unlink()
+    sq = report.get("salmon_quant") or {}
+    quant = {(e.get("name") or "").removeprefix("VQ_VIRAL_"): (e.get("tpm"), e.get("num_reads"))
+             for e in sq.get("viral_quant") or []}
+    # Same RPM denominator as the consolidated report: input reads = mapped / mapping rate.
+    from viralquest.report_data import _input_reads
+    input_reads = _input_reads(sq)
+    con = sqlite3.connect(tmp)
+    try:
+        con.executescript(SAMPLE_SCHEMA)
+        con.execute("PRAGMA user_version = %d" % SCHEMA_VERSION)
+        rows = {"blastx": [], "blastn": [], "blastn_taxonomy": [], "orfs": [], "domains": []}
+        seq_rows = []
+        for q in report.get("sequences", []) or []:
+            sid = q.get("id")
+            tpm, reads = quant.get(sid, (None, None))
+            seq_rows.append((sid,) + _sequence_fields(q, tpm, reads, input_reads))
+            for k, rs in _child_rows(q).items():
+                rows[k] += [(sid,) + r for r in rs]
+        con.executemany(f"INSERT OR IGNORE INTO sequences VALUES ({','.join('?' * 26)})", seq_rows)
+        con.executemany("INSERT OR IGNORE INTO blastx_hits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows["blastx"])
+        con.executemany("INSERT OR IGNORE INTO blastn_hits VALUES (?,?,?,?,?,?,?,?,?,?)", rows["blastn"])
+        con.executemany("INSERT OR IGNORE INTO blastn_taxonomy VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        rows["blastn_taxonomy"])
+        con.executemany("INSERT OR IGNORE INTO orfs VALUES (?,?,?,?,?,?,?,?)", rows["orfs"])
+        con.executemany("INSERT INTO domains VALUES (?,?,?,?,?,?,?,?,?)", rows["domains"])
+        for c in report.get("clusters", []) or []:
+            members = c.get("members", []) or []
+            homogeneous = len({(m.get("species") or c.get("species")) for m in members}) <= 1
+            con.execute("INSERT OR IGNORE INTO clusters VALUES (?,?,?,?,?,?)",
+                        (c.get("cluster_id"), c.get("species"), None, c.get("representative_id"),
+                         len(members), int(homogeneous)))
+            con.executemany(
+                "INSERT OR IGNORE INTO cluster_members VALUES (?,?,?,?,?,?,?)",
+                [(c.get("cluster_id"), m.get("seq_id"), _num(m.get("identity")),
+                  _num(m.get("query_coverage")), int(bool(m.get("is_representative"))),
+                  _num(quant.get(m.get("seq_id"), (None, None))[0]),
+                  _num(quant.get(m.get("seq_id"), (None, None))[1])) for m in members])
         con.commit()
     finally:
         con.close()

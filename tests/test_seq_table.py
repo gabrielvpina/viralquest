@@ -1,6 +1,6 @@
-"""Tests for viralquest.seq_table — the per-sequence TSV / XLSX summary table."""
-import csv
+"""Tests for viralquest.seq_table — the aggregated results workbook."""
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -12,6 +12,7 @@ from viralquest.seq_table import (
     ncbi_url,
     seq_row,
     table_rows,
+    workbook_sheets,
     write_tables,
     xlsx_parts,
 )
@@ -56,6 +57,7 @@ class TestRow:
         r = seq_row(_seq(), REPORT)
         assert list(r) == COLUMNS
         assert r["Sample"] == "sampleA"
+        assert r["Sequence ID"] == "c1"
         assert r["Family"] == "Flaviviridae"
         assert r["Genome type"] == "ssRNA(+)"
         assert r["Domains"] == "RdRp (Pfam); Flavi_NS5 (RVDB)"
@@ -122,16 +124,67 @@ class TestXlsx:
 
 def test_write_tables_from_example_report(tmp_path):
     report = json.loads(EXAMPLE.read_text(encoding="utf-8"))
-    tsv, xlsx = write_tables(report, tmp_path, "ex")
-    assert tsv.name == "ex_sequences.tsv" and xlsx.name == "ex_sequences.xlsx"
-
-    with open(tsv, newline="", encoding="utf-8") as fh:
-        rows = list(csv.reader(fh, delimiter="\t"))
-    assert rows[0] == COLUMNS
-    assert len(rows) == len(report["sequences"]) + 1
+    xlsx = write_tables(report, tmp_path, "ex")
+    assert xlsx.name == "ex_viralquest.xlsx"
+    assert not list(tmp_path.glob("*.tsv"))
     assert len(table_rows(report)) == len(report["sequences"])
 
+    sheets = workbook_sheets(report)
     with zipfile.ZipFile(xlsx) as zf:
         assert zf.testzip() is None
-        assert {"[Content_Types].xml", "xl/workbook.xml",
-                "xl/worksheets/sheet1.xml"} <= set(zf.namelist())
+        names = set(zf.namelist())
+        assert {f"xl/worksheets/sheet{k}.xml" for k in range(1, len(sheets) + 1)} <= names
+        wb = zf.read("xl/workbook.xml").decode()
+    assert re.findall(r'<sheet name="([^"]+)"', wb) == [sh.name for sh in sheets]
+
+
+class TestSheets:
+
+    def _report(self):
+        seq = _seq()
+        seq["orfs"] = [{"name": "c1_ORF_1", "start_position": 0, "stop_position": 30, "strand": "+",
+                        "frame": 1, "length_aa": 10, "length_nt": 30, "aa_sequence": "M" * 10,
+                        "domains": [{"target": "RdRp", "database": "Pfam", "score": 50.0,
+                                     "e_value": 1e-10, "start": 1, "stop": 9}]}]
+        seq["heuristic_output"] = {"vq_score": 90, "classification": "viral-known",
+                                   "novelty": "variant", "novelty_flags": ["low-coverage"]}
+        seq["coverage"] = {"length": 40, "mean_depth": 12.5, "max_depth": 30, "cv": 0.2,
+                           "breadth_1x": 0.975, "low_cov_regions": [[0, 4]]}
+        seq["seq_quality"] = {"low_complexity_frac": 0.1, "low_complexity_regions": [[2, 5]],
+                              "self_repeats": [{"strand": "plus"}, {"strand": "minus"},
+                                               {"strand": "minus"}],
+                              "kmer_size": 15, "kmer_repeat_score": 0.01}
+        return {
+            "meta": REPORT["meta"], "sequences": [seq],
+            "clusters": [{"cluster_id": "VQ_CLU_0001", "species": "Dengue", "representative_id": "c1",
+                          "size": 1, "members": [{"seq_id": "c1", "is_representative": True,
+                                                  "identity": 100.0, "query_coverage": 100.0}]}],
+            "salmon_quant": {
+                "viral_quant": [{"name": "VQ_VIRAL_c1", "tpm": 10.0, "num_reads": 5.0, "seq_type": "viral"}],
+                "ref_hk_quant": [{"name": "VQ_REFHK_ACTB", "tpm": 3.0, "num_reads": 2.0, "seq_type": "ref_hk"}],
+                "conserved_quant": [], "host_viral_hits": [
+                    {"transcript": {"name": "XM_1", "tpm": 1.0, "num_reads": 1.0, "seq_type": "host"},
+                     "blast_hits": [{"host_transcript_id": "XM_1", "viral_seq_id": "c1", "pident": 90.0}]}],
+            },
+        }
+
+    def test_every_sheet_has_its_rows(self):
+        sh = {s.name: s for s in workbook_sheets(self._report())}
+        assert sh["Classification"].rows[0]["Novelty"] == "variant"
+        assert sh["Classification"].rows[0]["Cluster"] == "VQ_CLU_0001"
+        assert sh["ORFs"].rows[0]["Protein sequence"] == "M" * 10
+        assert sh["Domains"].rows[0]["Target"] == "RdRp"
+        assert [r["Database"] for r in sh["BLASTx hits"].rows] == ["RefSeq", "NR"]
+        assert [r["Accession"] for r in sh["BLASTn hits"].rows] == ["NC_001474", "X1"]
+        assert sh["Genome coverage"].rows[0]["Breadth ≥1x (%)"] == 97.5
+        assert sh["Genome coverage"].rows[0]["Low-coverage runs"] == "1-5"
+        q = sh["Contig quality"].rows[0]
+        assert (q["Direct repeats"], q["Inverted repeats"]) == (1, 2)
+        assert [r["Type"] for r in sh["Quantification"].rows] == ["viral", "ref_hk", "host"]
+        assert sh["Quantification"].rows[0]["Sequence ID"] == "c1"
+        assert sh["Host-viral hits"].rows[0]["Sequence ID"] == "c1"
+
+    def test_hit_accessions_link_in_every_sheet(self):
+        parts = xlsx_parts(workbook_sheets(self._report()))
+        rels = "".join(v for k, v in parts.items() if k.startswith("xl/worksheets/_rels/"))
+        assert "nuccore/NC_001474" in rels and "protein/AAA12345.1" in rels and "protein/YP_1.1" in rels

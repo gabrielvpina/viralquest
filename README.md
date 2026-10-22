@@ -230,33 +230,43 @@ Structural checks on the confirmed viral sequences (dustmasker low-complexity, s
 
 ```
 SAMPLE_output/
-├── diamond/
-│   ├── refseq.tsv               # Diamond BLASTx vs viral RefSeq filter
-│   └── nr.tsv                   # Diamond BLASTx vs NR (if --nr-db provided)
-├── hmm/
-│   ├── RVDB.tsv
-│   ├── Vfam.tsv
-│   ├── EggNOG.tsv
-│   └── Pfam.tsv
-├── blastn/
-│   └── blastn.tsv               # BLASTn hits (local or online)
-├── salmon/                      # Salmon output directory (if --reads, short reads)
-│   └── vq_quant/quant.sf
-├── coverage/                    # per-sequence read-coverage TSVs (if --reads)
-│   └── <seq_id>.tsv             #   bin · position · mean/sense/antisense depth
-├── seq_quality/                 # sequence-quality signals (unless --skip-seq-quality)
-│   ├── <seq_id>.tsv             #   per-feature: low-complexity + self-repeats
-│   └── summary.tsv              #   per-sequence scalars (low-cx frac, k-mer score…)
-├── synteny/                     # synteny vs each best viral BLASTn reference (unless --no-synteny)
-│   ├── refs/<accession>.gb      #   cached GenBank records
-│   └── synteny.tsv              #   ORF ↔ reference CDS blastp hits
-├── SAMPLE_sequences.tsv         # per-sequence table (taxonomy, domains, BLASTn/BLASTx best hits)
-├── SAMPLE_sequences.xlsx        #   same table as a spreadsheet, accessions linked to NCBI
-├── SAMPLE_viral_contigs.fasta   # confirmed viral sequences
-├── SAMPLE_viralquest.json       # full structured report (JSON)
-├── SAMPLE_viralquest.html       # self-contained interactive HTML report
-└── viralquest.log               # full pipeline log
+├── features/                        # every alignment / analysis table
+│   ├── diamond/
+│   │   ├── refseq.tsv               #   Diamond BLASTx vs viral RefSeq filter
+│   │   └── nr.tsv                   #   Diamond BLASTx vs NR (if --nr-db provided)
+│   ├── hmm/                         #   RVDB.tsv · Vfam.tsv · EggNOG.tsv · Pfam.tsv
+│   ├── blastn/
+│   │   └── blastn.tsv               #   BLASTn hits (local or online)
+│   ├── synteny/                     #   vs each best viral BLASTn reference (unless --no-synteny)
+│   │   ├── refs/<accession>.gb      #     cached GenBank records
+│   │   └── synteny.tsv              #     ORF ↔ reference CDS blastp hits
+│   ├── seq_quality/                 #   unless --skip-seq-quality
+│   │   ├── <seq_id>.tsv             #     per-feature: low-complexity + self-repeats
+│   │   └── summary.tsv              #     per-sequence scalars (low-cx frac, k-mer score…)
+│   └── cap3/                        #   CAP3 assembly (if --cap3)
+├── reads/                           # read-based data (if --reads)
+│   ├── coverage/<seq_id>.tsv        #   bin · position · mean/sense/antisense depth
+│   ├── mapping/
+│   │   ├── viral_mapped.bam(.bai)   #   reads aligned to the confirmed viral sequences
+│   │   └── mapped_R1/R2.fastq.gz    #   reads that mapped (mapped.fastq.gz for single files)
+│   ├── salmon/                      #   Salmon index and quant output (short reads)
+│   ├── coverage_summary.tsv         #   depth, breadth, uniformity per sequence
+│   ├── quantification.tsv           #   every Salmon target (viral, reference HK, conserved HK, host)
+│   └── host_viral_hits.tsv          #   host transcripts similar to viral sequences (reference pathway)
+├── fastas/
+│   ├── SAMPLE_viral_contigs.fasta   #   every confirmed viral sequence
+│   └── SAMPLE_<tier>.fasta          #   one per novelty tier present: known, variant,
+│                                    #   novel-species, divergent, highly-divergent
+├── SAMPLE_viralquest.json           # full structured report (JSON)
+├── SAMPLE_viralquest.html           # self-contained interactive HTML report
+├── SAMPLE_viralquest.xlsx           # aggregated results, one sheet per table (see below)
+├── SAMPLE_viralquest.sqlite         # the consolidated report's tables, for this one sample
+└── viralquest.log                   # full pipeline log
 ```
+
+The **results workbook** (`SAMPLE_viralquest.xlsx`) has one sheet per table: *Sequences* (one row per sequence: taxonomy, domains, best BLASTn / BLASTx hit), *Classification* (heuristic / LLM scores, novelty tier, cluster), *Taxonomy*, *ORFs*, *Domains*, *BLASTx hits*, *BLASTn hits*, *Clusters*, *Synteny*, *Contig quality*, *Genome coverage*, *Quantification* and *Host-viral hits*. Accessions link to their NCBI record.
+
+The **SQLite file** uses the schema of the multi-sample report's `.sqlite` (`sequences`, `blastx_hits`, `blastn_hits`, `blastn_taxonomy`, `orfs`, `domains`, `clusters`, `cluster_members`) without the dataset and sample tables and columns: rows are keyed by `seq_id`.
 
 The HTML report is fully self-contained (single file, no external dependencies) and includes:
 
@@ -294,11 +304,11 @@ Confirmed viral sequences are used as a small reference and the reads are aligne
 - **total depth** plus a **sense / antisense strand split** (forward- vs reverse-mapping reads);
 - **mean base quality** (Phred), used to colour the coverage track (green ≥ Q30, amber Q20–29, red < Q20).
 
-In the HTML viewer this renders as a two-sided track under the ORF lanes (sense grows up, antisense down). A roughly uniform profile indicates a well-assembled contig; an internal coverage discontinuity flags a possible chimeric / mis-assembled junction. Per-sequence depth is also exported to `coverage/<seq_id>.tsv`. Coverage runs for **any** read type — it is the read signal used when Salmon is skipped for long reads or via `--skip-salmon`.
+In the HTML viewer this renders as a two-sided track under the ORF lanes (sense grows up, antisense down). A roughly uniform profile indicates a well-assembled contig; an internal coverage discontinuity flags a possible chimeric / mis-assembled junction. Per-sequence depth is also exported to `reads/coverage/<seq_id>.tsv`, and the alignment itself is kept in `reads/mapping/` (BAM plus the mapped reads as FASTQ). Coverage runs for **any** read type — it is the read signal used when Salmon is skipped for long reads or via `--skip-salmon`.
 
 ## Sequence quality
 
-Structural checks on the confirmed viral contigs, written to `seq_quality/`. They derive only from the assembled sequences, so this module **runs in every execution — with or without `--reads`** (disable it with `--skip-seq-quality`):
+Structural checks on the confirmed viral contigs, written to `features/seq_quality/`. They derive only from the assembled sequences, so this module **runs in every execution — with or without `--reads`** (disable it with `--skip-seq-quality`):
 
 - **dustmasker** — low-complexity regions (shown as bands in the viewer);
 - **self-BLASTn** — internal direct and inverted repeats, visualised as a dot plot (slope +1 direct, −1 inverted);

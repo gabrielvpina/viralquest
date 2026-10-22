@@ -265,11 +265,11 @@ function vqBuildFasta(seqs) {
 }
 
 // ── Sequence table (TSV / XLSX) ─────────────────────────────────────────────
-// One row per sequence. Mirrors viralquest/seq_table.py (the table written to
-// the run's output folder) — keep the columns and rules in sync.
+// One row per sequence. Mirrors the Sequences sheet of viralquest/seq_table.py
+// (the run's results workbook) — keep the columns and rules in sync.
 
 const VQ_TABLE_COLUMNS = [
-  'Sample', 'Order', 'Family', 'Genus', 'Species', 'Genome type',
+  'Sample', 'Sequence ID', 'Order', 'Family', 'Genus', 'Species', 'Genome type',
   'Sequence (nt)', 'Length', 'Domains',
   'BLASTn hit', 'BLASTn identity (%)', 'BLASTn coverage (%)',
   'BLASTn hit ID', 'BLASTn hit sequence', 'BLASTn e-value',
@@ -319,6 +319,7 @@ function vqSeqTableRows(seqs) {
     const g   = (h, k) => (h && h[k] != null ? h[k] : null);
     return {
       'Sample':              _tableSample(s),
+      'Sequence ID':         s.id || '',
       'Order':               t.order || '',
       'Family':              t.family || '',
       'Genus':               t.genus || '',
@@ -375,7 +376,7 @@ function _xlsxCell(ref, v, style = 0) {
 }
 
 const _XLSX_WIDTHS = {
-  'Sample': 18, 'Species': 30, 'BLASTn hit': 40, 'BLASTx hit': 40, 'Domains': 30,
+  'Sample': 18, 'Sequence ID': 18, 'Species': 30, 'BLASTn hit': 40, 'BLASTx hit': 40, 'Domains': 30,
   'Sequence (nt)': 30, 'BLASTn hit sequence': 30, 'BLASTx hit sequence': 30,
   'BLASTn hit ID': 16, 'BLASTx hit ID': 16,
 };

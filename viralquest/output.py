@@ -3,7 +3,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from .biodata import BlastnResult, NucSequence
+from .biodata import NOVELTY_TIERS, BlastnResult, NucSequence
 
 
 class OutputOrganizer:
@@ -11,19 +11,26 @@ class OutputOrganizer:
     Manages the structured output directory layout:
 
         outdir/
-        ├── diamond/
-        │   ├── refseq.tsv      ← merged from all RefSeq batches
-        │   └── nr.tsv          ← single NR run (when --nr-db is used)
-        ├── blastn/
-        │   └── blastn.tsv      ← all BLASTn hits merged
-        ├── hmm/
-        │   ├── RVDB.tsv
-        │   ├── Vfam.tsv
-        │   ├── EggNOG.tsv
-        │   └── Pfam.tsv
+        ├── features/                ← every alignment / analysis table
+        │   ├── diamond/             refseq.tsv (merged batches) · nr.tsv (--nr-db)
+        │   ├── hmm/                 RVDB.tsv · Vfam.tsv · EggNOG.tsv · Pfam.tsv
+        │   ├── blastn/              blastn.tsv
+        │   ├── synteny/             synteny.tsv · refs/<accession>.gb
+        │   ├── seq_quality/         <seq_id>.tsv · summary.tsv
+        │   └── cap3/                (--cap3)
+        ├── reads/                   ← read-based data (--reads)
+        │   ├── coverage/            <seq_id>.tsv per-bin depth
+        │   ├── mapping/             BAM of the reads on the viral sequences + mapped FASTQ
+        │   ├── salmon/              Salmon index / quant output
+        │   ├── coverage_summary.tsv
+        │   └── quantification.tsv
+        ├── fastas/
+        │   ├── {stem}_viral_contigs.fasta      every confirmed viral sequence
+        │   └── {stem}_<novelty tier>.fasta     one per tier present
         ├── {stem}_viralquest.json
         ├── {stem}_viralquest.html
-        ├── {stem}_viral_contigs.fasta
+        ├── {stem}_viralquest.xlsx   ← aggregated results, one sheet per table
+        ├── {stem}_viralquest.sqlite ← the consolidated report's tables, one sample
         └── viralquest.log
     """
 
@@ -31,14 +38,27 @@ class OutputOrganizer:
     _BLASTN_HEADERS = ("qseqid", "qlen", "slen", "qcovhsp", "pident", "evalue", "bit_score", "stitle")
 
     def __init__(self, outdir: Path, stem: str) -> None:
-        self.outdir      = outdir
-        self.stem        = stem
-        self.diamond_dir = outdir / "diamond"
-        self.blastn_dir  = outdir / "blastn"
-        self.hmm_dir     = outdir / "hmm"
-        self.diamond_dir.mkdir(parents=True, exist_ok=True)
-        self.blastn_dir.mkdir(parents=True, exist_ok=True)
-        self.hmm_dir.mkdir(parents=True, exist_ok=True)
+        self.outdir          = outdir
+        self.stem            = stem
+        self.features_dir    = outdir / "features"
+        self.diamond_dir     = self.features_dir / "diamond"
+        self.blastn_dir      = self.features_dir / "blastn"
+        self.hmm_dir         = self.features_dir / "hmm"
+        self.synteny_dir     = self.features_dir / "synteny"
+        self.seq_quality_dir = self.features_dir / "seq_quality"
+        self.cap3_dir        = self.features_dir / "cap3"
+        self.reads_dir       = outdir / "reads"
+        self.coverage_dir    = self.reads_dir / "coverage"
+        self.mapping_dir     = self.reads_dir / "mapping"
+        self.salmon_dir      = self.reads_dir / "salmon"
+        self.fastas_dir      = outdir / "fastas"
+        # blastn/, synteny/, reads/ … appear only when their step runs.
+        for d in (self.diamond_dir, self.hmm_dir, self.fastas_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
+    def report_path(self, ext: str) -> Path:
+        """Top-level report file: {stem}_viralquest.<ext> (json, html, xlsx, sqlite)."""
+        return self.outdir / f"{self.stem}_viralquest.{ext}"
 
     # ── Diamond ───────────────────────────────────────────────────────────────
 
@@ -82,6 +102,7 @@ class OutputOrganizer:
         Write all BLASTn hits to blastn/blastn.tsv and remove any loose
         blastn_batch*.tsv files left in blastn_dir by BlastnRunner.
         """
+        self.blastn_dir.mkdir(parents=True, exist_ok=True)
         out = self.blastn_dir / "blastn.tsv"
         with open(out, "w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh, delimiter="\t")
@@ -100,13 +121,65 @@ class OutputOrganizer:
     # ── Viral contigs FASTA ───────────────────────────────────────────────────
 
     def save_viral_contigs(self, seqs: list[NucSequence]) -> Path:
-        """Write confirmed viral sequences to {stem}_viral_contigs.fasta."""
-        out = self.outdir / f"{self.stem}_viral_contigs.fasta"
-        with open(out, "w", encoding="utf-8") as fh:
-            for seq in seqs:
-                fh.write(f">{seq.id}\n{seq.sequence}\n")
+        """Write confirmed viral sequences to fastas/{stem}_viral_contigs.fasta."""
+        out = self.fastas_dir / f"{self.stem}_viral_contigs.fasta"
+        self._write_fasta(seqs, out)
         logger.info(f"Viral contigs FASTA ({len(seqs)} seqs) → {out}")
         return out
+
+    def save_novelty_fastas(self, seqs: list[NucSequence]) -> dict[str, Path]:
+        """
+        One FASTA per heuristic novelty tier (fastas/{stem}_<tier>.fasta), for
+        the tiers present; sequences without a heuristic score go to
+        {stem}_unscored.fasta. Returns {tier: path}.
+        """
+        by_tier: dict[str, list[NucSequence]] = {}
+        for seq in seqs:
+            h = seq.heuristic_output
+            tier = (h.novelty if h and h.novelty else "unscored")
+            by_tier.setdefault(tier, []).append(seq)
+        order = [t for t in NOVELTY_TIERS if t in by_tier] + sorted(set(by_tier) - set(NOVELTY_TIERS))
+        out: dict[str, Path] = {}
+        for tier in order:
+            path = self.fastas_dir / f"{self.stem}_{tier}.fasta"
+            self._write_fasta(by_tier[tier], path)
+            out[tier] = path
+        if out:
+            logger.info("Novelty FASTAs → " + ", ".join(f"{t} ({len(by_tier[t])})" for t in order))
+        return out
+
+    @staticmethod
+    def _write_fasta(seqs: list[NucSequence], path: Path) -> None:
+        with open(path, "w", encoding="utf-8") as fh:
+            for seq in seqs:
+                fh.write(f">{seq.id}\n{seq.sequence}\n")
+
+    # ── Read tables ───────────────────────────────────────────────────────────
+
+    def save_read_tables(self, report: dict) -> list[Path]:
+        """
+        reads/coverage_summary.tsv (per-sequence depth statistics) and
+        reads/quantification.tsv (every Salmon target), from the exported
+        report; each only when its data exists.
+        """
+        from .seq_table import _coverage, _host_viral, _quantification
+        written = []
+        for sheet, name in ((_coverage(report), "coverage_summary.tsv"),
+                            (_quantification(report), "quantification.tsv"),
+                            (_host_viral(report), "host_viral_hits.tsv")):
+            if not sheet.rows:
+                continue
+            self.reads_dir.mkdir(parents=True, exist_ok=True)
+            path = self.reads_dir / name
+            with open(path, "w", newline="", encoding="utf-8") as fh:
+                w = csv.writer(fh, delimiter="\t", lineterminator="\n")
+                w.writerow(sheet.columns)
+                for r in sheet.rows:
+                    w.writerow(["" if r.get(c) is None else r.get(c) for c in sheet.columns])
+            written.append(path)
+        if written:
+            logger.info("Read tables → " + ", ".join(p.name for p in written))
+        return written
 
     # ── Log file ──────────────────────────────────────────────────────────────
 

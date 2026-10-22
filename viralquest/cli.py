@@ -927,7 +927,7 @@ def _run_pipeline(args):
     cap3_info = None   # populated only when --cap3 is used; drives the report's CAP3 card
     blastn_info = None # populated only when BLASTn runs; records failed queries
     if args.cap3:
-        cap3_res   = Cap3Runner(args.input, outdir=str(outdir / "cap3")).cap3_runner()
+        cap3_res   = Cap3Runner(args.input, outdir=str(organizer.cap3_dir)).cap3_runner()
         contigs_p  = FastaParser(str(cap3_res.contigs));  contigs_p.read_input_file()
         singlets_p = FastaParser(str(cap3_res.singlets)); singlets_p.read_input_file()
         seqs = contigs_p.sequences + singlets_p.sequences
@@ -936,7 +936,7 @@ def _run_pipeline(args):
             "contigs":  len(contigs_p.sequences),
             "singlets": len(singlets_p.sequences),
         }
-        assembled_fasta = outdir / "cap3" / "assembled.fasta"
+        assembled_fasta = organizer.cap3_dir / "assembled.fasta"
         cap3_res.get_combined_fasta(assembled_fasta)
     else:
         seqs = fp.sequences
@@ -1109,7 +1109,7 @@ def _run_pipeline(args):
         t = time.time()
         syn_seqs = [s for s in seqs if s.blastn_hits]
         synteny_refs = SyntenyAnalyzer(
-            outdir / "synteny", email=args.blastn_online, threads=args.cpu,
+            organizer.synteny_dir, email=args.blastn_online, threads=args.cpu,
         ).run(syn_seqs)
         yield from _tick(t, "synteny", {
             "References":           len(synteny_refs),
@@ -1179,7 +1179,7 @@ def _run_pipeline(args):
             ).run(
                 reads              = args.reads,
                 viral_seqs         = seqs,
-                outdir             = outdir / "salmon",
+                outdir             = organizer.salmon_dir,
                 assembled_fasta    = assembled_fasta,
                 user_transcriptome = Path(args.transcriptome) if args.transcriptome else None,
                 hk_genes_file      = Path(args.hk_genes) if args.hk_genes else None,
@@ -1217,7 +1217,7 @@ def _run_pipeline(args):
         viral_for_sq = select_confirmed_sequences(seqs, force=args.force, nr_run=bool(args.nr_db))
         sq_map = SequenceQualityPipeline(
             threads=args.cpu, kmer_size=args.kmer,
-        ).run(viral_seqs=viral_for_sq, outdir=outdir / "seq_quality")
+        ).run(viral_seqs=viral_for_sq, outdir=organizer.seq_quality_dir)
         for seq in seqs:
             if seq.id in sq_map:
                 seq.seq_quality = sq_map[seq.id]
@@ -1245,7 +1245,8 @@ def _run_pipeline(args):
         ).run(
             reads      = args.reads,
             viral_seqs = viral_for_cov,
-            outdir     = outdir / "coverage",
+            outdir      = organizer.coverage_dir,
+            mapping_dir = organizer.mapping_dir,
         )
         for seq in seqs:
             seq.coverage = cov_map.get(seq.id)
@@ -1300,7 +1301,7 @@ def _run_pipeline(args):
     else:
         _skip("llm", "LLM scoring", "--model-type / --model-name not set")
 
-    # ── 13. Export: viral FASTA + JSON ────────────────────────────────────────
+    # ── 13. Export: FASTAs + JSON + workbook + SQLite ─────────────────────────
     t             = time.time()
     fasta_seqs    = (
         [s for s in seqs if s.blastx_nr_hits]
@@ -1308,7 +1309,8 @@ def _run_pipeline(args):
         else [s for s in seqs if s.is_viral]
     )
     viral_fasta   = organizer.save_viral_contigs(fasta_seqs)
-    json_path     = outdir / f"{stem}_viralquest.json"
+    tier_fastas   = organizer.save_novelty_fastas(fasta_seqs)
+    json_path     = organizer.report_path("json")
     exporter      = ReportExporter(force=args.force, nr_run=bool(args.nr_db))
     report        = exporter.export(
         nuc_seqs=seqs,
@@ -1327,6 +1329,7 @@ def _run_pipeline(args):
         "Confirmed sequences": len(report["sequences"]),
         "Clusters":            len(report["clusters"]),
         "Viral FASTA":         Path(viral_fasta).name if viral_fasta else "—",
+        "Novelty FASTAs":      len(tier_fastas),
     }, None)
     report["pipeline_stats"]["workflow"] = {
         "started_at":    started_at,
@@ -1337,13 +1340,17 @@ def _run_pipeline(args):
     }
     ReportExporter.write(report, json_path)
     from .seq_table import write_tables
-    seq_tsv, seq_xlsx = write_tables(report, outdir, stem)
+    from .report_db import write_sample_sqlite
+    seq_xlsx  = write_tables(report, outdir, stem)
+    db_path   = write_sample_sqlite(report, organizer.report_path("sqlite"))
+    logger.success(f"SQLite tables written → '{db_path.name}'")
+    organizer.save_read_tables(report)
     yield ("step", step, time.time() - t)
     step += 1
 
     # ── 14. HTML report ───────────────────────────────────────────────────────
     t         = time.time()
-    html_path = outdir / f"{stem}_viralquest.html"
+    html_path = organizer.report_path("html")
     write_report(report, html_path)
     # Not recorded in the workflow: the JSON (and the workflow it carries) is
     # already written, so only the progress event is emitted here.
@@ -1357,9 +1364,10 @@ def _run_pipeline(args):
     args._result_html         = html_path
     args._result_viral_fasta  = viral_fasta
     args._result_seq_table    = seq_xlsx
-    args._result_diamond_dir  = organizer.diamond_dir
-    args._result_blastn_dir   = organizer.blastn_dir if (args.blastn_local or args.blastn_online) else None
-    args._result_hmm_dir      = organizer.hmm_dir
+    args._result_sqlite       = db_path
+    args._result_features_dir = organizer.features_dir
+    args._result_fastas_dir   = organizer.fastas_dir
+    args._result_reads_dir    = organizer.reads_dir if organizer.reads_dir.is_dir() else None
 
 
 # ── Default mode (plain loguru) ───────────────────────────────────────────────
@@ -1473,13 +1481,14 @@ def _log_summary(args, timings: dict) -> None:
     rows = [
         ("Confirmed viral sequences", len(confirmed)),
         ("Clusters",                  len(clusters)),
-        ("Viral contigs FASTA",       getattr(args, "_result_viral_fasta", None)),
-        ("Diamond results",           getattr(args, "_result_diamond_dir", None)),
-        ("BLASTn results",            getattr(args, "_result_blastn_dir",  None)),
-        ("HMM tables",                getattr(args, "_result_hmm_dir",     None)),
-        ("JSON report",               getattr(args, "_result_json",        None)),
-        ("HTML report",               getattr(args, "_result_html",        None)),
-        ("Sequence table",            getattr(args, "_result_seq_table",   None)),
+        ("Viral contigs FASTA",       getattr(args, "_result_viral_fasta",  None)),
+        ("FASTAs",                    getattr(args, "_result_fastas_dir",   None)),
+        ("Feature tables",            getattr(args, "_result_features_dir", None)),
+        ("Read data",                 getattr(args, "_result_reads_dir",    None)),
+        ("JSON report",               getattr(args, "_result_json",         None)),
+        ("HTML report",               getattr(args, "_result_html",         None)),
+        ("Results workbook",          getattr(args, "_result_seq_table",    None)),
+        ("SQLite tables",             getattr(args, "_result_sqlite",       None)),
         ("Log file",                  Path(args.outdir) / "viralquest.log"),
         ("Total time",                _fmt_step_time(sum(timings.values()))),
     ]
@@ -1526,8 +1535,8 @@ def _find_report_json(target: str) -> Path:
 
 
 def _reload_report(target: str) -> Path:
-    """Rebuild <stem>_viralquest.html (and the sequence table) next to the JSON
-    with the current components."""
+    """Rebuild <stem>_viralquest.html (and the results workbook / SQLite) next
+    to the JSON with the current components."""
     import json
     from loguru import logger
     from . import html_report
@@ -1542,7 +1551,9 @@ def _reload_report(target: str) -> Path:
     report = json.loads(json_path.read_text(encoding="utf-8"))
     html_report.write_report(report, html_path)
     from .seq_table import write_tables
+    from .report_db import write_sample_sqlite
     write_tables(report, json_path.parent, json_path.stem.removesuffix("_viralquest"))
+    write_sample_sqlite(report, json_path.with_suffix(".sqlite"))
     logger.log(_COMPLETE_LEVEL, f"HTML report rebuilt → {html_path}  ({time.time() - t:.1f}s)")
     return html_path
 

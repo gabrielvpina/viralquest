@@ -26,6 +26,13 @@ from loguru import logger
 from viralquest.biodata import CoverageProfile, NucSequence
 
 
+def _gz_empty(path: Path) -> bool:
+    """True when a gzip file holds no data."""
+    import gzip
+    with gzip.open(path, "rb") as fh:
+        return not fh.read(1)
+
+
 # ---------------------------------------------------------------------------
 # CoveragePipeline
 # ---------------------------------------------------------------------------
@@ -75,11 +82,16 @@ class CoveragePipeline:
         reads:      list[str],
         viral_seqs: list[NucSequence],
         outdir:     Path,
+        mapping_dir: Path | None = None,
     ) -> dict[str, CoverageProfile]:
         """
         Returns ``{seq_id: CoverageProfile}`` for every sequence with mapped reads.
         Sequences with no coverage (or on any tooling/IO failure) are simply
         absent from the returned dict.
+
+        With *mapping_dir*, the alignment is kept there (``viral_mapped.bam`` +
+        index) together with the reads that mapped, as FASTQ
+        (``mapped_R1/R2.fastq.gz`` for paired input, else ``mapped.fastq.gz``).
         """
         if len(reads) not in (1, 2):
             logger.warning(f"CoveragePipeline: expected 1 or 2 reads files, got {len(reads)} — skipping.")
@@ -107,6 +119,8 @@ class CoveragePipeline:
                 return {}
             depth, quality, fwd, rev = self._compute_pileup(seqs, bam)
             profiles = self._build_profiles(seqs, depth, quality, fwd, rev)
+            if mapping_dir is not None:
+                self._keep_mapping(bam, len(reads) == 2, Path(mapping_dir))
         except Exception as exc:
             logger.error(f"CoveragePipeline failed — skipping coverage: {exc}")
             return {}
@@ -120,6 +134,45 @@ class CoveragePipeline:
         return profiles
 
     # ── private ───────────────────────────────────────────────────────────────
+
+    def _keep_mapping(self, bam: Path, paired: bool, mapping_dir: Path) -> None:
+        """Copy the BAM (+ index) to *mapping_dir* and extract its mapped reads as FASTQ."""
+        mapping_dir.mkdir(parents=True, exist_ok=True)
+        kept = mapping_dir / "viral_mapped.bam"
+        shutil.copyfile(bam, kept)
+        bai = bam.with_suffix(".bam.bai")
+        if bai.exists():
+            shutil.copyfile(bai, kept.with_suffix(".bam.bai"))
+        t = str(self.threads)
+        if paired:
+            # Name-grouped pairs; keep a pair when either mate mapped (-G 0xC drops
+            # pairs with both mates unmapped), mates without a partner → singletons.
+            collate = subprocess.Popen(
+                [self.samtools_bin, "collate", "-u", "-O", "-@", t,
+                 "-T", str(mapping_dir / "collate_tmp"), str(kept)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            fq = subprocess.run(
+                [self.samtools_bin, "fastq", "-@", t, "-F", "0x900", "-G", "0xC", "-n",
+                 "-1", str(mapping_dir / "mapped_R1.fastq.gz"),
+                 "-2", str(mapping_dir / "mapped_R2.fastq.gz"),
+                 "-s", str(mapping_dir / "mapped_singletons.fastq.gz"),
+                 "-0", "/dev/null", "-"],
+                stdin=collate.stdout, capture_output=True, text=True)
+            if collate.stdout:
+                collate.stdout.close()
+            collate.wait()
+        else:
+            fq = subprocess.run(
+                [self.samtools_bin, "fastq", "-@", t, "-F", "0x904",
+                 "-0", str(mapping_dir / "mapped.fastq.gz"), str(kept)],
+                capture_output=True, text=True)
+        if fq.returncode != 0:
+            logger.warning(f"samtools fastq failed — mapped reads not exported: {fq.stderr.strip()}")
+        else:
+            single = mapping_dir / "mapped_singletons.fastq.gz"
+            if single.exists() and _gz_empty(single):
+                single.unlink()
+            logger.info(f"Read mapping kept → '{mapping_dir}' (BAM + mapped FASTQ)")
 
     @staticmethod
     def _write_fasta(seqs: list[NucSequence], path: Path) -> None:
