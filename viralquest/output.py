@@ -162,7 +162,7 @@ class OutputOrganizer:
         reads/quantification.tsv (every Salmon target), from the exported
         report; each only when its data exists.
         """
-        from .seq_table import _coverage, _host_viral, _quantification
+        from .seq_table import _coverage, _host_viral, _quantification, write_sheet_tsv
         written = []
         for sheet, name in ((_coverage(report), "coverage_summary.tsv"),
                             (_quantification(report), "quantification.tsv"),
@@ -170,13 +170,7 @@ class OutputOrganizer:
             if not sheet.rows:
                 continue
             self.reads_dir.mkdir(parents=True, exist_ok=True)
-            path = self.reads_dir / name
-            with open(path, "w", newline="", encoding="utf-8") as fh:
-                w = csv.writer(fh, delimiter="\t", lineterminator="\n")
-                w.writerow(sheet.columns)
-                for r in sheet.rows:
-                    w.writerow(["" if r.get(c) is None else r.get(c) for c in sheet.columns])
-            written.append(path)
+            written.append(write_sheet_tsv(sheet, self.reads_dir / name))
         if written:
             logger.info("Read tables → " + ", ".join(p.name for p in written))
         return written

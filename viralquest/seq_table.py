@@ -19,6 +19,9 @@ one sheet per kind of result:
     Quantification    every Salmon target (viral, reference HK, conserved HK, host)
     Host-viral hits   host transcripts similar to viral sequences (EVEs)
 
+The consolidated report (viralquest-report) writes the same sheets over all
+samples, with a Sample column, plus "Samples" and "General clusters".
+
 Every row builder works on the exported report dict (the JSON schema). The
 Sequences sheet mirrors the HTML viewer's "Table" export
 (components*/export.js, vqSeqTableRows) — keep both in sync.
@@ -389,6 +392,83 @@ def workbook_sheets(report: dict) -> list[Sheet]:
         _blastx(report), _blastn(report), _clusters(report), _synteny(report),
         _quality(report), _coverage(report), _quantification(report), _host_viral(report),
     ]
+
+
+# ── Multi-sample workbook ───────────────────────────────────────────────────
+
+def _general_clusters(report_data: dict) -> Sheet:
+    cols = ["Cluster", "Species", "Representative", "Samples", "Size", "Sample", "Sequence ID",
+            "Is representative", "Identity (%)", "Coverage (%)", "TPM", "Reads"]
+    rows = [{
+        "Cluster": c.get("gid") or c.get("cluster_id"), "Species": c.get("species") or "",
+        "Representative": c.get("representative"), "Samples": len(c.get("samples") or []),
+        "Size": len(c.get("members") or []), "Sample": m.get("sample"), "Sequence ID": m.get("seq_id"),
+        "Is representative": "yes" if m.get("is_representative") else "no",
+        "Identity (%)": m.get("identity"), "Coverage (%)": m.get("coverage"),
+        "TPM": m.get("tpm"), "Reads": m.get("reads"),
+    } for c in report_data.get("clusters") or [] for m in c.get("members") or []]
+    return Sheet("General clusters", cols, rows, widths={"Species": 30, "Representative": 26})
+
+
+def _samples_sheet(report_data: dict) -> Sheet:
+    cols = ["Sample", "Input sequences", "Viral flagged", "Confirmed viral", "Clusters",
+            "Salmon pathway", "Mapping rate (%)", "Input reads", "Viral reads",
+            "ViralQuest version", "Run started", "Run time (s)"]
+    rows = []
+    for s in report_data.get("samples") or []:
+        sq, wf = s.get("salmon") or {}, s.get("workflow") or {}
+        rows.append({
+            "Sample": s.get("sample"), "Input sequences": s.get("n_input"),
+            "Viral flagged": s.get("n_viral"), "Confirmed viral": s.get("n_confirmed"),
+            "Clusters": s.get("n_clusters"), "Salmon pathway": sq.get("pathway") or "",
+            "Mapping rate (%)": sq.get("mapping_rate"), "Input reads": sq.get("input_reads"),
+            "Viral reads": sq.get("viral_reads"), "ViralQuest version": wf.get("version") or "",
+            "Run started": wf.get("started_at") or "", "Run time (s)": wf.get("total_seconds"),
+        })
+    return Sheet("Samples", cols, rows, widths={"Sample": 20, "Run started": 26})
+
+
+def merged_sample_sheets(samples) -> list[Sheet]:
+    """
+    Every per-sample sheet, concatenated over *samples* (SampleReport objects),
+    with a leading Sample column (the Sequences sheet already has one). The
+    per-sample cluster sheet is renamed "Sample clusters".
+    """
+    merged: dict[str, Sheet] = {}
+    for smp in samples:
+        for sh in workbook_sheets(smp.report):
+            name = "Sample clusters" if sh.name == "Clusters" else sh.name
+            has_sample = "Sample" in sh.columns
+            if name not in merged:
+                merged[name] = Sheet(name, sh.columns if has_sample else ["Sample"] + sh.columns,
+                                     [], dict(sh.links), {"Sample": 18, **sh.widths})
+            merged[name].rows += sh.rows if has_sample else [{"Sample": smp.sample, **r} for r in sh.rows]
+    return list(merged.values())
+
+
+def write_multi_tables(samples, report_data: dict, path: str | Path) -> Path:
+    """
+    The consolidated report's workbook: Samples, every per-sample sheet with a
+    Sample column, and the cross-sample General clusters.
+    """
+    sheets = merged_sample_sheets(samples)
+    at = next((i for i, sh in enumerate(sheets) if sh.name == "Sample clusters"), len(sheets))
+    sheets = [_samples_sheet(report_data)] + sheets[:at] + [_general_clusters(report_data)] + sheets[at:]
+    xlsx = write_xlsx(sheets, path)
+    logger.success(f"Results workbook written → '{Path(path).name}' ({len(sheets)} sheets).")
+    return xlsx
+
+
+def write_sheet_tsv(sheet: Sheet, path: str | Path) -> Path:
+    """One sheet as a TSV (header + rows)."""
+    import csv
+    path = Path(path)
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh, delimiter="\t", lineterminator="\n")
+        w.writerow(sheet.columns)
+        for r in sheet.rows:
+            w.writerow(["" if r.get(c) is None else r.get(c) for c in sheet.columns])
+    return path
 
 
 # ── XLSX (minimal SpreadsheetML) ────────────────────────────────────────────

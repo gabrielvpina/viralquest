@@ -205,9 +205,9 @@ def test_write_artifacts(tmp_path):
     with patch("viralquest.report_clusters._run_blastn", return_value={"sB::s1": _hit()}):
         clusters = build_general_clusters(seqs)
     write_artifacts(clusters, {s["gid"]: s for s in seqs}, tmp_path)
-    assert (tmp_path / "clusters" / "VQR_CLU_0001.fasta").exists()
-    assert (tmp_path / "quantification" / "VQR_CLU_0001.tsv").exists()
-    table = (tmp_path / "blastn" / "general_blastn.tsv").read_text()
+    assert (tmp_path / "fastas" / "clusters" / "VQR_CLU_0001.fasta").exists()
+    assert (tmp_path / "reads" / "clusters" / "VQR_CLU_0001.tsv").exists()
+    table = (tmp_path / "features" / "blastn" / "general_blastn.tsv").read_text()
     assert "sA::s1" in table and "sB::s1" in table
 
 
@@ -465,3 +465,43 @@ def test_two_datasets_merge_without_clashes(results_root, tmp_path):
         con.execute(f"INSERT INTO {table} SELECT * FROM b.{table}")
     rows = con.execute("SELECT dataset, count(*) FROM sequences GROUP BY dataset ORDER BY dataset").fetchall()
     assert rows == [("STUDY_A", 4), ("STUDY_B", 4)]
+
+
+def test_dataset_workbook_fastas_and_read_tables(results_root, tmp_path):
+    """The consolidated report writes a single run's tables over every sample."""
+    import re
+    import sqlite3
+    import zipfile
+    from viralquest.cli_report import write_multi_fastas, write_multi_read_tables
+    from viralquest.report_db import write_sqlite
+    from viralquest.seq_table import write_multi_tables
+
+    samples = load_samples(results_root)
+    data = build_report_data(samples, version="3.0.0", dataset="PRJ1")
+    out = tmp_path / "out"
+    out.mkdir()
+
+    xlsx = write_multi_tables(samples, data, out / "PRJ1.viralquest.xlsx")
+    with zipfile.ZipFile(xlsx) as zf:
+        names = re.findall(r'<sheet name="([^"]+)"', zf.read("xl/workbook.xml").decode())
+        seq_sheet = zf.read(f"xl/worksheets/sheet{names.index('Sequences') + 1}.xml").decode()
+    assert names[0] == "Samples" and "General clusters" in names and "Sample clusters" in names
+    assert {"Quantification", "Genome coverage", "Contig quality", "ORFs", "Domains",
+            "Taxonomy", "Synteny"} <= set(names)
+    assert "sampleA" in seq_sheet and "sampleB" in seq_sheet
+
+    for q in data["sequences"]:
+        q["sequence"] = "ACGT"
+    fastas = write_multi_fastas(data, out / "fastas", "PRJ1")
+    assert fastas["viral_contigs"].read_text().count(">") == len(data["sequences"])
+    assert ">sampleB::k141_1" in fastas["viral_contigs"].read_text()
+
+    paths = write_multi_read_tables(samples, out / "reads")
+    quant = (out / "reads" / "quantification.tsv").read_text().splitlines()
+    assert [p.name for p in paths] == ["quantification.tsv"]
+    assert quant[0].startswith("Sample\tTarget") and quant[1].startswith("sampleA\tVQ_VIRAL_k141_1")
+
+    con = sqlite3.connect(write_sqlite(data, out / "PRJ1.viralquest.sqlite", sample_reports=samples))
+    rows = con.execute("SELECT dataset, sample, seq_id, tpm FROM quantification ORDER BY target").fetchall()
+    con.close()
+    assert rows == [("PRJ1", "sampleA", "k141_1", 10.0), ("PRJ1", "sampleA", "k141_2", 11.0)]

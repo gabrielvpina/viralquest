@@ -68,7 +68,8 @@ def test_sample_sqlite_from_example(tmp_path):
     con = sqlite3.connect(db)
     tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert tables == {"sequences", "blastx_hits", "blastn_hits", "blastn_taxonomy",
-                      "orfs", "domains", "clusters", "cluster_members"}
+                      "orfs", "domains", "clusters", "cluster_members", "coverage",
+                      "seq_quality", "synteny_hits", "quantification", "host_viral_hits"}
     cols = {r[1] for r in con.execute("PRAGMA table_info(sequences)")}
     assert "seq_id" in cols and not {"dataset", "sample", "gid"} & cols
     assert con.execute("SELECT COUNT(*) FROM sequences").fetchone()[0] == len(report["sequences"])

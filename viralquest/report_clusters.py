@@ -261,10 +261,13 @@ def write_artifacts(
     seq_by_gid: dict[str, dict],
     out_dir:    Path,
 ) -> None:
-    """Write per-cluster FASTA + quantification TSV and the combined BLASTn table."""
-    clu_dir = out_dir / "clusters"
-    qnt_dir = out_dir / "quantification"
-    bln_dir = out_dir / "blastn"
+    """
+    Write per-cluster FASTA (fastas/clusters/), quantification TSV
+    (reads/clusters/) and the combined BLASTn table (features/blastn/).
+    """
+    clu_dir = out_dir / "fastas" / "clusters"
+    qnt_dir = out_dir / "reads" / "clusters"
+    bln_dir = out_dir / "features" / "blastn"
     for d in (clu_dir, qnt_dir, bln_dir):
         d.mkdir(parents=True, exist_ok=True)
 
@@ -294,4 +297,4 @@ def write_artifacts(
                 w.writerow([m.gid, m.sample, m.seq_id,
                             "" if m.tpm is None else m.tpm, m.identity, m.coverage])
 
-    logger.info(f"Cluster artefacts written → {out_dir}/ (clusters, quantification, blastn).")
+    logger.info(f"Cluster artefacts written → {out_dir}/ (fastas/clusters, reads/clusters, features/blastn).")

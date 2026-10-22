@@ -266,7 +266,7 @@ SAMPLE_output/
 
 The **results workbook** (`SAMPLE_viralquest.xlsx`) has one sheet per table: *Sequences* (one row per sequence: taxonomy, domains, best BLASTn / BLASTx hit), *Classification* (heuristic / LLM scores, novelty tier, cluster), *Taxonomy*, *ORFs*, *Domains*, *BLASTx hits*, *BLASTn hits*, *Clusters*, *Synteny*, *Contig quality*, *Genome coverage*, *Quantification* and *Host-viral hits*. Accessions link to their NCBI record.
 
-The **SQLite file** uses the schema of the multi-sample report's `.sqlite` (`sequences`, `blastx_hits`, `blastn_hits`, `blastn_taxonomy`, `orfs`, `domains`, `clusters`, `cluster_members`) without the dataset and sample tables and columns: rows are keyed by `seq_id`.
+The **SQLite file** uses the schema of the multi-sample report's `.sqlite` (`sequences`, `blastx_hits`, `blastn_hits`, `blastn_taxonomy`, `orfs`, `domains`, `clusters`, `cluster_members`, `coverage`, `seq_quality`, `synteny_hits`, `quantification`, `host_viral_hits`) without the dataset and sample tables and columns: rows are keyed by `seq_id`.
 
 The HTML report is fully self-contained (single file, no external dependencies) and includes:
 
@@ -373,7 +373,11 @@ Each run is a named **dataset** (`-n`: a BioProject, a host species, a study …
 |---|---|
 | `viralquest_report.html` | Self-contained interactive report |
 | `<name>.viralquest.json` | Full report data — dataset name, schema version, per-sample summaries, every sequence record, cross-sample clusters |
-| `<name>.viralquest.sqlite` | The same data as tables: `dataset_info`, `samples`, `sequences`, `blastx_hits`, `blastn_hits`, `blastn_taxonomy`, `orfs`, `domains`, `clusters`, `cluster_members` |
+| `<name>.viralquest.sqlite` | The same data as tables: `dataset_info`, `samples`, `sequences`, `blastx_hits`, `blastn_hits`, `blastn_taxonomy`, `orfs`, `domains`, `clusters`, `cluster_members`, `coverage`, `seq_quality`, `synteny_hits`, `quantification`, `host_viral_hits` |
+| `<name>.viralquest.xlsx` | The results workbook of a single run over every sample (a *Sample* column on each sheet), plus *Samples* and *General clusters* (the cross-sample clusters; the per-sample ones are in *Sample clusters*) |
+| `fastas/` | `<name>_viral_contigs.fasta` with every sequence (headers `sample::seq_id`), one `<name>_<tier>.fasta` per novelty tier, and `clusters/<VQR_CLU_####>.fasta` |
+| `reads/` | `coverage_summary.tsv`, `quantification.tsv` and `host_viral_hits.tsv` over every sample, and `clusters/<VQR_CLU_####>.tsv` (per-cluster quantification) |
+| `features/blastn/general_blastn.tsv` | Member ↔ representative BLASTn of the cross-sample clusters |
 
 Every SQLite row carries the `dataset` column and every primary key starts with it, so datasets can be combined later without id clashes (sample, contig and cluster ids are only unique within one dataset):
 
@@ -383,7 +387,7 @@ ATTACH 'B.viralquest.sqlite' AS b;
 INSERT INTO dataset_info SELECT * FROM b.dataset_info;
 INSERT INTO samples      SELECT * FROM b.samples;
 INSERT INTO sequences    SELECT * FROM b.sequences;
--- … same for the other tables
+-- … same for the other tables (quantification / host_viral_hits are keyed by dataset + sample)
 ```
 
 ### Arguments

@@ -6,9 +6,16 @@ a self-contained HTML report plus merge-ready data exports.
 
     viralquest-report -in my_results -out final_report -n PRJNA123456
 
-The output directory contains the HTML, ``<name>.viralquest.json`` and
-``<name>.viralquest.sqlite`` (see report_db.py), plus the ``clusters/``
-artefact folder when cross-sample clustering ran.
+The output directory mirrors a single run's layout:
+
+    features/blastn/general_blastn.tsv   cross-sample cluster BLASTn (when clustering ran)
+    fastas/                              every viral sequence + one FASTA per novelty tier;
+                                         clusters/<VQR_CLU_####>.fasta
+    reads/                               coverage_summary.tsv · quantification.tsv ·
+                                         host_viral_hits.tsv (Sample column); clusters/<id>.tsv
+    viralquest_report.html
+    <name>.viralquest.json / .sqlite     (see report_db.py)
+    <name>.viralquest.xlsx               every per-sample sheet + Samples + General clusters
 """
 
 from __future__ import annotations
@@ -29,6 +36,49 @@ from viralquest.report_clusters import (
 from viralquest.report_data import build_report_data
 from viralquest.report_db import output_paths, validate_dataset_name, write_json, write_sqlite
 from viralquest.report_loader import load_samples
+from viralquest.seq_table import write_multi_tables
+
+
+def write_multi_fastas(report_data: dict, fasta_dir: Path, name: str) -> dict[str, Path]:
+    """
+    fastas/<name>_viral_contigs.fasta with every sequence of the dataset and one
+    <name>_<tier>.fasta per heuristic novelty tier present; headers are the
+    dataset-wide ids (sample::seq_id).
+    """
+    from viralquest.biodata import NOVELTY_TIERS
+
+    seqs = [q for q in report_data.get("sequences") or [] if q.get("sequence")]
+    fasta_dir.mkdir(parents=True, exist_ok=True)
+    groups: dict[str, list[dict]] = {"viral_contigs": seqs}
+    for q in seqs:
+        tier = (q.get("heuristic_output") or {}).get("novelty") or "unscored"
+        groups.setdefault(tier, []).append(q)
+    order = ["viral_contigs"] + [t for t in NOVELTY_TIERS if t in groups] + \
+            sorted(set(groups) - set(NOVELTY_TIERS) - {"viral_contigs"})
+    out = {}
+    for key in order:
+        path = fasta_dir / f"{name}_{key}.fasta"
+        with open(path, "w", encoding="utf-8") as fh:
+            for q in groups[key]:
+                fh.write(f">{q.get('gid') or q.get('id')}\n{q['sequence']}\n")
+        out[key] = path
+    logger.info(f"FASTAs → {fasta_dir}/ ({len(seqs)} sequences, {len(out) - 1} novelty tier(s)).")
+    return out
+
+
+def write_multi_read_tables(samples, reads_dir: Path) -> list[Path]:
+    """reads/coverage_summary.tsv, quantification.tsv, host_viral_hits.tsv over every
+    sample (Sample column); each only when some sample has that data."""
+    from viralquest.seq_table import merged_sample_sheets, write_sheet_tsv
+
+    files = {"Genome coverage": "coverage_summary.tsv", "Quantification": "quantification.tsv",
+             "Host-viral hits": "host_viral_hits.tsv"}
+    written = []
+    for sh in merged_sample_sheets(samples):
+        if sh.name in files and sh.rows:
+            reads_dir.mkdir(parents=True, exist_ok=True)
+            written.append(write_sheet_tsv(sh, reads_dir / files[sh.name]))
+    return written
 
 __version__ = "3.0.13"
 
@@ -147,10 +197,14 @@ def main(argv: list[str] | None = None) -> int:
     write_report(report_data, html_path)
     json_path, db_path = output_paths(out_dir, args.name)
     write_json(report_data, json_path)
-    write_sqlite(report_data, db_path)
+    write_sqlite(report_data, db_path, sample_reports=samples)
+    xlsx_path = out_dir / f"{args.name}.viralquest.xlsx"
+    write_multi_tables(samples, report_data, xlsx_path)
+    write_multi_fastas(report_data, out_dir / "fastas", args.name)
+    write_multi_read_tables(samples, out_dir / "reads")
     logger.success(
         f"Dataset '{args.name}' ({report_data['meta']['n_samples']} samples) → "
-        f"'{html_path}', '{json_path.name}', '{db_path.name}'."
+        f"'{html_path}', '{json_path.name}', '{db_path.name}', '{xlsx_path.name}'."
     )
     return 0
 

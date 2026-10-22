@@ -24,7 +24,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2   # 2: + coverage, seq_quality, synteny_hits, quantification, host_viral_hits
 DATASET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
@@ -214,6 +214,79 @@ CREATE TABLE cluster_members (
     reads              REAL,
     PRIMARY KEY (dataset, cluster_id, gid)
 );
+CREATE TABLE coverage (
+    dataset            TEXT NOT NULL,
+    gid                TEXT NOT NULL,
+    length             INTEGER,
+    mean_depth         REAL,
+    max_depth          REAL,
+    cv                 REAL,
+    breadth_1x         REAL,              -- fraction of bases with depth >= 1
+    mean_depth_sense   REAL,
+    mean_depth_antisense REAL,
+    mean_quality       REAL,
+    n_low_cov_regions  INTEGER,
+    PRIMARY KEY (dataset, gid)
+);
+CREATE TABLE seq_quality (
+    dataset            TEXT NOT NULL,
+    gid                TEXT NOT NULL,
+    length             INTEGER,
+    low_complexity_frac REAL,
+    n_low_complexity   INTEGER,
+    n_direct_repeats   INTEGER,
+    n_inverted_repeats INTEGER,
+    kmer_size          INTEGER,
+    kmer_distinct      INTEGER,
+    kmer_total         INTEGER,
+    kmer_repeat_score  REAL,
+    PRIMARY KEY (dataset, gid)
+);
+CREATE TABLE synteny_hits (
+    dataset            TEXT NOT NULL,
+    gid                TEXT NOT NULL,
+    reference          TEXT,              -- accession of the best viral BLASTn hit
+    flipped            INTEGER,           -- 1 = contig is the reverse complement
+    orf                TEXT,
+    cds_product        TEXT,
+    protein_id         TEXT,
+    pct_identity       REAL,
+    e_value            REAL,
+    bit_score          REAL,
+    orf_aa_start       INTEGER,
+    orf_aa_end         INTEGER,
+    cds_aa_start       INTEGER,
+    cds_aa_end         INTEGER,
+    orf_coverage       REAL,
+    cds_coverage       REAL,
+    ref_start          INTEGER,           -- 1-based, on the reference genome
+    ref_end            INTEGER
+);
+CREATE TABLE quantification (
+    dataset            TEXT NOT NULL,
+    sample             TEXT NOT NULL,
+    target             TEXT NOT NULL,     -- Salmon target name (VQ_VIRAL_…, VQ_REFHK_…, VQ_CONS_…, host)
+    seq_type           TEXT,              -- viral | ref_hk | conserved | pfam_hk | host
+    kingdom            TEXT,
+    seq_id             TEXT,              -- viral targets only
+    length             INTEGER,
+    eff_length         REAL,
+    tpm                REAL,
+    reads              REAL,
+    PRIMARY KEY (dataset, sample, target)
+);
+CREATE TABLE host_viral_hits (
+    dataset            TEXT NOT NULL,
+    sample             TEXT NOT NULL,
+    host_transcript    TEXT,
+    seq_id             TEXT,
+    pct_identity       REAL,
+    coverage           REAL,
+    e_value            REAL,
+    bit_score          REAL,
+    transcript_tpm     REAL,
+    transcript_reads   REAL
+);
 CREATE INDEX idx_sequences_sample  ON sequences (dataset, sample);
 CREATE INDEX idx_sequences_family  ON sequences (family);
 CREATE INDEX idx_sequences_species ON sequences (species);
@@ -286,7 +359,63 @@ def _child_rows(q: dict) -> dict[str, list[tuple]]:
     return out
 
 
-def write_sqlite(report: dict, path: Path) -> Path:
+def _analysis_rows(q: dict, refs: dict) -> dict[str, list[tuple]]:
+    """Coverage / sequence-quality / synteny rows of one sequence, without key columns.
+    *refs*: that sample's synteny references (accession → reference record)."""
+    out: dict[str, list[tuple]] = {"coverage": [], "seq_quality": [], "synteny": []}
+    c = q.get("coverage")
+    if c:
+        out["coverage"].append((c.get("length"), _num(c.get("mean_depth")), _num(c.get("max_depth")),
+                                _num(c.get("cv")), _num(c.get("breadth_1x")), _num(c.get("mean_depth_fwd")),
+                                _num(c.get("mean_depth_rev")), _num(c.get("mean_quality")),
+                                len(c.get("low_cov_regions") or [])))
+    sq = q.get("seq_quality")
+    if sq:
+        reps = sq.get("self_repeats") or []
+        out["seq_quality"].append((sq.get("length"), _num(sq.get("low_complexity_frac")),
+                                   len(sq.get("low_complexity_regions") or []),
+                                   sum(1 for r in reps if r.get("strand") == "plus"),
+                                   sum(1 for r in reps if r.get("strand") == "minus"),
+                                   sq.get("kmer_size"), sq.get("kmer_distinct"), sq.get("kmer_total"),
+                                   _num(sq.get("kmer_repeat_score"))))
+    syn = q.get("synteny") or {}
+    cds = (refs.get(syn.get("reference")) or {}).get("cds") or []
+    for h in syn.get("hits") or []:
+        ci = h.get("cds_index", -1)
+        cd = cds[ci] if isinstance(ci, int) and 0 <= ci < len(cds) else {}
+        ref_nt = h.get("ref_nt") or [None, None]
+        out["synteny"].append((syn.get("reference"), int(bool(syn.get("flipped"))), h.get("orf_name"),
+                               cd.get("product"), cd.get("protein_id"), _num(h.get("pident")),
+                               _num(h.get("evalue")), _num(h.get("bit_score")), h.get("q_start"), h.get("q_end"),
+                               h.get("s_start"), h.get("s_end"), _num(h.get("q_cov")), _num(h.get("s_cov")),
+                               ref_nt[0] + 1 if ref_nt[0] is not None else None, ref_nt[1]))
+    return out
+
+
+def _salmon_rows(sq: dict | None) -> dict[str, list[tuple]]:
+    """Every Salmon target and host-viral hit of one sample, without key columns."""
+    out: dict[str, list[tuple]] = {"quantification": [], "host_viral": []}
+    if not sq:
+        return out
+    entries = (list(sq.get("viral_quant") or []) + list(sq.get("ref_hk_quant") or [])
+               + list(sq.get("conserved_quant") or []) + list(sq.get("pfam_hk_quant") or [])
+               + [r.get("transcript") or {} for r in sq.get("host_viral_hits") or []])
+    for e in entries:
+        name = e.get("name") or ""
+        out["quantification"].append((
+            name, e.get("seq_type"), e.get("kingdom") or None,
+            name.removeprefix("VQ_VIRAL_") if name.startswith("VQ_VIRAL_") else None,
+            e.get("length"), _num(e.get("eff_length")), _num(e.get("tpm")), _num(e.get("num_reads"))))
+    for r in sq.get("host_viral_hits") or []:
+        t = r.get("transcript") or {}
+        for h in r.get("blast_hits") or []:
+            out["host_viral"].append((h.get("host_transcript_id"), h.get("viral_seq_id"), _num(h.get("pident")),
+                                      _num(h.get("qcovhsp")), _num(h.get("evalue")), _num(h.get("bit_score")),
+                                      _num(t.get("tpm")), _num(t.get("num_reads"))))
+    return out
+
+
+def write_sqlite(report: dict, path: Path, sample_reports=None) -> Path:
     meta = report.get("meta", {})
     ds = validate_dataset_name(meta.get("dataset"))
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -314,6 +443,16 @@ def write_sqlite(report: dict, path: Path) -> Path:
               _num((s.get("workflow") or {}).get("total_seconds")))
              for s in samples])
 
+        # Per-sample data the consolidated report does not ship: synteny references
+        # and the full Salmon tables (from the loaded SampleReport objects).
+        refs_by_sample = {s.sample: ((s.report.get("synteny") or {}).get("references") or {})
+                          for s in sample_reports or []}
+        extra: dict[str, list[tuple]] = {"coverage": [], "seq_quality": [], "synteny": [],
+                                         "quantification": [], "host_viral": []}
+        for smp in sample_reports or []:
+            for k, rs in _salmon_rows(smp.salmon_quant).items():
+                extra[k] += [(ds, smp.sample) + r for r in rs]
+
         seq_rows, bx_rows, bn_rows, bnt_rows, orf_rows, dom_rows = [], [], [], [], [], []
         for q in report.get("sequences", []) or []:
             gid, sample = q.get("gid"), q.get("sample")
@@ -327,6 +466,8 @@ def write_sqlite(report: dict, path: Path) -> Path:
             bnt_rows += [key + r for r in rows["blastn_taxonomy"]]
             orf_rows += [key + r for r in rows["orfs"]]
             dom_rows += [key + r for r in rows["domains"]]
+            for k, rs in _analysis_rows(q, refs_by_sample.get(sample, {})).items():
+                extra[k] += [key + r for r in rs]
 
         con.executemany(f"INSERT INTO sequences VALUES ({','.join('?' * 29)})", seq_rows)
         con.executemany("INSERT OR IGNORE INTO blastx_hits VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", bx_rows)
@@ -334,6 +475,7 @@ def write_sqlite(report: dict, path: Path) -> Path:
         con.executemany("INSERT INTO blastn_taxonomy VALUES (?,?,?,?,?,?,?,?,?,?,?)", bnt_rows)
         con.executemany("INSERT OR IGNORE INTO orfs VALUES (?,?,?,?,?,?,?,?,?)", orf_rows)
         con.executemany("INSERT INTO domains VALUES (?,?,?,?,?,?,?,?,?,?)", dom_rows)
+        _insert_extra(con, extra, n_key=2, n_salmon_key=2)
 
         for c in report.get("clusters", []) or []:
             members = c.get("members", []) or []
@@ -350,6 +492,18 @@ def write_sqlite(report: dict, path: Path) -> Path:
         con.close()
     tmp.replace(path)
     return path
+
+
+def _insert_extra(con, extra: dict[str, list[tuple]], n_key: int, n_salmon_key: int) -> None:
+    """Insert the coverage / quality / synteny / Salmon rows. *n_key*: key columns of a
+    sequence row (dataset + gid, or seq_id); *n_salmon_key*: of a Salmon row
+    (dataset + sample, or none)."""
+    ph = lambda n: ",".join("?" * n)
+    con.executemany(f"INSERT OR IGNORE INTO coverage VALUES ({ph(n_key + 9)})", extra["coverage"])
+    con.executemany(f"INSERT OR IGNORE INTO seq_quality VALUES ({ph(n_key + 9)})", extra["seq_quality"])
+    con.executemany(f"INSERT INTO synteny_hits VALUES ({ph(n_key + 16)})", extra["synteny"])
+    con.executemany(f"INSERT OR IGNORE INTO quantification VALUES ({ph(n_salmon_key + 8)})", extra["quantification"])
+    con.executemany(f"INSERT INTO host_viral_hits VALUES ({ph(n_salmon_key + 8)})", extra["host_viral"])
 
 
 # ── Single-sample SQLite ────────────────────────────────────────────────────
@@ -469,6 +623,72 @@ CREATE TABLE cluster_members (
     reads              REAL,
     PRIMARY KEY (cluster_id, seq_id)
 );
+CREATE TABLE coverage (
+    seq_id             TEXT NOT NULL,
+    length             INTEGER,
+    mean_depth         REAL,
+    max_depth          REAL,
+    cv                 REAL,
+    breadth_1x         REAL,              -- fraction of bases with depth >= 1
+    mean_depth_sense   REAL,
+    mean_depth_antisense REAL,
+    mean_quality       REAL,
+    n_low_cov_regions  INTEGER,
+    PRIMARY KEY (seq_id)
+);
+CREATE TABLE seq_quality (
+    seq_id             TEXT NOT NULL,
+    length             INTEGER,
+    low_complexity_frac REAL,
+    n_low_complexity   INTEGER,
+    n_direct_repeats   INTEGER,
+    n_inverted_repeats INTEGER,
+    kmer_size          INTEGER,
+    kmer_distinct      INTEGER,
+    kmer_total         INTEGER,
+    kmer_repeat_score  REAL,
+    PRIMARY KEY (seq_id)
+);
+CREATE TABLE synteny_hits (
+    seq_id             TEXT NOT NULL,
+    reference          TEXT,              -- accession of the best viral BLASTn hit
+    flipped            INTEGER,           -- 1 = contig is the reverse complement
+    orf                TEXT,
+    cds_product        TEXT,
+    protein_id         TEXT,
+    pct_identity       REAL,
+    e_value            REAL,
+    bit_score          REAL,
+    orf_aa_start       INTEGER,
+    orf_aa_end         INTEGER,
+    cds_aa_start       INTEGER,
+    cds_aa_end         INTEGER,
+    orf_coverage       REAL,
+    cds_coverage       REAL,
+    ref_start          INTEGER,           -- 1-based, on the reference genome
+    ref_end            INTEGER
+);
+CREATE TABLE quantification (
+    target             TEXT NOT NULL,     -- Salmon target name (VQ_VIRAL_…, VQ_REFHK_…, VQ_CONS_…, host)
+    seq_type           TEXT,              -- viral | ref_hk | conserved | pfam_hk | host
+    kingdom            TEXT,
+    seq_id             TEXT,              -- viral targets only
+    length             INTEGER,
+    eff_length         REAL,
+    tpm                REAL,
+    reads              REAL,
+    PRIMARY KEY (target)
+);
+CREATE TABLE host_viral_hits (
+    host_transcript    TEXT,
+    seq_id             TEXT,
+    pct_identity       REAL,
+    coverage           REAL,
+    e_value            REAL,
+    bit_score          REAL,
+    transcript_tpm     REAL,
+    transcript_reads   REAL
+);
 CREATE INDEX idx_sequences_family  ON sequences (family);
 CREATE INDEX idx_sequences_species ON sequences (species);
 CREATE INDEX idx_domains_seq       ON domains (seq_id);
@@ -497,6 +717,8 @@ def write_sample_sqlite(report: dict, path: Path) -> Path:
         con.executescript(SAMPLE_SCHEMA)
         con.execute("PRAGMA user_version = %d" % SCHEMA_VERSION)
         rows = {"blastx": [], "blastn": [], "blastn_taxonomy": [], "orfs": [], "domains": []}
+        extra = {"coverage": [], "seq_quality": [], "synteny": [], **_salmon_rows(sq)}
+        refs = (report.get("synteny") or {}).get("references") or {}
         seq_rows = []
         for q in report.get("sequences", []) or []:
             sid = q.get("id")
@@ -504,6 +726,8 @@ def write_sample_sqlite(report: dict, path: Path) -> Path:
             seq_rows.append((sid,) + _sequence_fields(q, tpm, reads, input_reads))
             for k, rs in _child_rows(q).items():
                 rows[k] += [(sid,) + r for r in rs]
+            for k, rs in _analysis_rows(q, refs).items():
+                extra[k] += [(sid,) + r for r in rs]
         con.executemany(f"INSERT OR IGNORE INTO sequences VALUES ({','.join('?' * 26)})", seq_rows)
         con.executemany("INSERT OR IGNORE INTO blastx_hits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows["blastx"])
         con.executemany("INSERT OR IGNORE INTO blastn_hits VALUES (?,?,?,?,?,?,?,?,?,?)", rows["blastn"])
@@ -511,6 +735,7 @@ def write_sample_sqlite(report: dict, path: Path) -> Path:
                         rows["blastn_taxonomy"])
         con.executemany("INSERT OR IGNORE INTO orfs VALUES (?,?,?,?,?,?,?,?)", rows["orfs"])
         con.executemany("INSERT INTO domains VALUES (?,?,?,?,?,?,?,?,?)", rows["domains"])
+        _insert_extra(con, extra, n_key=1, n_salmon_key=0)
         for c in report.get("clusters", []) or []:
             members = c.get("members", []) or []
             homogeneous = len({(m.get("species") or c.get("species")) for m in members}) <= 1
