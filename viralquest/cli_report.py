@@ -191,6 +191,15 @@ def main(argv: list[str] | None = None) -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    from viralquest.orfs import needs_orf_recall
+    old = [s.sample for s in samples if needs_orf_recall(s.report)]
+    if old:
+        logger.warning(
+            f"{len(old)} sample(s) ran ViralQuest < 3.0.9, whose ORFs are complete only "
+            f"({', '.join(old[:5])}{' …' if len(old) > 5 else ''}): gene fragments have no ORF, "
+            f"so the synteny misses them. Run 'viralquest --reload <sample dir>' on each first."
+        )
+
     # Merge sequences once; used both for clustering and as the viewer source.
     all_sequences: list[dict] = []
     for s in samples:
