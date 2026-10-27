@@ -101,3 +101,57 @@ class OrfAnalyzer:
     def filter_complete_orfs(self, nuc_seq: NucSequence) -> list[Orf]:
         """returns ORFs with valid start and stop codons"""
         return [orf for orf in nuc_seq.orfs if orf.start_codon and orf.stop_codon]
+
+
+# ── Older reports (hidden --reload) ─────────────────────────────────────────
+
+# Partial ORFs (no start / no stop codon inside the contig) are called since
+# 3.0.9; earlier reports carry complete ORFs only, which misses most gene
+# fragments of assembled viral contigs.
+PARTIAL_ORFS_SINCE = (3, 0, 9)
+
+
+def _version(v: str | None) -> tuple[int, ...]:
+    try:
+        return tuple(int(x) for x in str(v).split(".")[:3])
+    except ValueError:
+        return (0,)
+
+
+def needs_orf_recall(report: dict) -> bool:
+    """True for a report whose ORFs predate partial-ORF calling (and were not re-called yet)."""
+    meta = report.get("meta") or {}
+    return (_version(meta.get("viralquest_version")) < PARTIAL_ORFS_SINCE
+            and not meta.get("orfs_recalled_with"))
+
+
+def recall_orfs(seq: dict, analyzer: "OrfAnalyzer") -> int:
+    """
+    Re-call the ORFs of an exported sequence (dict, in place) with the current
+    caller. A new ORF sharing an old one's strand and 3' end is the same gene
+    extended upstream: it inherits the old ORF's HMM domains, shifted by the
+    extension (domain coordinates are aa from the ORF's N-terminus). Old ORFs
+    with no such match are kept. Returns how many ORFs are new or longer.
+    """
+    from .exporter import ReportExporter
+
+    tmp = NucSequence(id=seq["id"], sequence=seq.get("sequence") or "")
+    analyzer.find_n_save_orfs(tmp)
+    three = lambda o: (o["strand"], o["stop_position"] if o["strand"] == "+" else o["start_position"])
+    old = {three(o): o for o in seq.get("orfs") or []}
+    out, changed = [], 0
+    for orf in tmp.orfs:
+        d = ReportExporter._orf_to_dict(orf)
+        prev = old.pop(three(d), None)
+        if prev is None:
+            changed += 1
+        else:
+            shift = ((prev["start_position"] - d["start_position"]) if d["strand"] == "+"
+                     else (d["stop_position"] - prev["stop_position"])) // 3
+            changed += shift > 0
+            d["domains"] = [{**dom, "start": dom["start"] + shift, "stop": dom["stop"] + shift}
+                            for dom in prev.get("domains") or []]
+        out.append(d)
+    out += old.values()
+    seq["orfs"] = sorted(out, key=lambda o: (o["start_position"], o["stop_position"]))
+    return changed
