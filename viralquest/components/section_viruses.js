@@ -411,39 +411,33 @@ const _NOV_COLOR = {
 };
 const _NOVEL_TIERS = ['novel-species', 'divergent', 'highly-divergent'];
 
-/* What each tier means and the exact rule behind it (same cut-offs as
+/* What each tier means and the rule behind it (same cut-offs as
    score_heuristic._novelty / _seqNovelty). Rules are checked top to bottom and
    the first one met wins; "best hit" = highest bit score. */
 const _NOV_INFO = {
   'known': {
-    meaning: 'Same species as a sequenced virus — most likely the same or a close strain.',
+    meaning: 'Likely the same species as a sequenced virus, probably the same or a close strain.',
     rule:    ['best viral BLASTn ≥ 95% nt identity', 'covering ≥ 70% of the contig'],
-    basis:   '95% ANI ≈ species-level vOTU (MIUViG; Roux et al. 2019)',
   },
   'variant': {
-    meaning: 'A known species, but a divergent strain or variant of it.',
+    meaning: 'Likely a known species, as a divergent strain or variant of it.',
     rule:    ['BLASTn ≥ 85% nt over ≥ 70% of the contig', 'or best BLASTx ≥ 90% aa (flag low-coverage if it covers < 70%)'],
-    basis:   '≥ 90% aa ≈ same species for RdRp (Babaian & Edgar 2022)',
   },
   'novel-species': {
-    meaning: 'Putative new species, probably in the same genus as its best hit.',
+    meaning: 'Possibly a new species, probably in the same genus as its best hit.',
     rule:    ['best BLASTx 70–90% aa', 'or, with no BLASTx hit, BLASTn ≥ 70% nt (flag nt-only)'],
-    basis:   '70–90% RdRp aa ≈ genus-rank range (Babaian & Edgar 2022)',
   },
   'divergent': {
-    meaning: 'Putative new genus or higher rank — a distant relative of known viruses.',
+    meaning: 'Possibly a new genus or higher rank — a distant relative of known viruses.',
     rule:    ['best BLASTx 40–70% aa', 'or, with no BLASTx hit, BLASTn < 70% nt (flag nt-only)'],
-    basis:   'below the genus range for RdRp',
   },
   'highly-divergent': {
-    meaning: 'Remote homology only — viral, but its placement is uncertain.',
+    meaning: 'Remote homology only — likely viral, but its placement is uncertain.',
     rule:    ['best BLASTx < 40% aa', 'or no BLAST hit at all, viral HMM domains only (flag hmm-only)'],
-    basis:   '< 40% aa = "highly divergent" (Shi et al. 2016; descriptive)',
   },
   'non-viral': {
     meaning: 'Not a novelty level: the contig was not called viral.',
     rule:    ['a non-viral BLASTn hit dominates (≥ 90% nt, ≥ 80% coverage)', 'or the viral evidence is too weak'],
-    basis:   'mirrors the heuristic classification',
   },
 };
 const _NOV_FLAGS = {
@@ -469,7 +463,6 @@ function _noveltyGuide(counts) {
         </span>
         <span class="vq-novcard__meaning">${esc(info.meaning)}</span>
         <span class="vq-novcard__rule">${info.rule.map(r => `<span>${esc(r)}</span>`).join('')}</span>
-        <span class="vq-novcard__basis">${esc(info.basis)}</span>
       </button>`;
   }).join('');
   const flags = Object.entries(_NOV_FLAGS)
@@ -478,15 +471,18 @@ function _noveltyGuide(counts) {
     <details class="vq-novguide" id="vq-novguide"${open ? ' open' : ''}>
       <summary>
         <span class="vq-novguide__title">Novelty tiers</span>
-        <span class="vq-novguide__sub">how far each contig sits from known viruses · click a card to filter the table</span>
+        <span class="vq-novguide__sub">estimated distance of each contig from known viruses · click a card to filter the table</span>
+        <span class="vq-novguide__badge" title="Tiers are a suggested classification, not a taxonomic assignment">Recommendation · estimate</span>
       </summary>
       <div class="vq-novguide__grid">${cards}</div>
       <div class="vq-novguide__foot">
         <div class="vq-novguide__flags"><strong>Flags</strong>${flags}</div>
-        <div class="vq-novguide__note">Assigned per contig from its single best hit; rules are checked in the order
-          shown and the first one met wins. The aa cut-offs come from RdRp studies but are applied to whichever
-          protein the best BLASTx hit is, so contigs of one virus (RdRp vs. structural genes) can land in
-          different tiers.</div>
+        <div class="vq-novguide__note"><strong>These tiers are a classification recommendation, not a taxonomic
+          assignment.</strong> Each one is an estimate from the contig's single best hit, using generic identity
+          cut-offs: rules are checked in the order shown and the first one met wins. Real species and genus
+          boundaries differ between virus families, and contigs of one virus (e.g. polymerase vs. structural
+          genes) can land in different tiers — confirm novelty with phylogeny and the family's demarcation
+          criteria before reporting it.</div>
       </div>
     </details>`;
 }

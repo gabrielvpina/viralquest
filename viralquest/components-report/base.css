@@ -1033,7 +1033,7 @@ body {
 .vq-nfill--highly-divergent { background: #3d2a66; }
 .vq-nfill--non-viral        { background: #a8302b; }
 
-/* Novelty guide — Virome tab: one card per tier (meaning · rule · basis). */
+/* Novelty guide — Virome tab: one card per tier (meaning · rule · count). */
 .vq-novguide {
   background: var(--vq-surface);
   border: 1px solid var(--vq-border);
@@ -1081,7 +1081,6 @@ body {
 .vq-novcard__rule   { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--vq-text-2);
                       font-variant-numeric: tabular-nums; }
 .vq-novcard__rule > span::before { content: '▸ '; color: var(--nov-c); }
-.vq-novcard__basis  { font-size: 10.5px; color: var(--vq-text-3); font-style: italic; margin-top: auto; }
 .vq-novcard--known            { --nov-c: #1f7a3c; }
 .vq-novcard--variant          { --nov-c: #6aae78; }
 .vq-novcard--novel-species    { --nov-c: #2f86d6; }
@@ -1091,7 +1090,12 @@ body {
 .vq-novguide__foot  { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 11.5px; color: var(--vq-text-2); }
 .vq-novguide__flags { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
 .vq-novguide__flags strong { color: var(--vq-text); }
-.vq-novguide__note  { color: var(--vq-text-3); line-height: 1.4; }
+.vq-novguide__note  { color: var(--vq-text-2); line-height: 1.4; }
+.vq-novguide__badge {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px;
+  background: #fef3d7; color: #9b6a09; border: 1px solid #f1d58a;
+}
 .vq-score-col__novelty {
   display: flex;
   align-items: center;
