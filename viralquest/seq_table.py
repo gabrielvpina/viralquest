@@ -446,14 +446,33 @@ def merged_sample_sheets(samples) -> list[Sheet]:
     return list(merged.values())
 
 
+def _general_synteny(report_data: dict) -> Sheet:
+    """ORF ↔ CDS pairs of the general synteny (report_synteny.py): every sample's
+    sequences on their group's anchor reference, with a Sample column."""
+    gs = report_data.get("general_synteny") or {}
+    rows = []
+    for q in _seqs(report_data):
+        if not q.get("general_synteny"):
+            continue
+        one = _synteny({"synteny": gs, "sequences": [{"id": q.get("id"),
+                                                       "synteny": q["general_synteny"]}]})
+        rows += [{"Sample": q.get("sample"), **r} for r in one.rows]
+    base = _synteny({})
+    return Sheet("General synteny", ["Sample"] + base.columns, rows,
+                 links=base.links, widths=base.widths)
+
+
 def write_multi_tables(samples, report_data: dict, path: str | Path) -> Path:
     """
     The consolidated report's workbook: Samples, every per-sample sheet with a
-    Sample column, and the cross-sample General clusters.
+    Sample column, the cross-sample General clusters and, when it ran, the
+    General synteny.
     """
     sheets = merged_sample_sheets(samples)
     at = next((i for i, sh in enumerate(sheets) if sh.name == "Sample clusters"), len(sheets))
     sheets = [_samples_sheet(report_data)] + sheets[:at] + [_general_clusters(report_data)] + sheets[at:]
+    if report_data.get("general_synteny"):
+        sheets.append(_general_synteny(report_data))
     xlsx = write_xlsx(sheets, path)
     logger.success(f"Results workbook written → '{Path(path).name}' ({len(sheets)} sheets).")
     return xlsx
