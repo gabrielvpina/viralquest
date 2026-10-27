@@ -423,13 +423,17 @@ class SyntenyAnalyzer:
         self.fetcher = fetcher or GenBankFetcher(self.outdir / "refs", email=email)
         self.aligner = aligner or SyntenyAligner(self.outdir, diamond_bin, threads, e_value)
 
-    def run(self, seqs: list[NucSequence]) -> dict[str, RefGenome]:
-        picked = {s.id: h for s in seqs if (h := best_viral_hit(s))}
+    def run(self, seqs: list[NucSequence],
+            assign: dict[str, str] | None = None) -> dict[str, RefGenome]:
+        """*assign*: {sequence id: reference accession} to use instead of each
+        sequence's best viral BLASTn hit (the multi-sample general synteny)."""
+        picked = (dict(assign) if assign is not None else
+                  {s.id: h.accession for s in seqs if (h := best_viral_hit(s))})
         if not picked:
             logger.info("Synteny: no sequence has a viral BLASTn hit — skipped.")
             return {}
 
-        paths = self.fetcher.fetch([h.accession for h in picked.values()])
+        paths = self.fetcher.fetch(list(picked.values()))
         refs: dict[str, ParsedReference] = {}
         for key, path in paths.items():
             parsed = parse_genbank(path)
@@ -440,8 +444,8 @@ class SyntenyAnalyzer:
         by_id   = {s.id: s for s in seqs}
         queries: dict[str, str] = {}
         qmap:    dict[str, tuple[NucSequence, object]] = {}
-        for sid, hit in picked.items():
-            if acc_key(hit.accession) not in refs:
+        for sid, acc in picked.items():
+            if acc_key(acc) not in refs:
                 continue
             for orf in by_id[sid].orfs:
                 aa = (orf.aa_sequence or "").rstrip("*").replace("*", "X")
@@ -463,7 +467,7 @@ class SyntenyAnalyzer:
             if seq is None:
                 continue
             key, _, _ = r["sseqid"].rpartition("|")
-            if key == acc_key(picked[seq.id].accession):
+            if key == acc_key(picked[seq.id]):
                 kept.append(r)
 
         hits_by_seq: dict[str, list[SyntenyHit]] = defaultdict(list)
@@ -488,8 +492,8 @@ class SyntenyAnalyzer:
             ))
 
         used: dict[str, RefGenome] = {}
-        for sid, hit in picked.items():
-            parsed = refs.get(acc_key(hit.accession))
+        for sid, acc in picked.items():
+            parsed = refs.get(acc_key(acc))
             if parsed is None:
                 continue
             seq  = by_id[sid]
@@ -581,13 +585,14 @@ class SyntenyAnalyzer:
 
 # ── Backfill an existing report JSON (hidden --reload) ──────────────────────
 
-def _seq_from_json(d: dict) -> NucSequence:
-    """The parts of an exported sequence the synteny step reads: BLASTn hits + ORFs."""
+def _seq_from_json(d: dict, id_key: str = "id") -> NucSequence:
+    """The parts of an exported sequence the synteny step reads: BLASTn hits + ORFs.
+    *id_key*: the field used as the sequence id ("gid" in the multi-sample report)."""
     from dataclasses import fields
     from viralquest.biodata import Orf
     orf_keys = {f.name for f in fields(Orf) if f.init}
     hit_keys = {f.name for f in fields(BlastnResult)}
-    seq = NucSequence(id=d["id"], sequence=d.get("sequence") or "")
+    seq = NucSequence(id=d[id_key], sequence=d.get("sequence") or "")
     seq.blastn_hits = [BlastnResult(**{k: v for k, v in h.items() if k in hit_keys})
                        for h in d.get("blastn_hits") or []]
     seq.orfs = [Orf(**{k: v for k, v in o.items() if k in orf_keys})
