@@ -55,6 +55,8 @@ def write_json(report: dict, path: Path) -> Path:
         "clusters":       report.get("clusters", []),
         "sequences":      report.get("sequences", []),
     }
+    if report.get("general_synteny"):          # report_synteny.py; sequences carry theirs
+        doc["general_synteny"] = report["general_synteny"]
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, separators=(",", ":"), default=str)

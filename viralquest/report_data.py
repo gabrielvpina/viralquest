@@ -10,6 +10,7 @@ Shape produced by :func:`build_report_data`::
       "sequences": [ <every stamped sequence, for the viewer>, ... ],
       "clusters":  [ <cross-sample clusters>, ... ],   # filled in stage 2
       "has_clusters": bool,
+      "general_synteny": {references, clusters} | None,  # report_synteny.py
     }
 
 The per-sample *overview* summaries are intentionally compact (counts and
@@ -205,6 +206,7 @@ def build_report_data(
     version:    str = "unknown",
     clusters:   list[dict] | None = None,
     dataset:    str | None = None,
+    general_synteny: dict | None = None,
 ) -> dict:
     """Build the ``VQ_REPORT`` dict from loaded samples (+ optional clusters)."""
     clusters = clusters or []
@@ -236,4 +238,6 @@ def build_report_data(
         "sequences":    sequences,
         "clusters":     clusters,
         "has_clusters": bool(clusters),
+        # Cross-sample synteny (report_synteny.py); sequences carry `general_synteny`.
+        "general_synteny": general_synteny,
     }
