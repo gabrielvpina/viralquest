@@ -356,3 +356,17 @@ class TestReloadSynteny:
             cli._reload_report(str(src), synteny=False)
         bf.assert_not_called()
         assert "synteny" not in json.loads(src.read_text())
+
+    def test_old_report_gets_its_orfs_recalled(self, tmp_path):
+        from unittest.mock import patch
+        src = tmp_path / "S_viralquest.json"
+        src.write_text(json.dumps({"meta": {"viralquest_version": "3.0.1"}, "clusters": [],
+                                   "pipeline_stats": {}, "synteny": {"references": {}, "clusters": []},
+                                   "sequences": [{"id": "c1", "sequence": "GCT" * 200, "orfs": [],
+                                                  "blastn_hits": [], "synteny": None}]}))
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            cli._reload_report(str(src), synteny=False)
+        rep = json.loads(src.read_text())
+        assert rep["sequences"][0]["orfs"]                       # partial ORFs called
+        assert rep["meta"]["orfs_recalled_with"] == cli.__version__
+        assert "synteny" not in rep                              # stale synteny dropped

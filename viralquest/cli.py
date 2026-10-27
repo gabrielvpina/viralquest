@@ -1540,9 +1540,11 @@ def _reload_report(target: str, synteny: bool = True, email: str | None = None,
     """Rebuild <stem>_viralquest.html (and the results workbook / SQLite) next
     to the JSON with the current components.
 
-    A report without the synteny section (older versions, --no-synteny) gets
-    it first — GenBank references + DIAMOND blastp, written to
-    features/synteny/ — and the JSON is updated in place. --no-synteny skips it.
+    A report older than 3.0.9 first gets its ORFs re-called (partial ORFs;
+    domains carried over). A report without the synteny section (older
+    versions, --no-synteny, or just re-called ORFs) then gets it — GenBank
+    references + DIAMOND blastp, written to features/synteny/. The JSON is
+    updated in place. --no-synteny skips the synteny step.
     """
     import json
     from loguru import logger
@@ -1556,15 +1558,34 @@ def _reload_report(target: str, synteny: bool = True, email: str | None = None,
     logger.info(f"--reload: report JSON  → {json_path}")
     logger.info(f"--reload: components   → {html_report._COMPONENTS}")
     report = json.loads(json_path.read_text(encoding="utf-8"))
+    from .exporter import ReportExporter
+    changed = False
+
+    # Reports older than 3.0.9 carry complete ORFs only: re-call them (partial
+    # ORFs included, HMM domains carried over) and redo the synteny on them.
+    from .orfs import OrfAnalyzer, needs_orf_recall, recall_orfs
+    if needs_orf_recall(report):
+        analyzer = OrfAnalyzer()
+        logger.disable("viralquest.orfs")      # one line per sequence otherwise
+        n = sum(recall_orfs(q, analyzer) for q in report.get("sequences") or [])
+        logger.enable("viralquest.orfs")
+        logger.info(f"--reload: ORFs re-called with partial ORFs ({n} new or extended); "
+                    f"report v{(report.get('meta') or {}).get('viralquest_version')}")
+        report.setdefault("meta", {})["orfs_recalled_with"] = __version__
+        report.pop("synteny", None)
+        for q in report.get("sequences") or []:
+            q["synteny"] = None
+        changed = True
+
     if synteny and report.get("synteny") is None:
-        from .exporter import ReportExporter
         from .setup_env import activate_pixi_env
         from .synteny import backfill_report
         activate_pixi_env()
         logger.info("--reload: report has no synteny section — running the synteny step")
-        if backfill_report(report, json_path.parent / "features" / "synteny",
-                           email=email, threads=threads) is not None:
-            ReportExporter.write(report, json_path)
+        changed |= backfill_report(report, json_path.parent / "features" / "synteny",
+                                   email=email, threads=threads) is not None
+    if changed:
+        ReportExporter.write(report, json_path)
     html_report.write_report(report, html_path)
     from .seq_table import write_tables
     from .report_db import write_sample_sqlite
