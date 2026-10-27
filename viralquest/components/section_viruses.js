@@ -210,6 +210,7 @@ function _initViromeTab(report, mountId) {
 
   el.innerHTML = `
     <div class="vq-stats-page">
+      ${_noveltyGuide(novelty)}
       <div class="vq-stats-row vq-stats-row--top">
         ${_chip('Viral Sequences', _fmtNum(viral.length), 'success', 'confirmed contigs')}
         ${_chip('Species', _fmtNum(viruses.filter(v => !v.noHit).length), 'accent', 'distinct best-hit species')}
@@ -217,7 +218,7 @@ function _initViromeTab(report, mountId) {
         ${_chip('Known Viruses', _fmtNum(known), 'success',
                 'species with ≥1 viral-known contig')}
         ${_chip('Putative Novel', _fmtNum(putativeNovel), 'accent',
-                'contigs <90% aa to any known virus')}
+                'novel species · divergent · highly divergent')}
       </div>
 
       ${_group('Viruses', 'one row per species of the best BLASTx hit · novelty tiers from the heuristic score', table)}
@@ -237,6 +238,20 @@ function _initViromeTab(report, mountId) {
   document.getElementById('stats-viruses-novelty')?.addEventListener('change', e => {
     tableState.status = e.target.value; drawTable();
   });
+  const guide = document.getElementById('vq-novguide');
+  guide?.addEventListener('toggle', () => {
+    try { localStorage.setItem('vq-nov-guide', guide.open ? 'open' : 'closed'); } catch (e) { /* storage off */ }
+  });
+  guide?.querySelectorAll('[data-nov-card]').forEach(card => card.addEventListener('click', () => {
+    const tier = card.dataset.novCard;
+    const sel  = document.getElementById('stats-viruses-novelty');
+    tableState.status = tableState.status === tier ? 'all' : tier;   // second click clears
+    if (sel) sel.value = tableState.status;
+    guide.querySelectorAll('[data-nov-card]').forEach(c =>
+      c.classList.toggle('active', c.dataset.novCard === tableState.status));
+    drawTable();
+    document.getElementById('stats-viruses-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
   document.getElementById('stats-viruses-table')?.addEventListener('click', e => {
     const th = e.target.closest('th[data-sort]');
     if (th) {
@@ -395,6 +410,86 @@ const _NOV_COLOR = {
   'divergent': '#7a5bb0', 'highly-divergent': '#3d2a66', 'non-viral': '#a8302b',
 };
 const _NOVEL_TIERS = ['novel-species', 'divergent', 'highly-divergent'];
+
+/* What each tier means and the exact rule behind it (same cut-offs as
+   score_heuristic._novelty / _seqNovelty). Rules are checked top to bottom and
+   the first one met wins; "best hit" = highest bit score. */
+const _NOV_INFO = {
+  'known': {
+    meaning: 'Same species as a sequenced virus — most likely the same or a close strain.',
+    rule:    ['best viral BLASTn ≥ 95% nt identity', 'covering ≥ 70% of the contig'],
+    basis:   '95% ANI ≈ species-level vOTU (MIUViG; Roux et al. 2019)',
+  },
+  'variant': {
+    meaning: 'A known species, but a divergent strain or variant of it.',
+    rule:    ['BLASTn ≥ 85% nt over ≥ 70% of the contig', 'or best BLASTx ≥ 90% aa (flag low-coverage if it covers < 70%)'],
+    basis:   '≥ 90% aa ≈ same species for RdRp (Babaian & Edgar 2022)',
+  },
+  'novel-species': {
+    meaning: 'Putative new species, probably in the same genus as its best hit.',
+    rule:    ['best BLASTx 70–90% aa', 'or, with no BLASTx hit, BLASTn ≥ 70% nt (flag nt-only)'],
+    basis:   '70–90% RdRp aa ≈ genus-rank range (Babaian & Edgar 2022)',
+  },
+  'divergent': {
+    meaning: 'Putative new genus or higher rank — a distant relative of known viruses.',
+    rule:    ['best BLASTx 40–70% aa', 'or, with no BLASTx hit, BLASTn < 70% nt (flag nt-only)'],
+    basis:   'below the genus range for RdRp',
+  },
+  'highly-divergent': {
+    meaning: 'Remote homology only — viral, but its placement is uncertain.',
+    rule:    ['best BLASTx < 40% aa', 'or no BLAST hit at all, viral HMM domains only (flag hmm-only)'],
+    basis:   '< 40% aa = "highly divergent" (Shi et al. 2016; descriptive)',
+  },
+  'non-viral': {
+    meaning: 'Not a novelty level: the contig was not called viral.',
+    rule:    ['a non-viral BLASTn hit dominates (≥ 90% nt, ≥ 80% coverage)', 'or the viral evidence is too weak'],
+    basis:   'mirrors the heuristic classification',
+  },
+};
+const _NOV_FLAGS = {
+  'low-coverage': 'the deciding hit covers < 70% of the contig',
+  'nt-only':      'decided by BLASTn alone (no BLASTx hit)',
+  'hmm-only':     'no BLAST hit; viral HMM domains only',
+};
+
+/* Collapsible guide at the top of the Virome tab: one card per tier with its
+   meaning, its rule and the count; clicking a card filters the table. */
+function _noveltyGuide(counts) {
+  const esc = VQ.esc;
+  let open = true;
+  try { open = localStorage.getItem('vq-nov-guide') !== 'closed'; } catch (e) { /* storage off */ }
+  const cards = _NOV_ORDER.map(t => {
+    const info = _NOV_INFO[t];
+    return `
+      <button class="vq-novcard vq-novcard--${t}" type="button" data-nov-card="${t}"
+              ${counts[t] ? '' : 'disabled'} title="${counts[t] ? 'Show these contigs in the table' : 'No contig in this tier'}">
+        <span class="vq-novcard__top">
+          <span class="vq-nov vq-nov--${t}">${esc(_NOV_LABEL[t])}</span>
+          <span class="vq-novcard__n">${_fmtNum(counts[t] || 0)}</span>
+        </span>
+        <span class="vq-novcard__meaning">${esc(info.meaning)}</span>
+        <span class="vq-novcard__rule">${info.rule.map(r => `<span>${esc(r)}</span>`).join('')}</span>
+        <span class="vq-novcard__basis">${esc(info.basis)}</span>
+      </button>`;
+  }).join('');
+  const flags = Object.entries(_NOV_FLAGS)
+    .map(([f, d]) => `<span><span class="vq-nov__flag">${esc(f)}</span> ${esc(d)}</span>`).join('');
+  return `
+    <details class="vq-novguide" id="vq-novguide"${open ? ' open' : ''}>
+      <summary>
+        <span class="vq-novguide__title">Novelty tiers</span>
+        <span class="vq-novguide__sub">how far each contig sits from known viruses · click a card to filter the table</span>
+      </summary>
+      <div class="vq-novguide__grid">${cards}</div>
+      <div class="vq-novguide__foot">
+        <div class="vq-novguide__flags"><strong>Flags</strong>${flags}</div>
+        <div class="vq-novguide__note">Assigned per contig from its single best hit; rules are checked in the order
+          shown and the first one met wins. The aa cut-offs come from RdRp studies but are applied to whichever
+          protein the best BLASTx hit is, so contigs of one virus (RdRp vs. structural genes) can land in
+          different tiers.</div>
+      </div>
+    </details>`;
+}
 
 /* Novelty of one contig: the heuristic's, or recomputed with the same rule for
    reports written before the field existed. */
@@ -1630,5 +1725,6 @@ window.vqInitViruses = vqInitViruses;
 window.vqNovelty = {
   tier: s => _seqNovelty(s).tier,
   order: _NOV_ORDER, label: _NOV_LABEL, long: _NOV_LONG, color: _NOV_COLOR, novel: _NOVEL_TIERS,
+  info: _NOV_INFO, flags: _NOV_FLAGS,
 };
 })();

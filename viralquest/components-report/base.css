@@ -1032,6 +1032,66 @@ body {
 .vq-nfill--divergent        { background: #7a5bb0; }
 .vq-nfill--highly-divergent { background: #3d2a66; }
 .vq-nfill--non-viral        { background: #a8302b; }
+
+/* Novelty guide — Virome tab: one card per tier (meaning · rule · basis). */
+.vq-novguide {
+  background: var(--vq-surface);
+  border: 1px solid var(--vq-border);
+  border-radius: var(--vq-radius);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.vq-novguide > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  list-style-position: outside;
+}
+.vq-novguide__title { font-weight: 700; color: var(--vq-text); }
+.vq-novguide__sub   { font-size: 12px; color: var(--vq-text-3); }
+.vq-novguide__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.vq-novcard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--vq-surface);
+  border: 1px solid var(--vq-border);
+  border-top: 4px solid var(--nov-c, var(--vq-border));
+  border-radius: var(--vq-radius-sm, 6px);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: box-shadow .12s, border-color .12s;
+}
+.vq-novcard:hover:not(:disabled) { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.vq-novcard.active  { box-shadow: 0 0 0 2px var(--nov-c); }
+.vq-novcard:disabled { cursor: default; opacity: .55; }
+.vq-novcard__top    { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.vq-novcard__n      { font-size: 18px; font-weight: 700; color: var(--vq-text); font-variant-numeric: tabular-nums; }
+.vq-novcard__meaning { font-size: 12.5px; color: var(--vq-text); line-height: 1.35; }
+.vq-novcard__rule   { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--vq-text-2);
+                      font-variant-numeric: tabular-nums; }
+.vq-novcard__rule > span::before { content: '▸ '; color: var(--nov-c); }
+.vq-novcard__basis  { font-size: 10.5px; color: var(--vq-text-3); font-style: italic; margin-top: auto; }
+.vq-novcard--known            { --nov-c: #1f7a3c; }
+.vq-novcard--variant          { --nov-c: #6aae78; }
+.vq-novcard--novel-species    { --nov-c: #2f86d6; }
+.vq-novcard--divergent        { --nov-c: #7a5bb0; }
+.vq-novcard--highly-divergent { --nov-c: #3d2a66; }
+.vq-novcard--non-viral        { --nov-c: #a8302b; border-style: dashed; border-top-style: solid; }
+.vq-novguide__foot  { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; font-size: 11.5px; color: var(--vq-text-2); }
+.vq-novguide__flags { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+.vq-novguide__flags strong { color: var(--vq-text); }
+.vq-novguide__note  { color: var(--vq-text-3); line-height: 1.4; }
 .vq-score-col__novelty {
   display: flex;
   align-items: center;
