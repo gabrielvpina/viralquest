@@ -19,6 +19,10 @@
      • a table of the ORF ↔ CDS pairs
    Data: report.synteny = { references: {acc: RefGenome}, clusters:
    [{reference, members}] } and sequence.synteny (see viralquest/synteny.py).
+   The consolidated report reuses this tab for its general synteny
+   (report_synteny.py): opts = { data, synKey: 'general_synteny', idKey: 'gid',
+   general: true } — members from every sample, on one anchor reference per
+   group of similar references.
    ORF arrows, domain lanes and domain colours come from the viewer via
    VQ.genome, so both tabs look alike.
    ============================================================ */
@@ -32,45 +36,63 @@ const _SY = {
   identShade: false,   // links shaded by aa identity instead of a flat tint
   refAxis:    false,   // tracks on the reference axis; default: each on its own, left-aligned
   fullRef:    false,   // draw the whole reference even when the members cover a sliver of it
+  noLinks:    false,   // no link bands: the gene colours alone tell the correspondence
+  general:    false,   // consolidated report: members come from several samples
+  idOf:       s => s.id,
+  synOf:      s => s.synteny,
 };
 
 
 // HMM banks used only to call a sequence viral; the pairs table lists Pfam.
 const _FILTER_DBS = new Set(['RVDB', 'Vfam', 'EggNOG']);
 
+const _clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 const _fmt = n => (n == null || isNaN(n)) ? '—' : Math.round(n).toLocaleString('en-US');
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
-function vqInitSynteny(report, mountId) {
+function vqInitSynteny(report, mountId, opts) {
   const el = document.getElementById(mountId || 'section-synteny');
   if (!el) return;
-  const syn = (report && report.synteny) || {};
+  opts = opts || {};
+  const synKey = opts.synKey || 'synteny', idKey = opts.idKey || 'id';
+  _SY.general  = !!opts.general;
+  _SY.idOf     = s => s[idKey] || s.id;
+  _SY.synOf    = s => s[synKey];
+  const syn = opts.data || (report && report.synteny) || {};
   _SY.refs     = syn.references || {};
   _SY.clusters = (syn.clusters || []).filter(c => _SY.refs[c.reference]);
   _SY.seqById  = {};
-  (report.sequences || []).forEach(s => { _SY.seqById[s.id] = s; });
+  (report.sequences || []).forEach(s => { _SY.seqById[_SY.idOf(s)] = s; });
   _SY.idx = 0;
+  const title = _SY.general ? 'General Synteny' : 'Synteny';
 
   if (!_SY.clusters.length) {
     el.innerHTML = `
-      <div class="vq-section-header"><div class="vq-section-title">Synteny</div></div>
-      <div class="vq-empty">No synteny data — the step needs BLASTn hits with a viral title
-        (and NCBI access to download their GenBank records).</div>`;
+      <div class="vq-section-header"><div class="vq-section-title">${title}</div></div>
+      <div class="vq-empty">${_SY.general
+        ? 'No general synteny — no sample has synteny references (run the samples with BLASTn), or viralquest-report ran with --no-synteny.'
+        : 'No synteny data — the step needs BLASTn hits with a viral title (and NCBI access to download their GenBank records).'}</div>`;
     return;
   }
 
   const n = _SY.clusters.length;
   const nOrg = new Set(_SY.clusters.map(c => _orgKey(_SY.refs[c.reference]))).size;
+  const nShared = _SY.clusters.filter(c => (c.samples || []).length > 1).length;
+  const count = _SY.general
+    ? `${n} reference group${n !== 1 ? 's' : ''} · ${nShared} shared by several samples`
+    : `${n} reference${n !== 1 ? 's' : ''} · ${nOrg} virus${nOrg !== 1 ? 'es' : ''}`;
   el.innerHTML = `
     <div class="vq-section-header">
       <div class="vq-section-title">
-        Synteny
-        <span class="vq-count-label">${n} reference${n !== 1 ? 's' : ''} · ${nOrg} virus${nOrg !== 1 ? 'es' : ''}</span>
+        ${title}
+        <span class="vq-count-label">${count}</span>
       </div>
       <div class="vq-section-actions">
         <label class="vq-filter-check"><input type="checkbox" id="syn-show-all"> Non-canonical ORFs</label>
         <label class="vq-filter-check"><input type="checkbox" id="syn-refaxis"> Align tracks to reference</label>
+        <label class="vq-filter-check" title="Draw no link bands: the gene colours (reference gene families) show the correspondence">
+          <input type="checkbox" id="syn-nolinks"> Hide links</label>
         <label class="vq-filter-check"><input type="checkbox" id="syn-ident"> Shade links by identity</label>
         <div class="vq-menu" id="syn-export-menu">
           <button class="vq-btn vq-btn--ghost vq-btn--sm" data-menu-toggle type="button">
@@ -119,6 +141,16 @@ function vqInitSynteny(report, mountId) {
   document.getElementById('syn-refaxis').addEventListener('change', e => {
     _SY.refAxis = e.target.checked; _drawMap();
   });
+  // Without the bands the position on the reference axis (and the colour)
+  // tells which genes correspond, so hiding them also aligns the tracks.
+  document.getElementById('syn-nolinks').addEventListener('change', e => {
+    _SY.noLinks = e.target.checked;
+    document.getElementById('syn-ident').disabled = e.target.checked;
+    if (e.target.checked && !_SY.refAxis) {
+      _SY.refAxis = document.getElementById('syn-refaxis').checked = true;
+    }
+    _drawMap();
+  });
   _wireExport();
   _show(0);
   VQ.redrawOnResize(el, () => _drawMap());
@@ -134,13 +166,16 @@ function _fillSelect(query) {
   const groups = new Map();
   _SY.clusters.forEach((c, i) => {
     const ref = _SY.refs[c.reference];
-    const hay = [ref.organism, ref.title, ref.accession, ...c.members].join(' ').toLowerCase();
+    const hay = [ref.organism, ref.title, ref.accession, ...c.members,
+                 ...(c.merged || []).map(r => r.accession)].join(' ').toLowerCase();
     if (q && !hay.includes(q)) return;
     const key = _orgKey(ref);
     if (!groups.has(key)) groups.set(key, { label: ref.organism || ref.title, opts: [] });
     const n = c.members.length;
+    const ns = (c.samples || []).length;
     groups.get(key).opts.push(`<option value="${i}">${VQ.esc(
-      `${ref.accession} · ${_fmt(ref.length)} nt · ${n} seq${n !== 1 ? 's' : ''}`)}</option>`);
+      `${ref.accession} · ${_fmt(ref.length)} nt · ${n} seq${n !== 1 ? 's' : ''}` +
+      (_SY.general ? ` · ${ns} sample${ns !== 1 ? 's' : ''}` : ''))}</option>`);
   });
   sel.innerHTML = groups.size
     ? [...groups.values()].map(g =>
@@ -183,13 +218,13 @@ function _ivToRef(syn, a, b) {
 function _current() {
   const c   = _SY.clusters[_SY.idx];
   const ref = _SY.refs[c.reference];
-  const members = c.members.map(id => _SY.seqById[id]).filter(s => s && s.synteny).map(seq => {
-    const syn  = seq.synteny;
+  const members = c.members.map(id => _SY.seqById[id]).filter(s => s && _SY.synOf(s)).map(seq => {
+    const syn  = _SY.synOf(seq);
     const hits = syn.hits || [];
     const names = new Set(hits.map(h => h.orf_name));
     const bits  = hits.reduce((a, h) => a + h.bit_score, 0);
     return {
-      seq, syn, hits,
+      seq, syn, hits, id: _SY.idOf(seq), sample: seq.sample || '',
       orfs:   (seq.orfs || []).filter(o => names.has(o.name)),
       other:  (seq.orfs || []).filter(o => !names.has(o.name)),
       span:   _ivToRef(syn, 0, seq.length || 0),
@@ -299,7 +334,11 @@ function _summaryCard({ ref, members }) {
     chip('Canonical ORFs', `${nCanon} / ${nOrfs}`, '',
          `${nOrfs - nCanon} non-canonical ${_SY.showAll ? 'shown in grey' : 'hidden'}`),
     chip('aa identity', ident != null ? `${ident.toFixed(1)}%` : '—', '', 'bit-score weighted mean'),
+    _SY.general ? chip('Samples', String(new Set(members.map(m => m.sample)).size), '',
+                       `${members.length} sequence${members.length !== 1 ? 's' : ''} on this reference`) : '',
   ].join('');
+  // General synteny: the similar references pooled into this group.
+  const merged = (_SY.clusters[_SY.idx].merged || []).filter(r => r.accession !== ref.accession);
 
   const rows = members.map(m => {
     const L  = ref.length || 1;
@@ -310,7 +349,10 @@ function _summaryCard({ ref, members }) {
     ).join('');
     return `
       <div class="vq-syn-member">
-        <a class="vq-syn-member__id" href="#" data-jump="${esc(m.seq.id)}" title="Open in the Sequence Viewer">${esc(m.seq.id)}</a>
+        <span class="vq-syn-member__who">
+          <a class="vq-syn-member__id" href="#" data-jump="${esc(m.id)}" title="Open in the Sequence Viewer">${esc(m.seq.id)}</a>
+          ${_SY.general ? `<span class="vq-syn-member__sample" title="Sample">${esc(m.sample)}</span>` : ''}
+        </span>
         <span class="vq-syn-member__meta">${_fmt(m.seq.length)} nt</span>
         <span class="vq-badge ${m.syn.flipped ? 'vq-syn-badge--rc' : 'vq-badge--cluster'}"
               title="${m.syn.flipped ? 'Reverse-complemented relative to the reference (drawn flipped)' : 'Same orientation as the reference'}">
@@ -326,11 +368,19 @@ function _summaryCard({ ref, members }) {
     <div class="vq-card vq-syn-head">
       <div class="vq-syn-head__top">
         <div class="vq-syn-head__id">
-          <div class="vq-syn-head__eyebrow">Reference genome · best viral BLASTn hit</div>
+          <div class="vq-syn-head__eyebrow">${_SY.general
+            ? 'Anchor reference · every sample\'s sequences of this virus aligned to it'
+            : 'Reference genome · best viral BLASTn hit'}</div>
           <div class="vq-syn-head__title">${esc(ref.organism || ref.title)}</div>
           <div class="vq-syn-head__sub">${esc(ref.title)}</div>
           <div class="vq-tag-row">${tags}</div>
         </div>
+        ${merged.length ? `
+        <div class="vq-syn-head__sib">
+          <div class="vq-syn-head__eyebrow">Similar references pooled here (${merged.length})</div>
+          <div class="vq-tag-row">${merged.map(r => `
+            <span class="vq-tag vq-tag--plain" title="${esc(r.organism || '')} · ${r.n_members} sequence${r.n_members !== 1 ? 's' : ''} had it as best hit">${esc(r.accession)} · ${_fmt(r.length)} nt</span>`).join('')}</div>
+        </div>` : ''}
         ${siblings.length ? `
         <div class="vq-syn-head__sib">
           <div class="vq-syn-head__eyebrow">Other references of this virus</div>
@@ -445,6 +495,7 @@ function _trackOrder(ref, members) {
 const GUT = 172, PAD_R2 = 24;
 const GENE_H = 16, LANE_GAP = 5;
 const LINK_H = 58, REF_LABEL_H = 48;
+const TRACK_GAP = 16;            // between tracks when the links are hidden
 
 function _syntenySVG({ ref, members }, containerWidth) {
   const esc = VQ.esc;
@@ -514,7 +565,7 @@ function _syntenySVG({ ref, members }, containerWidth) {
   const OVERVIEW_H = win.crop ? 30 : 0;
   let y = 22 + OVERVIEW_H + REF_LABEL_H;
   tracks.forEach((t, i) => {
-    if (i) y += LINK_H;
+    if (i) y += _SY.noLinks ? TRACK_GAP : LINK_H;
     const nL = Math.max(1, ...t.genes.map(g => g.lane + 1));
     t.top = y;
     t.laneY = [];
@@ -538,8 +589,11 @@ function _syntenySVG({ ref, members }, containerWidth) {
   const uid  = `syn${Math.random().toString(36).slice(2, 8)}`;
 
   // Links first, so the tracks paint over the stretches that run behind them.
-  const linkG = svg.append('g').attr('class', 'vq-syn-links');
-  _collectLinks(tracks, fams, ref, esc).forEach(l => _drawLink(linkG, svg, tracks, l));
+  // "Hide links": no bands, tracks closer together — the colours carry it.
+  if (!_SY.noLinks) {
+    const linkG = svg.append('g').attr('class', 'vq-syn-links');
+    _collectLinks(tracks, fams, ref, esc).forEach(l => _drawLink(linkG, svg, tracks, l));
+  }
 
   tracks.forEach((t, i) => _drawTrack(svg, defs, `${uid}_${i}`, t, esc));
   _drawRefLabels(svg, tracks[0], fams);
@@ -571,15 +625,17 @@ function _drawTrack(svg, defs, id, t, esc) {
   // Name in the left gutter.
   const name = isRef ? t.ref.accession : t.m.seq.id;
   const sub  = isRef ? `reference · ${_fmt(t.ref.length)} nt`
-    : `${_fmt(t.m.seq.length)} nt${t.m.syn.flipped ? ' · rev. comp.' : ''}`;
+    : _SY.general   // the sample takes the room: "⇄" marks a reverse complement
+      ? `${_clip(t.m.sample, 14)} · ${_fmt(t.m.seq.length)} nt${t.m.syn.flipped ? ' ⇄' : ''}`
+      : `${_fmt(t.m.seq.length)} nt${t.m.syn.flipped ? ' · rev. comp.' : ''}`;
   const lbl = g.append('text').attr('x', GUT - 14).attr('y', yMid - 1).attr('text-anchor', 'end');
   lbl.append('tspan').attr('font-size', 11.5).attr('font-weight', 600)
     .attr('fill', isRef ? 'var(--vq-primary)' : 'var(--vq-text)')
     .text(name.length > 24 ? name.slice(0, 23) + '…' : name);
   lbl.append('tspan').attr('x', GUT - 14).attr('dy', 13).attr('font-size', 9.5)
     .attr('fill', 'var(--vq-text-3)').text(sub);
-  if (!isRef) lbl.style('cursor', 'pointer').on('click', () => VQ.jumpToViewer(t.m.seq.id))
-    .append('title').text('Open in the Sequence Viewer');
+  if (!isRef) lbl.style('cursor', 'pointer').on('click', () => VQ.jumpToViewer(t.m.id))
+    .append('title').text(`${_SY.general ? `${t.m.sample} · ` : ''}Open in the Sequence Viewer`);
 
   // Backbone with end caps; a reference cut by the view gets a dashed,
   // capless end where the genome goes on.
@@ -617,7 +673,7 @@ function _drawTrack(svg, defs, id, t, esc) {
       .on('mouseenter', () => _highlight(svg, [gn.key], true))
       .on('mousemove', evt => VQ.tooltipShow(_geneTip(t, gn, esc), evt))
       .on('mouseleave', () => { _highlight(svg, [gn.key], false); VQ.tooltipHide(); })
-      .on('click', () => { if (!isRef) VQ.jumpToViewer(t.m.seq.id); });
+      .on('click', () => { if (!isRef) VQ.jumpToViewer(t.m.id); });
   });
 }
 
@@ -728,9 +784,9 @@ function _collectLinks(tracks, fams, ref, esc) {
       const a = members[i], b = members[j];
       const pairs = [];
       if (hasLinks) {
-        (a.syn.links || []).filter(l => l.other_seq === b.seq.id).forEach(l => pairs.push(
+        (a.syn.links || []).filter(l => l.other_seq === b.id).forEach(l => pairs.push(
           { a, b, oa: l.orf_name, ob: l.other_orf, na: l.orf_nt, nb: l.other_nt, l }));
-        (b.syn.links || []).filter(l => l.other_seq === a.seq.id).forEach(l => pairs.push(
+        (b.syn.links || []).filter(l => l.other_seq === a.id).forEach(l => pairs.push(
           { a, b, oa: l.other_orf, ob: l.orf_name, na: l.other_nt, nb: l.orf_nt, l,
             swap: true }));
       } else {
@@ -913,7 +969,7 @@ function _shortPeptide(product) {
 }
 
 /* One key per (sequence, ORF): ties an ORF to its links. */
-const _linkKey = (m, orfName) => VQ.safeId(`${m.seq.id}__${orfName}`);
+const _linkKey = (m, orfName) => VQ.safeId(`${m.id}__${orfName}`);
 
 /* The gene of `key` on track t holding interval iv (a CDS across the origin
    has one gene per part); falls back to any gene of that key. */
@@ -957,7 +1013,8 @@ function _pairsTable(ref, members) {
     const url = VQ.ncbiUrl(cds.protein_id, 'protein');
     return `
     <tr>
-      <td class="vq-td--mono"><a href="#" data-jump="${esc(m.seq.id)}">${esc(m.seq.id)}</a></td>
+      ${_SY.general ? `<td>${esc(m.sample)}</td>` : ''}
+      <td class="vq-td--mono"><a href="#" data-jump="${esc(m.id)}">${esc(m.seq.id)}</a></td>
       <td class="vq-td--mono">${esc(h.orf_name)}</td>
       <td class="vq-td--num">${esc(orf.frame ?? '—')}</td>
       <td class="vq-td--num">${_fmt(orf.length_aa)}</td>
@@ -975,7 +1032,7 @@ function _pairsTable(ref, members) {
   return `
     <table class="vq-table">
       <thead><tr>
-        <th>Sequence</th><th>ORF</th><th>Frame</th><th>aa</th><th>Reference CDS</th>
+        ${_SY.general ? '<th>Sample</th>' : ''}<th>Sequence</th><th>ORF</th><th>Frame</th><th>aa</th><th>Reference CDS</th>
         <th>Protein</th><th>Identity</th><th>ORF cov</th><th>CDS cov</th><th>E-value</th>
         <th>Pfam domains</th>
       </tr></thead>
@@ -984,10 +1041,10 @@ function _pairsTable(ref, members) {
 }
 
 function _pairsTSV(ref, members) {
-  const cols = ['sequence', 'orf', 'frame', 'orf_aa', 'reference', 'cds_product', 'protein_id',
+  const cols = [...(_SY.general ? ['sample'] : []), 'sequence', 'orf', 'frame', 'orf_aa', 'reference', 'cds_product', 'protein_id',
                 'pident', 'orf_cov', 'cds_cov', 'evalue', 'bitscore', 'domains'];
   const lines = _pairRows(ref, members).map(({ m, h, orf, cds, doms }) => [
-    m.seq.id, h.orf_name, orf.frame ?? '', orf.length_aa ?? '', ref.accession, cds.product,
+    ...(_SY.general ? [m.sample] : []), m.seq.id, h.orf_name, orf.frame ?? '', orf.length_aa ?? '', ref.accession, cds.product,
     cds.protein_id || '', h.pident, h.q_cov, h.s_cov, h.evalue, h.bit_score, doms.join('; '),
   ].map(v => String(v).replace(/[\t\r\n]+/g, ' ')).join('\t'));
   return [cols.join('\t')].concat(lines).join('\n') + '\n';

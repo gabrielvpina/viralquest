@@ -1455,6 +1455,8 @@ body {
 .vq-syn-member:nth-child(even) { background: var(--vq-surface-2); }
 .vq-syn-member__id   { font-family: var(--vq-font-mono); font-weight: 600; color: var(--vq-accent-dark); }
 .vq-syn-member__meta { color: var(--vq-text-3); white-space: nowrap; }
+.vq-syn-member__who  { display: flex; flex-direction: column; min-width: 0; }
+.vq-syn-member__sample { font-size: var(--vq-text-xs); color: var(--vq-text-3); }
 .vq-syn-badge--rc    { background: #fef3d7; color: #9b6a09; }
 
 /* Where the sequence sits on the reference: extent + aligned stretches. */
