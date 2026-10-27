@@ -9,6 +9,8 @@ a self-contained HTML report plus merge-ready data exports.
 The output directory mirrors a single run's layout:
 
     features/blastn/general_blastn.tsv   cross-sample cluster BLASTn (when clustering ran)
+    features/synteny/                    general synteny: pooled references + DIAMOND blastp
+                                         (see report_synteny.py)
     fastas/                              every viral sequence + one FASTA per novelty tier;
                                          clusters/<VQR_CLU_####>.fasta
     reads/                               coverage_summary.tsv · quantification.tsv ·
@@ -36,6 +38,9 @@ from viralquest.report_clusters import (
 from viralquest.report_data import build_report_data
 from viralquest.report_db import output_paths, validate_dataset_name, write_json, write_sqlite
 from viralquest.report_loader import load_samples
+from viralquest.report_synteny import MIN_COVERAGE as SYN_COVERAGE
+from viralquest.report_synteny import MIN_IDENTITY as SYN_IDENTITY
+from viralquest.report_synteny import build_general_synteny
 from viralquest.seq_table import write_multi_tables
 
 
@@ -129,6 +134,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-clusters", dest="no_clusters", action="store_true",
         help="Skip cross-sample clustering (Overview + Viewer only).",
     )
+    syn = parser.add_argument_group("general synteny")
+    syn.add_argument(
+        "--no-synteny", dest="no_synteny", action="store_true",
+        help="Skip the general synteny (the samples' reference genomes pooled and grouped "
+             "by similarity, every sequence aligned to its group's reference).",
+    )
+    syn.add_argument(
+        "--synteny-identity", dest="synteny_identity", type=float, default=SYN_IDENTITY,
+        metavar="PCT",
+        help=f"aa identity for two reference genomes to share a group (default {SYN_IDENTITY:g}).",
+    )
+    syn.add_argument(
+        "--synteny-coverage", dest="synteny_coverage", type=float, default=SYN_COVERAGE,
+        metavar="PCT",
+        help=f"Proteome coverage for two reference genomes to share a group (default {SYN_COVERAGE:g}).",
+    )
+    syn.add_argument(
+        "-cpu", "--cpu", dest="cpu", type=int, default=2, metavar="N",
+        help="DIAMOND threads for the general synteny (default 2).",
+    )
+    syn.add_argument(
+        "--email", dest="email", type=str, default=None,
+        help="E-mail sent to NCBI when a reference GenBank record must be downloaded.",
+    )
     parser.add_argument(
         "--version", action="version", version=f"viralquest-report {__version__}",
     )
@@ -185,12 +214,23 @@ def main(argv: list[str] | None = None) -> int:
             write_artifacts(clusters, seq_by_gid, out_dir)
             cluster_dicts = [c.to_dict() for c in clusters]
 
+    general_synteny = None
+    if not args.no_synteny:
+        if resolve_tool("diamond") is None:
+            logger.warning("diamond not found (pixi environment or PATH) — general synteny skipped.")
+        else:
+            general_synteny = build_general_synteny(
+                samples, out_dir / "features" / "synteny", threads=args.cpu, email=args.email,
+                min_identity=args.synteny_identity, min_coverage=args.synteny_coverage,
+            )
+
     report_data = build_report_data(
         samples,
         input_root=str(in_root),
         version=__version__,
         clusters=cluster_dicts,
         dataset=args.name,
+        general_synteny=general_synteny,
     )
 
     html_path = out_dir / HTML_NAME
