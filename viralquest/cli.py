@@ -103,7 +103,8 @@ def _build_parser():
         action="store_true", default=False,
         help="Show this help message and exit.")
 
-    # Dev-only (hidden): rebuild the HTML report from an existing JSON.
+    # Dev-only (hidden): rebuild the HTML report from an existing JSON; adds the
+    # synteny section when the JSON lacks it (unless --no-synteny).
     parser.add_argument("--reload", dest="reload", nargs="?", const="",
         default=None, metavar="JSON_OR_DIR", help=argparse.SUPPRESS)
 
@@ -1534,9 +1535,15 @@ def _find_report_json(target: str) -> Path:
     return found[0]
 
 
-def _reload_report(target: str) -> Path:
+def _reload_report(target: str, synteny: bool = True, email: str | None = None,
+                   threads: int = 2) -> Path:
     """Rebuild <stem>_viralquest.html (and the results workbook / SQLite) next
-    to the JSON with the current components."""
+    to the JSON with the current components.
+
+    A report without the synteny section (older versions, --no-synteny) gets
+    it first — GenBank references + DIAMOND blastp, written to
+    features/synteny/ — and the JSON is updated in place. --no-synteny skips it.
+    """
     import json
     from loguru import logger
     from . import html_report
@@ -1549,6 +1556,15 @@ def _reload_report(target: str) -> Path:
     logger.info(f"--reload: report JSON  → {json_path}")
     logger.info(f"--reload: components   → {html_report._COMPONENTS}")
     report = json.loads(json_path.read_text(encoding="utf-8"))
+    if synteny and report.get("synteny") is None:
+        from .exporter import ReportExporter
+        from .setup_env import activate_pixi_env
+        from .synteny import backfill_report
+        activate_pixi_env()
+        logger.info("--reload: report has no synteny section — running the synteny step")
+        if backfill_report(report, json_path.parent / "features" / "synteny",
+                           email=email, threads=threads) is not None:
+            ReportExporter.write(report, json_path)
     html_report.write_report(report, html_path)
     from .seq_table import write_tables
     from .report_db import write_sample_sqlite
@@ -1587,7 +1603,8 @@ def main() -> None:
     # Dev-only: rebuild the HTML from an existing JSON — needs no tools or DBs.
     if args.reload is not None:
         try:
-            _reload_report(args.reload)
+            _reload_report(args.reload, synteny=not args.no_synteny,
+                           email=args.blastn_online, threads=args.cpu or 2)
         except (FileNotFoundError, ValueError) as exc:   # ValueError covers bad JSON
             console.print(f"[bold red]ERROR:[/bold red] {exc}")
             sys.exit(1)

@@ -577,3 +577,74 @@ class SyntenyAnalyzer:
                     w.writerow([s.id, h.orf_name, ref.accession, c.product, c.protein_id or "",
                                 h.pident, h.evalue, h.bit_score, h.q_cov, h.s_cov,
                                 h.orf_nt[0] + 1, h.orf_nt[1], h.ref_nt[0] + 1, h.ref_nt[1]])
+
+
+# ── Backfill an existing report JSON (hidden --reload) ──────────────────────
+
+def _seq_from_json(d: dict) -> NucSequence:
+    """The parts of an exported sequence the synteny step reads: BLASTn hits + ORFs."""
+    from dataclasses import fields
+    from viralquest.biodata import Orf
+    orf_keys = {f.name for f in fields(Orf) if f.init}
+    hit_keys = {f.name for f in fields(BlastnResult)}
+    seq = NucSequence(id=d["id"], sequence=d.get("sequence") or "")
+    seq.blastn_hits = [BlastnResult(**{k: v for k, v in h.items() if k in hit_keys})
+                       for h in d.get("blastn_hits") or []]
+    seq.orfs = [Orf(**{k: v for k, v in o.items() if k in orf_keys})
+                for o in d.get("orfs") or []]
+    return seq
+
+
+def backfill_report(report: dict, outdir: str | Path, email: str | None = None,
+                    threads: int = 2, analyzer: SyntenyAnalyzer | None = None) -> dict | None:
+    """
+    Add the synteny section to a report JSON exported without one (older
+    versions, or --no-synteny): sets each sequence's ``synteny`` field, the
+    top-level ``synteny`` key and the workflow card's step, in place.
+
+    Returns the new ``report["synteny"]``, or None when there was nothing to
+    do (the report already has synteny, or no sequence has a BLASTn hit).
+    """
+    from viralquest.exporter import ReportExporter, _to_serializable
+
+    if report.get("synteny") is not None:
+        return None
+    by_id = {d["id"]: d for d in report.get("sequences") or []}
+    seqs  = [_seq_from_json(d) for d in by_id.values() if d.get("blastn_hits")]
+    if not seqs:
+        logger.info("Synteny backfill: no sequence has BLASTn hits — skipped.")
+        return None
+
+    if analyzer is None:
+        import shutil
+        if not shutil.which("diamond"):
+            logger.warning("Synteny backfill: 'diamond' not found on PATH — skipped.")
+            return None
+    t    = time.time()
+    refs = (analyzer or SyntenyAnalyzer(outdir, email=email, threads=threads)).run(seqs)
+    for s in seqs:
+        by_id[s.id]["synteny"] = _to_serializable(s.synteny) if s.synteny else None
+    report["synteny"] = ReportExporter._build_synteny(seqs, refs)
+
+    wf = (report.get("pipeline_stats") or {}).get("workflow")
+    if isinstance(wf, dict):
+        step = {
+            "key": "synteny", "label": "Synteny  —  NCBI reference ORFs · DIAMOND blastp",
+            "status": "done", "seconds": round(time.time() - t, 2),
+            "details": {
+                "References":         len(refs),
+                "Sequences":          sum(1 for s in seqs if s.synteny),
+                "With matching ORFs": sum(1 for s in seqs if s.synteny and s.synteny.hits),
+            },
+            "message": "added by --reload",
+        }
+        steps = wf.setdefault("steps", [])
+        keys  = [s.get("key") for s in steps]
+        if "synteny" in keys:                      # a "skipped" entry from the run
+            steps[keys.index("synteny")] = step
+        else:                                      # older reports: after Pfam / BLASTn
+            after = next((k for k in ("pfam", "blastn") if k in keys), None)
+            steps.insert(keys.index(after) + 1 if after else len(steps), step)
+        if isinstance(wf.get("options"), dict):
+            wf["options"]["synteny"] = True
+    return report["synteny"]

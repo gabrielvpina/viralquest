@@ -319,3 +319,40 @@ class TestBlastnOnlineTimeoutOptions:
         a = _args("--blastn-online", "me@x.org",
                   "--blastn-online-timeout", "5", "--blastn-online-retries", "0")
         assert (a.blastn_online_timeout, a.blastn_online_retries) == (5.0, 0)
+
+
+class TestReloadSynteny:
+    def _report(self, tmp_path):
+        rep = {"meta": {}, "clusters": [], "pipeline_stats": {},
+               "sequences": [{"id": "c1", "sequence": "ACGT", "orfs": [],
+                              "blastn_hits": [{"qseqid": "c1", "qlen": 4, "slen": 4,
+                                               "qcovhsp": 100, "pident": 99.0, "evalue": 0.0,
+                                               "bit_score": 50.0, "stitle": "Dengue virus 2",
+                                               "accession": "NC_001474"}]}]}
+        p = tmp_path / "S_viralquest.json"
+        p.write_text(json.dumps(rep), encoding="utf-8")
+        return p
+
+    def test_reload_backfills_and_rewrites_json(self, tmp_path):
+        from unittest.mock import patch
+        src = self._report(tmp_path)
+
+        def fake(report, outdir, **kw):
+            assert outdir == tmp_path / "features" / "synteny"
+            report["synteny"] = {"references": {}, "clusters": []}
+            return report["synteny"]
+
+        with patch("viralquest.synteny.backfill_report", side_effect=fake) as bf, \
+             patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            cli._reload_report(str(src))
+        bf.assert_called_once()
+        assert json.loads(src.read_text())["synteny"] == {"references": {}, "clusters": []}
+
+    def test_no_synteny_skips_the_backfill(self, tmp_path):
+        from unittest.mock import patch
+        src = self._report(tmp_path)
+        with patch("viralquest.synteny.backfill_report") as bf, \
+             patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            cli._reload_report(str(src), synteny=False)
+        bf.assert_not_called()
+        assert "synteny" not in json.loads(src.read_text())

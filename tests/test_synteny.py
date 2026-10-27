@@ -12,6 +12,7 @@ from viralquest.synteny import (
     SyntenyAligner,
     SyntenyAnalyzer,
     aligned_segments,
+    backfill_report,
     best_viral_hit,
     cds_aa_to_genome,
     orf_aa_to_contig,
@@ -283,3 +284,46 @@ def test_real_diamond_links_overlapping_contigs(tmp_path):
     assert links and all(l.other_seq == "b" for l in links)
     assert seqs[1].synteny.links == []          # stored once per pair
     assert max(l.pident for l in links) > 99
+
+
+# ── --reload backfill of a report JSON without synteny ──────────────────────
+
+def _old_report():
+    import json
+    s = _dengue_seq()
+    s.is_viral = True
+    rep = ReportExporter(force=True).export([s], [])
+    rep["pipeline_stats"]["workflow"] = {"options": {}, "steps": [
+        {"key": "blastn", "status": "done"}, {"key": "taxonomy", "status": "done"}]}
+    return json.loads(json.dumps(rep))          # as read back from disk
+
+
+def test_backfill_adds_synteny_to_an_old_report(tmp_path):
+    rep = _old_report()
+    assert "synteny" not in rep
+    out = backfill_report(rep, tmp_path, analyzer=SyntenyAnalyzer(
+        tmp_path, fetcher=GenBankFetcher(MOCK, http=_offline), aligner=_FakeAligner()))
+    assert out is rep["synteny"]
+    assert rep["synteny"]["clusters"] == [{"reference": "NC_001477.1", "members": ["c1"]}]
+    assert rep["sequences"][0]["synteny"]["hits"][0]["ref_nt"] == [94, 394]
+    steps = rep["pipeline_stats"]["workflow"]["steps"]
+    assert [s["key"] for s in steps] == ["blastn", "synteny", "taxonomy"]
+    assert steps[1]["details"]["With matching ORFs"] == 1
+    assert rep["pipeline_stats"]["workflow"]["options"]["synteny"] is True
+    assert (tmp_path / "synteny.tsv").is_file()
+
+
+def test_backfill_replaces_a_skipped_step_and_leaves_existing_synteny(tmp_path):
+    rep = _old_report()
+    rep["pipeline_stats"]["workflow"]["steps"].insert(1, {"key": "synteny", "status": "skipped"})
+    an = SyntenyAnalyzer(tmp_path, fetcher=GenBankFetcher(MOCK, http=_offline),
+                         aligner=_FakeAligner())
+    backfill_report(rep, tmp_path, analyzer=an)
+    steps = rep["pipeline_stats"]["workflow"]["steps"]
+    assert [s["status"] for s in steps] == ["done", "done", "done"]
+    assert backfill_report(rep, tmp_path, analyzer=an) is None      # already there
+
+
+def test_backfill_without_blastn_hits_does_nothing(tmp_path):
+    rep = {"sequences": [{"id": "a", "sequence": "ACGT", "blastn_hits": [], "orfs": []}]}
+    assert backfill_report(rep, tmp_path) is None and "synteny" not in rep
