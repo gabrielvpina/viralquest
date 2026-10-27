@@ -57,6 +57,8 @@ function vqInitSynteny(report, mountId, opts) {
   opts = opts || {};
   const synKey = opts.synKey || 'synteny', idKey = opts.idKey || 'id';
   _SY.general  = !!opts.general;
+  // Many partial sequences from several samples read best on the reference axis.
+  _SY.refAxis  = _SY.general;
   _SY.idOf     = s => s[idKey] || s.id;
   _SY.synOf    = s => s[synKey];
   const syn = opts.data || (report && report.synteny) || {};
@@ -90,7 +92,7 @@ function vqInitSynteny(report, mountId, opts) {
       </div>
       <div class="vq-section-actions">
         <label class="vq-filter-check"><input type="checkbox" id="syn-show-all"> Non-canonical ORFs</label>
-        <label class="vq-filter-check"><input type="checkbox" id="syn-refaxis"> Align tracks to reference</label>
+        <label class="vq-filter-check"><input type="checkbox" id="syn-refaxis"${_SY.refAxis ? ' checked' : ''}> Align tracks to reference</label>
         <label class="vq-filter-check" title="Draw no link bands: the gene colours (reference gene families) show the correspondence">
           <input type="checkbox" id="syn-nolinks"> Hide links</label>
         <label class="vq-filter-check"><input type="checkbox" id="syn-ident"> Shade links by identity</label>
@@ -401,12 +403,13 @@ function _summaryCard({ ref, members }) {
 //
 // Every track (the reference, then the member sequences) is drawn on the
 // reference coordinate axis — members flipped / shifted by their placement.
-// A link is drawn for EVERY blastp HSP between two drawn genes: reference
+// A link is kept for EVERY blastp HSP between two drawn genes: reference
 // CDS ↔ member ORF, and member ORF ↔ member ORF (the contig blastp of
 // synteny.py; older reports derive these from the shared reference). Each
 // link leaves its upper gene exactly at the HSP's start/end, runs straight
 // behind any track in between, bends in the gaps and lands on the lower
 // gene at that HSP's start/end there. Links are near-invisible until hovered.
+// Drawn: only the links no track in between already relays (_reduceLinks).
 // Genes are coloured by "gene family": the reference CDS, or its mature
 // peptides when it has them, so a polyprotein reads as capsid · E · NS1…
 
@@ -592,7 +595,7 @@ function _syntenySVG({ ref, members }, containerWidth) {
   // "Hide links": no bands, tracks closer together — the colours carry it.
   if (!_SY.noLinks) {
     const linkG = svg.append('g').attr('class', 'vq-syn-links');
-    _collectLinks(tracks, fams, ref, esc).forEach(l => _drawLink(linkG, svg, tracks, l));
+    _reduceLinks(_collectLinks(tracks, fams, ref, esc)).forEach(l => _drawLink(linkG, svg, tracks, l));
   }
 
   tracks.forEach((t, i) => _drawTrack(svg, defs, `${uid}_${i}`, t, esc));
@@ -826,6 +829,28 @@ function _collectLinks(tracks, fams, ref, esc) {
     }
   }
   return links;
+}
+
+/* Transitive reduction: a link that skips tracks is dropped when a track in
+   between carries the same stretch, linked to both of its ends — the chain
+   through that track already shows it. So the homologous stretch is drawn
+   track to track (as in gggenomes / clinker) instead of a stack of
+   translucent long-range bands that saturate the map with many sequences.
+   Every HSP stays in the data (JSON, synteny.tsv); only the drawing is thinned. */
+function _reduceLinks(links) {
+  const len = iv => Math.abs(iv[1] - iv[0]) || 1;
+  const ov  = (p, q) => Math.min(Math.max(...p), Math.max(...q)) - Math.max(Math.min(...p), Math.min(...q));
+  const byKey = new Map();               // gene key → [{t: other track, iv: stretch on this gene}]
+  const note = (k, t, iv) => { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push({ t, iv }); };
+  links.forEach(l => { note(l.up.key, l.down.t, l.up.iv); note(l.down.key, l.up.t, l.down.iv); });
+  const via = (end, k) => (byKey.get(end.key) || [])
+    .some(e => e.t === k && ov(e.iv, end.iv) >= 0.5 * len(end.iv));
+  return links.filter(l => {
+    for (let k = l.up.t + 1; k < l.down.t; k++) {
+      if (via(l.up, k) && via(l.down, k)) return false;
+    }
+    return true;
+  });
 }
 
 /* One link as a band: it leaves the upper gene at the HSP's start/end, runs
