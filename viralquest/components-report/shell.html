@@ -33,6 +33,8 @@
               id="tab-virome" aria-controls="section-virome" aria-selected="false" tabindex="-1">Virome</button>
       <button class="vq-nav__tab" data-section="clusters" role="tab"
               id="tab-clusters" aria-controls="section-clusters" aria-selected="false" tabindex="-1">General Clusters</button>
+      <button class="vq-nav__tab" data-section="synteny" role="tab"
+              id="tab-synteny" aria-controls="section-synteny" aria-selected="false" tabindex="-1">General Synteny</button>
       <button class="vq-nav__tab" data-section="viewer" role="tab"
               id="tab-viewer" aria-controls="section-viewer" aria-selected="false" tabindex="-1">Sequence Viewer</button>
       <button class="vq-nav__tab" data-section="quant" role="tab"
@@ -52,6 +54,7 @@
     <section class="vq-section active" id="section-overview" role="tabpanel" aria-labelledby="tab-overview"></section>
     <section class="vq-section"        id="section-virome"   role="tabpanel" aria-labelledby="tab-virome"   hidden></section>
     <section class="vq-section"        id="section-clusters" role="tabpanel" aria-labelledby="tab-clusters" hidden></section>
+    <section class="vq-section"        id="section-synteny"  role="tabpanel" aria-labelledby="tab-synteny"  hidden></section>
     <section class="vq-section"        id="section-viewer"   role="tabpanel" aria-labelledby="tab-viewer"   hidden></section>
     <section class="vq-section"        id="section-quant"    role="tabpanel" aria-labelledby="tab-quant"    hidden></section>
   </main>
@@ -84,6 +87,7 @@
   <script>{{VQ_VIRUSES}}</script>
   <script>{{VQ_VIRUSES_REPORT}}</script>
   <script>{{VQ_QUANT}}</script>
+  <script>{{VQ_SYNTENY}}</script>
 
   <!-- ── Shell controller ───────────────────────────────────── -->
   <script>
@@ -158,6 +162,14 @@
     vqInitViewerReport(VQ_REPORT.sequences || []);
     vqInitVirusesReport(VQ_REPORT.sequences || []);
     vqInitQuant(VQ_REPORT.clusters || [], VQ_REPORT.samples || []);
+    // General synteny (report_synteny.py): the per-sample Synteny tab on the
+    // pooled references, members keyed by gid. Hidden when it did not run.
+    if (!((VQ_REPORT.general_synteny || {}).clusters || []).length) {
+      document.getElementById('tab-synteny').style.display = 'none';
+    } else {
+      vqInitSynteny(VQ_REPORT, 'section-synteny', {
+        data: VQ_REPORT.general_synteny, synKey: 'general_synteny', idKey: 'gid', general: true });
+    }
 
   })();
   </script>

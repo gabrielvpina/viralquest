@@ -49,6 +49,14 @@ def _read(name: str) -> str:
     return (_COMPONENTS / name).read_text(encoding="utf-8")
 
 
+def _synteny_css() -> str:
+    """The Synteny tab's block of the per-sample stylesheet (single source for
+    the General Synteny tab): from its banner to the next one."""
+    css = (_SAMPLE_COMPONENTS / "base.css").read_text(encoding="utf-8")
+    m = re.search(r"/\* =+\s*\n\s*Synteny tab\s*\n\s*=+ \*/.*?(?=/\* =+\s*\n|\Z)", css, re.S)
+    return "\n" + m.group(0) if m else ""
+
+
 # ── Template rendering ─────────────────────────────────────────────────────
 
 def _render_template(report_data: dict, d3_js: str) -> str:
@@ -64,7 +72,7 @@ def _render_template(report_data: dict, d3_js: str) -> str:
         "{{TITLE}}":        title,
         "{{VQ_FAVICON}}":   _asset_data_uri("favicon.png"),
         "{{VQ_LOGO}}":      _asset_data_uri("logo-bg-text.png"),
-        "{{VQ_STYLES}}":    _read("base.css"),
+        "{{VQ_STYLES}}":    _read("base.css") + _synteny_css(),
         "{{VQ_DATA}}":      json.dumps(report_data, ensure_ascii=False),
         "{{VQ_D3}}":        d3_js,
         "{{VQ_EXPORT}}":    _read("export.js"),
@@ -76,6 +84,7 @@ def _render_template(report_data: dict, d3_js: str) -> str:
         "{{VQ_VIRUSES}}":        (_SAMPLE_COMPONENTS / "section_viruses.js").read_text(encoding="utf-8"),
         "{{VQ_VIRUSES_REPORT}}": _read("section_viruses_report.js"),
         "{{VQ_QUANT}}":          _read("section_quant.js"),
+        "{{VQ_SYNTENY}}":        (_SAMPLE_COMPONENTS / "section_synteny.js").read_text(encoding="utf-8"),
     }
 
     html = template
