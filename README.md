@@ -348,7 +348,7 @@ The HTML report is fully self-contained (single file, no external dependencies) 
 - **Virome** — detected viruses per contig with novelty tiers and match quality, family / genome-type / classification summaries
 - **Cluster analysis** — sequence grouping with representative sequences and member alignment stats
 - **Sequence viewer** — per-sequence genome map with lane-packed ORF frames (+1/+2/+3/−1/−2/−3), HMM domain overlays, a two-sided read-coverage track (sense up / antisense down, coloured by base quality), tabbed BLAST hit tables (BLASTn / BLASTx-RefSeq / BLASTx-NR), sequence-quality panels (low-complexity bands + repeat dot plot), LLM analysis text, and FASTA / sequence-table (TSV, XLSX) export
-- **Synteny** — gggenomes-style map of the contigs against their best viral BLASTn reference: ORFs coloured by reference gene (or mature peptide), blastp links between reference and contigs and between contigs, segmented viruses grouped by organism, large genomes zoomed to the covered region
+- **Synteny** — gggenomes-style map of the contigs against their best viral BLASTn reference: ORFs coloured by reference gene (or mature peptide), blastp links between reference and contigs and between contigs, segmented viruses grouped by organism, large genomes zoomed to the covered region; *Hide links* leaves only the gene colours (tracks aligned to the reference) when many sequences share one map
 - **Taxonomy tree** — D3 radial tree built from phylum → order → family → genus → sequence
 - **Salmon quantification** — viral expression boxplots grouped by cluster, housekeeping gene bar charts per kingdom, host–viral similarity table (EVE detection)
 
@@ -448,10 +448,13 @@ Each run is a named **dataset** (`-n`: a BioProject, a host species, a study …
 | `viralquest_report.html` | Self-contained interactive report |
 | `<name>.viralquest.json` | Full report data — dataset name, schema version, per-sample summaries, every sequence record, cross-sample clusters |
 | `<name>.viralquest.sqlite` | The same data as tables: `dataset_info`, `samples`, `sequences`, `blastx_hits`, `blastn_hits`, `blastn_taxonomy`, `orfs`, `domains`, `clusters`, `cluster_members`, `coverage`, `seq_quality`, `synteny_hits`, `quantification`, `host_viral_hits` |
-| `<name>.viralquest.xlsx` | The results workbook of a single run over every sample (a *Sample* column on each sheet), plus *Samples* and *General clusters* (the cross-sample clusters; the per-sample ones are in *Sample clusters*) |
+| `<name>.viralquest.xlsx` | The results workbook of a single run over every sample (a *Sample* column on each sheet), plus *Samples*, *General clusters* (the cross-sample clusters; the per-sample ones are in *Sample clusters*) and *General synteny* |
 | `fastas/` | `<name>_viral_contigs.fasta` with every sequence (headers `sample::seq_id`), one `<name>_<tier>.fasta` per novelty tier, and `clusters/<VQR_CLU_####>.fasta` |
 | `reads/` | `coverage_summary.tsv`, `quantification.tsv` and `host_viral_hits.tsv` over every sample, and `clusters/<VQR_CLU_####>.tsv` (per-cluster quantification) |
 | `features/blastn/general_blastn.tsv` | Member ↔ representative BLASTn of the cross-sample clusters |
+| `features/synteny/` | General synteny: the pooled reference GenBank records, reference ↔ reference and ORF ↔ reference DIAMOND blastp, `synteny.tsv` |
+
+**General synteny.** The reference genomes each sample's synteny step picked are pooled and compared to each other (DIAMOND blastp of all their proteins): references of one virus — strains, isolates, partial records — form one group (≥ 80 % aa identity over ≥ 50 % of a proteome by default). Every sequence of a group, from any sample, is aligned again to the group's anchor reference (the one most sequences used), with contig ↔ contig links across samples. The *General Synteny* tab draws each group like a single run's Synteny tab, with the sample of each track.
 
 Every SQLite row carries the `dataset` column and every primary key starts with it, so datasets can be combined later without id clashes (sample, contig and cluster ids are only unique within one dataset):
 
@@ -475,6 +478,10 @@ INSERT INTO sequences    SELECT * FROM b.sequences;
 | `--min-coverage` | BLASTn coverage floor for cross-sample clusters |
 | `--blastn-bin` | `blastn` binary to use (default: `blastn`) |
 | `--no-clusters` | Skip cross-sample clustering (Overview + Viewer only) |
+| `--no-synteny` | Skip the general synteny |
+| `--synteny-identity` / `--synteny-coverage` | aa identity / proteome coverage for two references to share a group (defaults 80 / 50; `--synteny-identity 70` groups at about genus level) |
+| `-cpu` / `--cpu` | DIAMOND threads for the general synteny (default 2) |
+| `--email` | E-mail sent to NCBI if a reference GenBank record is not in any sample folder |
 | `--version` | Print version and exit |
 
 ### Screenshots
