@@ -159,7 +159,7 @@
     vqInitAbout();
     vqInitOverview(VQ_REPORT);
     vqInitClusters(VQ_REPORT.clusters || [], VQ_REPORT.samples || []);
-    vqInitViewerReport(VQ_REPORT.sequences || []);
+    vqInitViewerReport(VQ_REPORT.sequences || [], VQ_REPORT.clusters || []);
     vqInitVirusesReport(VQ_REPORT.sequences || []);
     vqInitQuant(VQ_REPORT.clusters || [], VQ_REPORT.samples || []);
     // General synteny (report_synteny.py): the per-sample Synteny tab on the

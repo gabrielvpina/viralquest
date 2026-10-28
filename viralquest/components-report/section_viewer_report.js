@@ -8,21 +8,29 @@
    Wraps the per-sample vqInitViewer, adding a sample checkbox filter
    on top.  Sequences are keyed by their global id (sample::id) so cards
    are unique across samples and cluster "jump to viewer" links resolve.
+   The cluster tag of a card is its cross-sample cluster (VQR_CLU_####):
+   the per-sample VQ_CLU_#### ids repeat across samples, so they are not
+   shown here (still in the data as `sample_cluster_id`).
    ============================================================ */
 
 let _allSeqs  = [];   // viewer-input copies (id = gid)
 let _samples  = [];
 let _selected = new Set();
+let _clusters = [];
 
-function vqInitViewerReport(sequences) {
+function vqInitViewerReport(sequences, clusters) {
   const el = document.getElementById('section-viewer');
   if (!el) return;
   const esc = VQ.esc;
 
   // Use the global id as the display/lookup id so nothing collides across
   // samples; keep the original contig id available for reference.
+  _clusters = clusters || [];
+  const cluOf = new Map();
+  _clusters.forEach(c => (c.members || []).forEach(m => cluOf.set(m.gid, c.gid || c.cluster_id)));
   _allSeqs = (sequences || []).map(s => Object.assign({}, s, {
     id: s.gid || s.id, _orig_id: s.id,
+    cluster_id: cluOf.get(s.gid) || null, sample_cluster_id: s.cluster_id || null,
   }));
   _samples  = [...new Set(_allSeqs.map(s => s.sample).filter(Boolean))].sort();
   _selected = new Set(_samples);   // all samples on by default
@@ -69,7 +77,7 @@ function _setAll(on) {
 function _render() {
   const subset = _allSeqs.filter(s => _selected.has(s.sample));
   // Delegate the heavy lifting to the per-sample viewer, mounted in our host.
-  vqInitViewer(subset, 'viewer-host');
+  vqInitViewer(subset, 'viewer-host', _clusters);
 }
 
 window.vqInitViewerReport = vqInitViewerReport;
