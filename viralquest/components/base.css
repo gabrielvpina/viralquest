@@ -1466,6 +1466,9 @@ body {
 
 .vq-syn-picker { align-items: center; gap: var(--vq-space-2); flex-wrap: wrap; }
 .vq-syn-select { flex: 1 1 320px; min-width: 0; max-width: 100%; }
+.vq-syn-lenfilter { display: inline-flex; align-items: center; gap: 6px; font-size: var(--vq-text-sm); color: var(--vq-text-3); }
+.vq-syn-lenfilter .vq-input--sm { width: 92px; }
+.vq-syn-lenfilter__label { white-space: nowrap; }
 
 .vq-syn-head, .vq-syn-map, .vq-syn-pairs { margin-bottom: var(--vq-space-4); }
 .vq-syn-pairs { overflow-x: auto; }

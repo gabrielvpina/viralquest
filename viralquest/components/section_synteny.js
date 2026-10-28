@@ -36,6 +36,8 @@ const _SY = {
   identShade: false,   // links shaded by aa identity instead of a flat tint
   refAxis:    false,   // tracks on the reference axis; default: each on its own, left-aligned
   fullRef:    false,   // draw the whole reference even when the members cover a sliver of it
+  minLen:     null,    // length filter (nt): members outside [minLen, maxLen] are left out
+  maxLen:     null,
   noLinks:    false,   // no link bands: the gene colours alone tell the correspondence
   general:    false,   // consolidated report: members come from several samples
   idOf:       s => s.id,
@@ -77,6 +79,11 @@ function vqInitSynteny(report, mountId, opts) {
         : 'No synteny data — the step needs BLASTn hits with a viral title (and NCBI access to download their GenBank records).'}</div>`;
     return;
   }
+
+  // Shortest / longest member of any cluster: placeholders of the length filter.
+  const lens = _SY.clusters.flatMap(c => c.members.map(id => (_SY.seqById[id] || {}).length || 0));
+  const lenRange = lens.length ? [Math.min(...lens), Math.max(...lens)] : [0, 0];
+  _SY.minLen = _SY.maxLen = null;
 
   const n = _SY.clusters.length;
   const nOrg = new Set(_SY.clusters.map(c => _orgKey(_SY.refs[c.reference]))).size;
@@ -125,6 +132,16 @@ function vqInitSynteny(report, mountId, opts) {
       <select class="vq-select vq-syn-select" id="syn-select" aria-label="Synteny cluster"></select>
       <button class="vq-btn vq-btn--ghost vq-btn--sm" id="syn-next" type="button" aria-label="Next reference">▶</button>
       <span class="vq-count-label" id="syn-pos"></span>
+      <div class="vq-syn-lenfilter" title="Leave out sequences shorter or longer than this (nt) — map, summary, pairs table and export">
+        <span class="vq-syn-lenfilter__label">Length</span>
+        <input class="vq-input vq-input--sm" id="syn-len-min" type="number" min="0" step="100"
+               placeholder="${_fmt(lenRange[0])}" aria-label="Minimum sequence length (nt)">
+        <span aria-hidden="true">–</span>
+        <input class="vq-input vq-input--sm" id="syn-len-max" type="number" min="0" step="100"
+               placeholder="${_fmt(lenRange[1])}" aria-label="Maximum sequence length (nt)">
+        <span class="vq-syn-lenfilter__label">nt</span>
+        <button class="vq-btn vq-btn--ghost vq-btn--sm" id="syn-len-reset" type="button" hidden>Reset</button>
+      </div>
     </div>
 
     <div id="syn-body"></div>`;
@@ -153,6 +170,24 @@ function vqInitSynteny(report, mountId, opts) {
     }
     _drawMap();
   });
+  // Length filter: applied as the user types (debounced) and on Enter / blur.
+  const lenMin = document.getElementById('syn-len-min');
+  const lenMax = document.getElementById('syn-len-max');
+  const lenReset = document.getElementById('syn-len-reset');
+  let lenTimer = null;
+  const applyLen = () => {
+    clearTimeout(lenTimer);
+    const v = x => (x.value === '' || isNaN(+x.value) ? null : Math.max(0, +x.value));
+    _SY.minLen = v(lenMin); _SY.maxLen = v(lenMax);
+    lenReset.hidden = _SY.minLen == null && _SY.maxLen == null;
+    _fillSelect(document.getElementById('syn-search').value);
+    _render();
+  };
+  [lenMin, lenMax].forEach(x => {
+    x.addEventListener('input', () => { clearTimeout(lenTimer); lenTimer = setTimeout(applyLen, 350); });
+    x.addEventListener('change', applyLen);
+  });
+  lenReset.addEventListener('click', () => { lenMin.value = lenMax.value = ''; applyLen(); });
   _wireExport();
   _show(0);
   VQ.redrawOnResize(el, () => _drawMap());
@@ -173,7 +208,7 @@ function _fillSelect(query) {
     if (q && !hay.includes(q)) return;
     const key = _orgKey(ref);
     if (!groups.has(key)) groups.set(key, { label: ref.organism || ref.title, opts: [] });
-    const n = c.members.length;
+    const n = _lenFiltered() ? c.members.filter(id => _lenOk(_SY.seqById[id])).length : c.members.length;
     const ns = (c.samples || []).length;
     groups.get(key).opts.push(`<option value="${i}">${VQ.esc(
       `${ref.accession} · ${_fmt(ref.length)} nt · ${n} seq${n !== 1 ? 's' : ''}` +
@@ -189,6 +224,10 @@ function _fillSelect(query) {
     sel.value = String(_SY.idx);
   }
 }
+
+const _lenLabel = () => _SY.minLen != null && _SY.maxLen != null
+  ? `${_fmt(_SY.minLen)}–${_fmt(_SY.maxLen)} nt`
+  : (_SY.minLen != null ? `≥ ${_fmt(_SY.minLen)} nt` : `≤ ${_fmt(_SY.maxLen)} nt`);
 
 function _step(dir) {
   const vals = [...document.querySelectorAll('#syn-select option')]
@@ -216,11 +255,21 @@ function _ivToRef(syn, a, b) {
   return [Math.min(p, q), Math.max(p, q)];
 }
 
-/* Members of the current cluster, left to right along the reference. */
+/* Length filter (nt): is it set, and does a sequence pass it. */
+const _lenFiltered = () => _SY.minLen != null || _SY.maxLen != null;
+function _lenOk(seq) {
+  const L = (seq && seq.length) || 0;
+  return (_SY.minLen == null || L >= _SY.minLen) && (_SY.maxLen == null || L <= _SY.maxLen);
+}
+
+/* Members of the current cluster, left to right along the reference;
+   `hidden`: how many the length filter leaves out. */
 function _current() {
   const c   = _SY.clusters[_SY.idx];
   const ref = _SY.refs[c.reference];
-  const members = c.members.map(id => _SY.seqById[id]).filter(s => s && _SY.synOf(s)).map(seq => {
+  const all = c.members.map(id => _SY.seqById[id]).filter(s => s && _SY.synOf(s));
+  const kept = all.filter(_lenOk);
+  const members = kept.map(seq => {
     const syn  = _SY.synOf(seq);
     const hits = syn.hits || [];
     const names = new Set(hits.map(h => h.orf_name));
@@ -233,7 +282,7 @@ function _current() {
       ident:  bits ? hits.reduce((a, h) => a + h.pident * h.bit_score, 0) / bits : null,
     };
   }).sort((a, b) => a.span[0] - b.span[0] || (b.seq.length || 0) - (a.seq.length || 0));
-  return { c, ref, members };
+  return { c, ref, members, hidden: all.length - kept.length };
 }
 
 /* Total length of the union of [start, end) intervals. */
@@ -296,7 +345,7 @@ function _drawMap() {
 
 // ── Summary card ───────────────────────────────────────────────────────────
 
-function _summaryCard({ ref, members }) {
+function _summaryCard({ ref, members, hidden }) {
   const esc = VQ.esc;
   const allHits    = members.flatMap(m => m.hits);
   const matchedCds = new Set(allHits.map(h => h.cds_index));
@@ -393,7 +442,9 @@ function _summaryCard({ ref, members }) {
       </div>
       <div class="vq-stats-row vq-stats-row--top vq-syn-kpis">${kpis}</div>
       <div class="vq-syn-members">
-        <div class="vq-syn-head__eyebrow">Sequences on this reference (${members.length})</div>
+        <div class="vq-syn-head__eyebrow">Sequences on this reference (${members.length})${hidden
+          ? ` · ${hidden} left out by the length filter (${_lenLabel()})` : ''}</div>
+        ${!members.length ? '<div class="vq-empty">No sequence of this reference passes the length filter.</div>' : ''}
         ${rows}
       </div>
     </div>`;
