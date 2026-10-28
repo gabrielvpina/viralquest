@@ -85,7 +85,7 @@ def write_multi_read_tables(samples, reads_dir: Path) -> list[Path]:
             written.append(write_sheet_tsv(sh, reads_dir / files[sh.name]))
     return written
 
-__version__ = "3.0.14"
+__version__ = "3.0.15"
 
 HTML_NAME = "viralquest_report.html"
 
