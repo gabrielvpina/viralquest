@@ -30,7 +30,24 @@ const _VW = {
   // re-init (the multi-sample report re-mounts the viewer on every sample
   // filter change). Exports read the live SVG, so they follow these flags.
   lowCxOff: new Set(),
+  // Cluster representatives (sequence ids) and the "Clusters" filter mode:
+  // '' all · 'rep' representatives only · 'nr' representatives + unclustered.
+  repIds:  new Set(),
+  cluMode: '',
 };
+
+/* Representative ids of *clusters* — per-sample ({representative_id}) or
+   cross-sample ({representative}, a gid) records. */
+function _clusterReps(clusters) {
+  return new Set((clusters || []).map(c => c.representative || c.representative_id).filter(Boolean));
+}
+
+/* The "Clusters" filter: is *s* kept under the current mode? */
+function _cluModeOk(s) {
+  if (!_VW.cluMode) return true;
+  if (_VW.repIds.has(s.id)) return true;
+  return _VW.cluMode === 'nr' && !s.cluster_id;
+}
 
 /* Should this sequence's low-complexity regions be highlighted? */
 function _showLowCx(seq) {
@@ -282,14 +299,18 @@ const _DOM_COLOURS = [
 
 // ── Init ────────────────────────────────────────────────────────────────────
 
-function vqInitViewer(sequences) {
-  const el = document.getElementById('section-viewer');
+function vqInitViewer(sequences, mountId, clusters) {
+  const el = document.getElementById(mountId || 'section-viewer');
   if (!el) return;
   const esc = VQ.esc;
 
   _VW.sequences = sequences;
   _VW.filtered  = [...sequences];
   _VW.tax = { family: new Set(), phylum: new Set(), genus: new Set(), cls: new Set(), nov: new Set() };
+  _VW.repIds  = _clusterReps(clusters);
+  _VW.cluMode = '';
+  const nClustered = sequences.filter(s => s.cluster_id).length;
+  const nReps      = sequences.filter(s => _VW.repIds.has(s.id)).length;
 
   const phyla    = [...new Set(sequences.map(s => s.taxonomy?.phylum).filter(Boolean))].sort();
   const families = [...new Set(sequences.map(s => s.taxonomy?.family).filter(Boolean))].sort();
@@ -434,6 +455,17 @@ function vqInitViewer(sequences) {
           </div>
         </div>
 
+        ${nReps ? `
+        <div class="vq-filter-field">
+          <span class="vq-filter-field__label">Clusters</span>
+          <select class="vq-select" id="viewer-clu-mode" aria-label="Cluster representatives"
+                  title="Representatives: one sequence per cluster (★). Reps + unclustered: also the sequences in no cluster — a non-redundant set.">
+            <option value="">All (${sequences.length})</option>
+            <option value="rep">Representatives ★ (${nReps})</option>
+            <option value="nr">Reps + unclustered (${sequences.length - nClustered + nReps})</option>
+          </select>
+        </div>` : ''}
+
         ${_msField('viewer-ms-family', 'Family', 'All families', families)}
         ${_msField('viewer-ms-phylum', 'Phylum', 'All phyla',    phyla)}
         ${_msField('viewer-ms-genus',  'Genus',  'All genera',   genera)}
@@ -482,6 +514,10 @@ function vqInitViewer(sequences) {
     .forEach(id => document.getElementById(id)?.addEventListener('input', _applyFilters));
   ['viewer-filter-refseq','viewer-filter-blastx','viewer-filter-blastn']
     .forEach(id => document.getElementById(id)?.addEventListener('change', _applyFilters));
+  document.getElementById('viewer-clu-mode')?.addEventListener('change', e => {
+    _VW.cluMode = e.target.value;
+    _applyFilters();
+  });
 
   _wireMultiSelect('viewer-ms-family', _VW.tax.family);
   _wireMultiSelect('viewer-ms-phylum', _VW.tax.phylum);
@@ -501,6 +537,9 @@ function vqInitViewer(sequences) {
   document.getElementById('viewer-filter-clear')?.addEventListener('click', () => {
     filterPanel.querySelectorAll('input[type="number"]').forEach(i => { i.value = ''; });
     filterPanel.querySelectorAll('input[type="checkbox"]').forEach(c => { c.checked = false; });
+    const cluSel = document.getElementById('viewer-clu-mode');
+    if (cluSel) cluSel.value = '';
+    _VW.cluMode = '';
     Object.values(_VW.tax).forEach(set => set.clear());
     filterPanel.querySelectorAll('[data-ms-label]').forEach(l => { l.textContent = l.dataset.allLabel; });
     filterPanel.querySelectorAll('.vq-ms').forEach(m => m.classList.remove('vq-ms--active'));
@@ -753,7 +792,7 @@ function _searchHay(s) {
 
   const t     = s.taxonomy || {};
   const parts = [
-    s.id,
+    s.id, s.cluster_id,
     t.scientific_name, t.species, t.genus, t.subfamily, t.family,
     t.order, t.class, t.phylum, t.kingdom, t.clade, t.no_rank,
     s.heuristic_output?.blastn_species,
@@ -834,6 +873,7 @@ function _updateFilterBadge() {
                      has('viewer-cov-min')   || has('viewer-cov-max');
   if ((chk('viewer-filter-refseq') || chk('viewer-filter-blastx') ||
        chk('viewer-filter-blastn')) && blastRange) n++;
+  if (_VW.cluMode) n++;
   if (_VW.tax.family.size) n++;
   if (_VW.tax.phylum.size) n++;
   if (_VW.tax.genus.size)  n++;
@@ -879,6 +919,7 @@ function _applyFilters() {
   _VW.filtered = _VW.sequences.filter(s => {
     const t = s.taxonomy || {};
     if (q && !_searchHay(s).includes(q)) return false;
+    if (!_cluModeOk(s)) return false;
     if (phySet.size && !phySet.has(t.phylum)) return false;
     if (famSet.size && !famSet.has(t.family)) return false;
     if (genSet.size && !genSet.has(t.genus))  return false;
@@ -1040,7 +1081,9 @@ function _seqCard(seq) {
         <span class="vq-seq-card__meta-item">
           ${orfCount} ORF${orfCount !== 1 ? 's' : ''}
         </span>
-        ${seq.cluster_id ? `<span class="vq-badge vq-badge--cluster">${esc(seq.cluster_id)}</span>` : ''}
+        ${seq.cluster_id ? (_VW.repIds.has(seq.id)
+          ? `<span class="vq-badge vq-badge--cluster" title="Representative of ${esc(seq.cluster_id)}">★ ${esc(seq.cluster_id)}</span>`
+          : `<span class="vq-badge vq-badge--cluster" title="Member of ${esc(seq.cluster_id)}">${esc(seq.cluster_id)}</span>`) : ''}
         ${_scoreChips(seq)}
       </div>
       <div class="vq-section-actions" style="margin-left:auto;">

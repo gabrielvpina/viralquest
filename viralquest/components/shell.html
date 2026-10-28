@@ -194,7 +194,7 @@
     vqInitStats(VQ_REPORT);
     vqInitViruses(VQ_REPORT);
     vqInitClusters(VQ_REPORT.clusters || []);
-    vqInitViewer(VQ_REPORT.sequences || []);
+    vqInitViewer(VQ_REPORT.sequences || [], null, VQ_REPORT.clusters || []);
     vqInitSynteny(VQ_REPORT);
     vqInitTaxonomy(VQ_REPORT._taxonomy_tree || null, VQ_REPORT.sequences || []);
     if (VQ_REPORT.salmon_quant) {
